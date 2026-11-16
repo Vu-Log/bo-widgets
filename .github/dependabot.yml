@@ -1,0 +1,16 @@
+# The actions of .github/workflows are pinned by commit SHA, so that a moved tag cannot change what the CI runs.
+# The SDK packages (@vulog/bo-widget-*) are raised together, in every widget at once.
+version: 2
+updates:
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: monthly
+  - package-ecosystem: npm
+    directory: /
+    schedule:
+      interval: weekly
+    groups:
+      bo-widget-sdk:
+        patterns:
+          - '@vulog/bo-widget-*'
