@@ -15,6 +15,9 @@ updates:
     ignore:
       - dependency-name: "*"
         update-types: ["version-update:semver-major"]
+      # TypeScript breaks on its minor versions (6.0 → 6.1): the SDK templates pin ~6.0.x.
+      - dependency-name: "typescript"
+        update-types: ["version-update:semver-minor"]
     groups:
       bo-widget-sdk:
         patterns:
