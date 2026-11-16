@@ -27,4 +27,5 @@ Before you say a change is done: `npm test`, `npm run typecheck` and `npm run bu
 - Code that several widgets need goes to the SDK (<https://github.com/Vu-Log/bo-widget-sdk>), not here.
 - No secret, no API key, no token, no client-specific value in the code: the repository and the bundles are public. `.env.local` is never committed.
 - Add a widget with `npm create @vulog/bo-widget@latest <id>` in `widgets/`, then remove its `.github` and `.gitlab-ci.yml`, and list it in `README.md`.
+- Major versions of the dependencies (React, MUI, Vite, Vitest, TypeScript…) follow the templates of the SDK (`npm create @vulog/bo-widget`): Dependabot ignores them, and they are aligned by hand when the SDK moves.
 - Raise the `version` of a widget in its `package.json` before publishing it: the BO only accepts a greater version.
