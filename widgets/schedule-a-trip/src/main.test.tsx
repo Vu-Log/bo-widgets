@@ -90,7 +90,10 @@ describe('Widget', () => {
     await vi.waitFor(() =>
       expect(text(element)).toContain('The settings of the widget could not be loaded.'),
     );
-    expect(text(element)).toContain('not installed');
+    expect(text(element)).not.toContain('not installed');
+    expect(element.shadowRoot?.querySelector('[role="alert"]')?.getAttribute('title')).toBe(
+      'not installed',
+    );
   });
 
   it('follows the locale of the back office', async () => {

@@ -12,7 +12,7 @@
   "tabs.empty.completed": "Nincs befejezett foglalás.",
   "tabs.empty.cancelled": "Nincs lemondott foglalás.",
   "settings.incomplete.title": "Hiányos konfiguráció",
-  "settings.incomplete.details": "Az előrefizetési műveletek le vannak tiltva. Egy rendszergazdának javítania kell a widget alábbi beállításait itt: Configuration > Widgets:",
+  "settings.incomplete.details": "Az előrefizetési műveletek le vannak tiltva. Egy rendszergazdának a Configuration > Widgets menüben javítania kell a widget alábbi beállításait:",
   "settings.issue.missing": "hiányzik",
   "settings.issue.invalid": "érvénytelen érték",
   "settings.unavailable": "A widget beállításait nem sikerült betölteni.",

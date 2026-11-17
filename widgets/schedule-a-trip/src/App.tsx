@@ -15,8 +15,8 @@ function SettingsStatus() {
   const settings = useWidgetSettings();
   if (settings.isError) {
     return (
-      <Alert severity="error" sx={{ flex: 'none', borderRadius: 0 }}>
-        {t('settings.unavailable')} {settings.error.message}
+      <Alert severity="error" sx={{ flex: 'none', borderRadius: 0 }} title={settings.error.message}>
+        {t('settings.unavailable')}
       </Alert>
     );
   }
