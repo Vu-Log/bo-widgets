@@ -1,7 +1,7 @@
 import type { AuthFetch } from '@vulog/bo-widget-sdk';
 import { z } from 'zod';
 import type { AimaListStatus } from '../domain/statuses';
-import { requestJson, segment, type ApiResult } from './http';
+import { requestJson, requestNoContent, segment, type ApiResult } from './http';
 
 /*
  * The `user/scheduleATrip/fleets/{fleetId}/bookingrequests` routes are called by the back office
@@ -151,4 +151,213 @@ export async function getBookingRequest(
     { signal },
   );
   return result.ok ? { ok: true, data: result.data.body } : result;
+}
+
+/*
+ * Writes. The paths and bodies are those the back office uses for its own Schedule a trip page
+ * (`ScheduleATripClient`, `BookingRequestClient`): create, update, cancel, allocate; the deallocation
+ * goes through `user/scheduledBooking/...`. Their answers are not read: the widget reads the booking
+ * again, as the back office does.
+ */
+
+const bookingRequestsPath = (fleetId: string) =>
+  `user/scheduleATrip/fleets/${segment(fleetId)}/bookingrequests`;
+
+/** A date as the Schedule a trip routes take it: UTC, to the second (`2026-03-10T08:00:00Z`). */
+export const toApiDate = (date: Date): string => `${date.toISOString().slice(0, 19)}Z`;
+
+/** What a new Schedule a trip booking needs. */
+export interface NewBookingRequest {
+  readonly userId: string;
+  readonly profileId: string;
+  readonly serviceId: string;
+  readonly cityId: string;
+  readonly start: Date;
+  /** `null` without a planned return. */
+  readonly plannedReturn: Date | null;
+  /** `null` for any model. */
+  readonly modelId: number | null;
+  readonly latitude: number;
+  readonly longitude: number;
+  /** Radius of the pickup zone, in meters. */
+  readonly radius: number;
+  readonly notes: string;
+}
+
+/**
+ * Creates a Schedule a trip booking, confirmed at once.
+ * `POST user/scheduleATrip/fleets/{fleetId}/bookingrequests` (route of the back office).
+ *
+ * @param authFetch - `useAuthFetch()`.
+ * @param fleetId - The fleet.
+ * @param input - Customer, profile, service, dates, model, pickup point and notes.
+ * @returns The id of the new booking, or why the call failed.
+ */
+export async function createBookingRequest(
+  authFetch: AuthFetch,
+  fleetId: string,
+  input: NewBookingRequest,
+): Promise<ApiResult<string>> {
+  const result = await requestJson(
+    authFetch,
+    bookingRequestsPath(fleetId),
+    z.object({ id: z.string().min(1) }),
+    {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        cityId: input.cityId,
+        latitude: input.latitude,
+        longitude: input.longitude,
+        profileId: input.profileId,
+        radius: input.radius,
+        serviceId: input.serviceId,
+        startDate: toApiDate(input.start),
+        plannedReturnDate: input.plannedReturn === null ? null : toApiDate(input.plannedReturn),
+        status: 'CONFIRMED',
+        userId: input.userId,
+        warning: '',
+        notes: input.notes,
+        modelId: input.modelId,
+      }),
+    },
+  );
+  return result.ok ? { ok: true, data: result.data.body.id } : result;
+}
+
+/** The fields of a booking the widget changes; the others are left as they are. */
+export interface BookingRequestChanges {
+  readonly start?: Date;
+  readonly plannedReturn?: Date | null;
+  readonly notes?: string;
+  readonly latitude?: number;
+  readonly longitude?: number;
+  readonly radius?: number;
+}
+
+/**
+ * Changes a Schedule a trip booking. `POST user/scheduleATrip/fleets/{fleetId}/bookingrequests/{id}`
+ * (route of the back office), with the fields changed only. `modelId` is always sent: the API sets
+ * the model to "any" when it is absent.
+ *
+ * @param authFetch - `useAuthFetch()`.
+ * @param fleetId - The fleet.
+ * @param bookingId - The booking.
+ * @param modelId - The model of the booking after the change, `null` for any model.
+ * @param changes - The fields to change.
+ * @returns `ok`, or why the call failed.
+ */
+export function updateBookingRequest(
+  authFetch: AuthFetch,
+  fleetId: string,
+  bookingId: string,
+  modelId: number | null,
+  changes: BookingRequestChanges,
+): Promise<ApiResult<null>> {
+  const body: Record<string, unknown> = { id: bookingId, modelId };
+  if (changes.start !== undefined) body.startDate = toApiDate(changes.start);
+  if (changes.plannedReturn !== undefined) {
+    body.plannedReturnDate = changes.plannedReturn === null ? null : toApiDate(changes.plannedReturn);
+  }
+  if (changes.notes !== undefined) body.notes = changes.notes;
+  if (changes.latitude !== undefined) body.latitude = changes.latitude;
+  if (changes.longitude !== undefined) body.longitude = changes.longitude;
+  if (changes.radius !== undefined) body.radius = changes.radius;
+  return requestNoContent(authFetch, `${bookingRequestsPath(fleetId)}/${segment(bookingId)}`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(body),
+  });
+}
+
+/**
+ * Cancels a Schedule a trip booking. `POST user/scheduleATrip/fleets/{fleetId}/bookingrequests/cancel/{id}`
+ * (route of the back office).
+ *
+ * @param authFetch - `useAuthFetch()`.
+ * @param fleetId - The fleet.
+ * @param bookingId - The booking.
+ * @returns `ok`, or why the call failed.
+ */
+export const cancelBookingRequest = (
+  authFetch: AuthFetch,
+  fleetId: string,
+  bookingId: string,
+): Promise<ApiResult<null>> =>
+  requestNoContent(authFetch, `${bookingRequestsPath(fleetId)}/cancel/${segment(bookingId)}`, {
+    method: 'POST',
+  });
+
+/**
+ * Allocates a vehicle to a booking. `POST user/scheduleATrip/fleets/{fleetId}/bookingrequests/{id}/allocate/{vehicleId}?serviceId=`
+ * (route of the back office).
+ *
+ * @param authFetch - `useAuthFetch()`.
+ * @param fleetId - The fleet.
+ * @param bookingId - The booking.
+ * @param vehicleId - The vehicle.
+ * @param serviceId - The service of the booking, which the vehicle belongs to.
+ * @returns `ok`, or why the call failed.
+ */
+export const allocateVehicle = (
+  authFetch: AuthFetch,
+  fleetId: string,
+  bookingId: string,
+  vehicleId: string,
+  serviceId: string,
+): Promise<ApiResult<null>> =>
+  requestNoContent(
+    authFetch,
+    `${bookingRequestsPath(fleetId)}/${segment(bookingId)}/allocate/${segment(vehicleId)}?${new URLSearchParams({ serviceId })}`,
+    { method: 'POST' },
+  );
+
+/**
+ * Takes its vehicle back from a booking.
+ * `DELETE user/scheduledBooking/fleets/{fleetId}/bookingrequests/{id}/vehicles/{vehicleId}` (route of
+ * the back office).
+ *
+ * @param authFetch - `useAuthFetch()`.
+ * @param fleetId - The fleet.
+ * @param bookingId - The booking.
+ * @param vehicleId - Its vehicle.
+ * @returns `ok`, or why the call failed.
+ */
+export const deallocateVehicle = (
+  authFetch: AuthFetch,
+  fleetId: string,
+  bookingId: string,
+  vehicleId: string,
+): Promise<ApiResult<null>> =>
+  requestNoContent(
+    authFetch,
+    `user/scheduledBooking/fleets/${segment(fleetId)}/bookingrequests/${segment(bookingId)}/vehicles/${segment(vehicleId)}`,
+    { method: 'DELETE' },
+  );
+
+/**
+ * Whether a customer has a booking in progress: the back office refuses to allocate a vehicle then.
+ * `GET user/scheduleATrip/fleets/{fleetId}/bookingrequests/users/{userId}/active` (reference:
+ * admin-booking).
+ *
+ * @param authFetch - `useAuthFetch()`.
+ * @param fleetId - The fleet.
+ * @param userId - The customer.
+ * @param signal - Aborts the call.
+ * @returns `true` when one of the active bookings has a trip, or why the call failed.
+ */
+export async function hasTripInProgress(
+  authFetch: AuthFetch,
+  fleetId: string,
+  userId: string,
+  signal?: AbortSignal,
+): Promise<ApiResult<boolean>> {
+  const result = await requestJson(
+    authFetch,
+    `${bookingRequestsPath(fleetId)}/users/${segment(userId)}/active`,
+    z.array(z.object({ journeyId: nullableString })),
+    { signal },
+  );
+  if (!result.ok) return result;
+  return { ok: true, data: result.data.body.some((booking) => booking.journeyId !== null) };
 }

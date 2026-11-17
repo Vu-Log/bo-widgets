@@ -1,7 +1,7 @@
 import type { AuthFetch } from '@vulog/bo-widget-sdk';
 import { describe, expect, it, vi } from 'vitest';
 import { jsonResponse } from '../test/fake-bo';
-import { listUsersByIds, MAX_USER_IDS } from './users';
+import { getRegistrationOverview, listUsersByIds, MAX_USER_IDS, searchCustomers } from './users';
 
 const apiUser = {
   id: 'user-9',
@@ -85,5 +85,80 @@ describe('listUsersByIds', () => {
       ok: false,
       error: { kind: 'not-allowed', status: 403 },
     });
+  });
+});
+
+describe('searchCustomers', () => {
+  it('keeps the users found, with their names only', async () => {
+    const authFetch = vi.fn<AuthFetch>(async () =>
+      jsonResponse([
+        { type: 'user', id: 'user-1', firstname: 'Jane', lastname: 'Doe', username: 'jane.doe', email: 'never-kept' },
+        { type: 'vehicle', id: 'vehicle-1', plate: 'AB-123-CD' },
+        { type: 'user' },
+      ]),
+    );
+    const result = await searchCustomers(authFetch, 'FLEET-1', ' jane doe ');
+    expect(result).toEqual({
+      ok: true,
+      data: [{ id: 'user-1', firstName: 'Jane', lastName: 'Doe', userName: 'jane.doe' }],
+    });
+    expect(authFetch.mock.calls[0]?.[0]).toBe('search/fleets/FLEET-1/search/jane%20doe');
+  });
+
+  it('removes the spaces of a phone number', async () => {
+    const authFetch = vi.fn<AuthFetch>(async () => jsonResponse([]));
+    await searchCustomers(authFetch, 'FLEET-1', '+33 6 00 00 00 00');
+    expect(authFetch.mock.calls[0]?.[0]).toBe('search/fleets/FLEET-1/search/%2B33600000000');
+  });
+
+  it('reads a 404 as nothing found, and calls nothing for a blank text', async () => {
+    const authFetch = vi.fn<AuthFetch>(async () => new Response('', { status: 404 }));
+    expect(await searchCustomers(authFetch, 'FLEET-1', 'x')).toEqual({ ok: true, data: [] });
+    const unused = vi.fn<AuthFetch>();
+    expect(await searchCustomers(unused, 'FLEET-1', '  ')).toEqual({ ok: true, data: [] });
+    expect(unused).not.toHaveBeenCalled();
+  });
+
+  it('keeps another failure', async () => {
+    const authFetch = vi.fn<AuthFetch>(async () => new Response('', { status: 403 }));
+    const result = await searchCustomers(authFetch, 'FLEET-1', 'x');
+    expect(result.ok ? null : result.error.kind).toBe('not-allowed');
+  });
+});
+
+describe('getRegistrationOverview', () => {
+  it('gives the profiles with their approved services, and the catalogue', async () => {
+    const authFetch = vi.fn<AuthFetch>(async () =>
+      jsonResponse([
+        {
+          userId: 'user-1',
+          catalog: [{ id: 's-1', name: 'Cars', type: 'FREE_FLOATING', fleetId: 'FLEET-1', cityId: 'c-1', zones: [] }],
+          profiles: [
+            { profileId: 'p-1', profileType: 'Single', profileStatus: 'APPROVED', services: { approved: ['s-1'], pending: [] } },
+            { profileId: 'p-2', profileType: 'Business', profileStatus: 'SUSPENDED' },
+          ],
+        },
+      ]),
+    );
+    const result = await getRegistrationOverview(authFetch, 'FLEET-1', 'user-1');
+    expect(authFetch.mock.calls[0]?.[0]).toBe('user/fleets/FLEET-1/serviceRegistrationOverview?userId=user-1');
+    expect(result).toEqual({
+      ok: true,
+      data: {
+        profiles: [
+          { profileId: 'p-1', type: 'Single', status: 'APPROVED', approvedServiceIds: ['s-1'] },
+          { profileId: 'p-2', type: 'Business', status: 'SUSPENDED', approvedServiceIds: [] },
+        ],
+        services: [{ id: 's-1', name: 'Cars', type: 'FREE_FLOATING', fleetId: 'FLEET-1', cityId: 'c-1' }],
+      },
+    });
+  });
+
+  it('gives nothing for an unknown customer, and keeps a failure', async () => {
+    const empty = vi.fn<AuthFetch>(async () => jsonResponse([]));
+    expect(await getRegistrationOverview(empty, 'FLEET-1', 'u')).toEqual({ ok: true, data: { profiles: [], services: [] } });
+    const failed = vi.fn<AuthFetch>(async () => new Response('', { status: 500 }));
+    const result = await getRegistrationOverview(failed, 'FLEET-1', 'u');
+    expect(result.ok ? null : result.error).toEqual({ kind: 'http', status: 500 });
   });
 });

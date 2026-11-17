@@ -1,6 +1,6 @@
 import type { AuthFetch } from '@vulog/bo-widget-sdk';
 import { z } from 'zod';
-import { requestJson, segment, type ApiResult } from './http';
+import { requestJson, requestNoContent, segment, type ApiResult } from './http';
 
 const modelSchema = z.object({
   id: z.number().int(),
@@ -271,3 +271,49 @@ export async function listTripsInProgress(
     ),
   };
 }
+
+/**
+ * Puts a vehicle out of service, with a reason (its sub-status). Refused for a vehicle in use.
+ * `POST fleetmanager/public/fleets/{fleetId}/vehicles/{vehicleId}/disable` (reference: admin-fleet).
+ *
+ * @param authFetch - `useAuthFetch()`.
+ * @param fleetId - The fleet.
+ * @param vehicleId - The vehicle.
+ * @param subStatus - Why it is out of service.
+ * @returns `ok`, or why the call failed.
+ */
+export const disableVehicle = (
+  authFetch: AuthFetch,
+  fleetId: string,
+  vehicleId: string,
+  subStatus: string,
+): Promise<ApiResult<null>> =>
+  requestNoContent(
+    authFetch,
+    `fleetmanager/public/fleets/${segment(fleetId)}/vehicles/${segment(vehicleId)}/disable`,
+    {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ subStatus }),
+    },
+  );
+
+/**
+ * Puts a vehicle back in service.
+ * `POST fleetmanager/public/fleets/{fleetId}/vehicles/{vehicleId}/enable` (reference: admin-fleet).
+ *
+ * @param authFetch - `useAuthFetch()`.
+ * @param fleetId - The fleet.
+ * @param vehicleId - The vehicle.
+ * @returns `ok`, or why the call failed.
+ */
+export const enableVehicle = (
+  authFetch: AuthFetch,
+  fleetId: string,
+  vehicleId: string,
+): Promise<ApiResult<null>> =>
+  requestNoContent(
+    authFetch,
+    `fleetmanager/public/fleets/${segment(fleetId)}/vehicles/${segment(vehicleId)}/enable`,
+    { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{}' },
+  );

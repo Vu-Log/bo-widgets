@@ -65,3 +65,31 @@ export function renderInSection(
     options.api ?? fakeBo().api,
   );
 }
+
+/**
+ * Types a value into an input or a textarea the way React sees it.
+ *
+ * @param element - The field.
+ * @param value - The new value.
+ */
+export function typeInto(element: HTMLInputElement | HTMLTextAreaElement, value: string): void {
+  const prototype = element instanceof HTMLTextAreaElement ? HTMLTextAreaElement.prototype : HTMLInputElement.prototype;
+  Object.getOwnPropertyDescriptor(prototype, 'value')?.set?.call(element, value);
+  element.dispatchEvent(new Event('input', { bubbles: true }));
+}
+
+/** A button of the document by its text or label. */
+export const buttonNamed = (name: string, within: ParentNode = document.body) =>
+  [...within.querySelectorAll<HTMLButtonElement>('button')].find(
+    (button) => button.textContent === name || button.getAttribute('aria-label') === name,
+  );
+
+/** A field of the document by its label. */
+export const fieldLabelled = (label: string): HTMLInputElement | HTMLTextAreaElement | undefined => {
+  const element = [...document.body.querySelectorAll('label')].find((candidate) =>
+    candidate.textContent?.replace(/\s*\*$/, '').trim() === label,
+  );
+  const id = element?.getAttribute('for');
+  const field = id ? document.getElementById(id) : null;
+  return field instanceof HTMLInputElement || field instanceof HTMLTextAreaElement ? field : undefined;
+};

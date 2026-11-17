@@ -6,7 +6,7 @@ The widgets Vulog builds for its back office, with [`@vulog/bo-widget-sdk`](http
 
 | Widget                                        | Stack       | What it does                                                                                                 |
 | --------------------------------------------- | ----------- | ------------------------------------------------------------------------------------------------------------ |
-| [`schedule-a-trip`](widgets/schedule-a-trip/) | React + MUI | The scheduled bookings of a fleet and their prepayment. For now: list, filters and detail, read only. |
+| [`schedule-a-trip`](widgets/schedule-a-trip/) | React + MUI | The scheduled bookings of a fleet and their prepayment. For now: list, detail, create, edit, allocate and pre-allocate. |
 
 ## Start your widget from one of ours
 

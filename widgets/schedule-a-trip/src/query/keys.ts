@@ -74,6 +74,15 @@ export const queryKeys = {
    */
   bookingAddress: (latitude: number, longitude: number, language: string) =>
     ['booking-geocoding', latitude.toFixed(5), longitude.toFixed(5), language] as const,
+  /** Addresses matching a text the operator typed: they may be a customer's, in memory only. */
+  addressSearch: (text: string, language: string) =>
+    ['booking-geocoding', 'search', text.trim().toLowerCase(), language] as const,
+  /** Customers matching a text: personal data, in memory only. */
+  customerSearch: (fleetId: string, text: string) =>
+    ['customers', fleetId, 'search', text.trim().toLowerCase()] as const,
+  /** The profiles of a customer and the services approved for them: in memory only. */
+  registration: (fleetId: string, userId: string) =>
+    ['customers', fleetId, 'registration', userId] as const,
   /** Every booking of a fleet: the prefix of `bookings`, `bookingCount`, `confirmedBookings`, `booking`. */
   fleetBookings: (fleetId: string) => ['bookings', fleetId] as const,
 } satisfies Record<

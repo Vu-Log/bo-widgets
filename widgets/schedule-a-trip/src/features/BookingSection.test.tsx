@@ -9,6 +9,7 @@ import { renderInWidget } from '../test/render';
 import { apiBooking, calledPaths, fleetApi, stubVulogApi } from '../test/vulog-api';
 import { BookingSection } from './BookingSection';
 import type { BookingContext, BookingFeature } from './extensions';
+import type { SectionFeature } from './registry';
 
 let unmount: (() => void) | undefined;
 
@@ -120,7 +121,12 @@ describe('the booking section', () => {
     const drawer = view.drawer()!;
     await vi.waitFor(() => expect(drawer.textContent).toContain('Jane Doe'));
     expect(drawer.textContent).toContain('#booking-1');
-    expect(drawer.querySelectorAll('section[aria-label]').length).toBe(3);
+    expect([...drawer.querySelectorAll('section[aria-label]')].map((card) => card.getAttribute('aria-label'))).toEqual([
+      'Actions',
+      'Trip',
+      'Vehicle',
+      'Customer',
+    ]);
     expect(drawer.querySelector('[data-step="prepaid"]')?.getAttribute('data-state')).toBe('current');
     expect(drawer.querySelector('svg[role="img"]')?.getAttribute('aria-label')).toContain('500 m');
     expect(view.row('booking-1')?.getAttribute('aria-selected')).toBe('true');
@@ -296,11 +302,14 @@ describe('the booking section', () => {
   });
 
   it('plugs a feature in every slot: column, actions, filter, KPI, card and host', async () => {
+    // Allocated bookings: the write feature gives them no primary action.
+    const allocated = upcoming.map((item) => ({ ...item, vehicleId: 'vehicle-1' }));
+    const third = apiBooking({ id: 'booking-3', userId: 'user-3', vehicleId: 'vehicle-1' });
     stubVulogApi(
-      fleetApi({ bookings: { PENDING: [...upcoming, apiBooking({ id: 'booking-3', userId: 'user-3' })] } }, ({ path, query }) =>
+      fleetApi({ bookings: { PENDING: [...allocated, third] } }, ({ path, query }) =>
         path.endsWith('/status/PENDING') && query.get('size') !== '1'
           ? Response.json(
-              query.get('page') === '0' ? upcoming : [apiBooking({ id: 'booking-3', userId: 'user-3' })],
+              query.get('page') === '0' ? allocated : [third],
               { headers: { totalelements: '3', totalpages: '2' } },
             )
           : undefined,
@@ -347,6 +356,7 @@ describe('the booking section', () => {
     await vi.waitFor(() => expect(view.drawer()?.querySelector('[data-test-card]')?.textContent).toBe('card-booking-3'));
     const cards = [...view.drawer()!.querySelectorAll('section[aria-label], [data-test-card]')];
     expect(cards.map((card) => card.getAttribute('aria-label') ?? 'test')).toEqual([
+      'Actions',
       'Trip',
       'test',
       'Vehicle',
@@ -457,5 +467,38 @@ describe('the booking section', () => {
         severity: 'error',
       }),
     );
+  });
+
+  it('adds the bookings a filter finds by itself while it is active', async () => {
+    stubVulogApi(
+      fleetApi({
+        bookings: {
+          CANCELLED: [
+            apiBooking({ id: 'listed', status: 'CANCELLED' }),
+            apiBooking({ id: 'far-away', status: 'CANCELLED', userId: 'user-2' }),
+          ],
+        },
+      }, ({ path, query }) =>
+        // The pages of the tab hold the first booking only.
+        path.endsWith('/status/CANCELLED') && query.get('size') !== '1'
+          ? Response.json([apiBooking({ id: 'listed', status: 'CANCELLED' })], { headers: { totalpages: '1' } })
+          : undefined,
+      ),
+    );
+    const feature: SectionFeature = {
+      id: 'sourced',
+      filters: [{ id: 'pending', label: 'Pending', tabs: ['cancelled'], test: (ctx) => ctx.booking.id === 'far-away', needsAllPages: false }],
+      filterSources: [{ filterId: 'pending', bookingIds: ['far-away'] }],
+    };
+    const view = await render(routedBo().api, [feature]);
+    await vi.waitFor(() => expect(view.tab('Cancelled')).toBeDefined());
+    view.tab('Cancelled')?.click();
+    await vi.waitFor(() => expect(view.row('listed')).not.toBeNull());
+    expect(view.row('far-away')).toBeNull();
+
+    [...view.container.querySelectorAll<HTMLElement>('.MuiChip-root')].find((chip) => chip.textContent === 'Pending')?.click();
+
+    await vi.waitFor(() => expect(view.row('far-away')).not.toBeNull());
+    expect(view.row('listed')).toBeNull();
   });
 });

@@ -20,7 +20,7 @@ import { queryErrorText } from './core/cards';
 import { HIDDEN_CORE_COLUMNS } from './core';
 import { BookingDrawer } from './detail/BookingDrawer';
 import { useDetailRoute } from './detail/use-detail-route';
-import type { BookingContext, BookingFeature, BookingKpi } from './extensions';
+import type { BookingContext, BookingKpi } from './extensions';
 import { KpiBar } from './list/KpiBar';
 import { DENSITIES, isColumnShown, useListPreferences, withColumn } from './list/preferences';
 import { RowActions } from './list/RowActions';
@@ -29,7 +29,8 @@ import { panelId, TabBar, tabId, useTabCounts } from './list/TabBar';
 import { Toolbar } from './list/Toolbar';
 import { useBookingContexts } from './list/use-booking-contexts';
 import { DEFAULT_SORTS, useTabBookings } from './list/use-tab-bookings';
-import { useBookingFeatures } from './registry';
+import { useBookingFeatures, type SectionFeature } from './registry';
+import { useSourceBookings } from './list/use-source-bookings';
 import { SectionProvider, type SectionContextValue } from './section-context';
 import { fleetTimeZone, useSectionSettings } from './section-settings';
 import { usePlateIndex } from './use-plate-index';
@@ -58,7 +59,7 @@ export interface BookingSectionProps {
   /** Shown at the right of the title (the "New booking" button). */
   readonly headerActions?: ReactNode;
   /** Features added after those of the registry; keep the array stable. */
-  readonly extraFeatures?: readonly BookingFeature[];
+  readonly extraFeatures?: readonly SectionFeature[];
 }
 
 /**
@@ -137,7 +138,7 @@ function FleetSection({
     ),
     [sort, tab],
   );
-  const features = useBookingFeatures(
+  const { features, headerActions: featureActions } = useBookingFeatures(
     { t, openDetail: route.open, copyId, sortHeader, now: getNow },
     extraFeatures,
   );
@@ -153,10 +154,28 @@ function FleetSection({
     activeFilters.some((filter) => filter.needsAllPages) || (deferredSearch !== '' && boundedTab);
 
   const tabBookings = useTabBookings(fleetId, tab, sort, loadAll);
+  const activeIds = activeFilters.map((filter) => filter.id).join('\n');
+  const sourceIds = useMemo(
+    () => {
+      const active = new Set(activeIds.split('\n'));
+      return features.flatMap((feature) =>
+        (feature.filterSources ?? []).flatMap((source) =>
+          active.has(source.filterId) ? (source.bookingIds ?? []) : [],
+        ),
+      );
+    },
+    [features, activeIds],
+  );
+  const sourced = useSourceBookings(fleetId, tab, sourceIds);
+  const bookings = useMemo(() => {
+    if (sourced.length === 0) return tabBookings.bookings;
+    const known = new Set(tabBookings.bookings.map((booking) => booking.id));
+    return [...tabBookings.bookings, ...sourced.filter((booking) => !known.has(booking.id))];
+  }, [tabBookings.bookings, sourced]);
   const enrichment = useBookingContexts({
     fleetId,
     tab,
-    bookings: tabBookings.bookings,
+    bookings,
     visibleIds,
     allCustomers: deferredSearch !== '',
   });
@@ -314,6 +333,7 @@ function FleetSection({
           {t('app.title')}
         </Typography>
         {headerActions}
+        {featureActions}
       </Box>
       <KpiBar kpis={kpis} counts={kpiCounts} activeId={activeKpi?.id ?? null} onSelect={selectKpi} />
       <TabBar tab={tab} onChange={setTab} counts={counts} />

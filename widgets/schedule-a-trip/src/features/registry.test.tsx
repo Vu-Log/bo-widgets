@@ -18,11 +18,11 @@ let unmount: (() => void) | undefined;
 afterEach(() => unmount?.());
 
 describe('useBookingFeatures', () => {
-  it('gives the core feature first, then the extra ones, and keeps them while nothing changes', async () => {
+  it('gives the core and write features first, then the extra ones, and keeps them while nothing changes', async () => {
     const extra: BookingFeature[] = [{ id: 'extra' }];
     const seen: (readonly BookingFeature[])[] = [];
     function Probe({ pass }: { pass: number }) {
-      seen.push(useBookingFeatures(deps, extra));
+      seen.push(useBookingFeatures(deps, extra).features);
       return <p>{pass}</p>;
     }
     const view = await renderInWidget(<Probe pass={1} />);
@@ -31,19 +31,19 @@ describe('useBookingFeatures', () => {
     view.rerender(<Probe pass={2} />);
     await vi.waitFor(() => expect(view.container.textContent).toBe('2'));
     await vi.waitFor(() => expect(seen.length).toBeGreaterThanOrEqual(2));
-    expect(seen[0]?.map((feature) => feature.id)).toEqual(['core', 'extra']);
+    expect(seen[0]?.map((feature) => feature.id)).toEqual(['core', 'write', 'extra']);
     expect(seen.at(-1)).toBe(seen[0]);
   });
 
-  it('gives the core feature alone by default', async () => {
+  it('gives the core and write features by default', async () => {
     let ids: string[] = [];
     function Probe() {
-      ids = useBookingFeatures(deps).map((feature) => feature.id);
+      ids = useBookingFeatures(deps).features.map((feature) => feature.id);
       return null;
     }
     const view = await renderInWidget(<Probe />);
     unmount = view.unmount;
-    await vi.waitFor(() => expect(ids).toEqual(['core']));
+    await vi.waitFor(() => expect(ids).toEqual(['core', 'write']));
   });
 });
 

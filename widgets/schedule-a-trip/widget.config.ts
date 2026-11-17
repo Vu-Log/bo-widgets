@@ -256,6 +256,24 @@ export default defineWidgetConfig({
         { id: 'vehicle-3', vehicle_status: 0, location: { latitude: 48.87, longitude: 2.36 }, energyLevel: 55, autonomy: 140, km: 30500 },
       ],
       'GET fleetmanager/public/fleets/FLEET-1/book': [{ id: 'vehicle-1', plate: 'AA-001-AA', orderId: 'trip-1' }],
+      // Writes (type "doe" in the customer search of "New booking").
+      'GET search/fleets/FLEET-1/search/doe': [
+        { type: 'user', id: 'user-1', firstname: 'Jane', lastname: 'Doe', username: 'jane.doe' },
+      ],
+      'GET user/fleets/FLEET-1/serviceRegistrationOverview': [
+        {
+          userId: 'user-1',
+          catalog: [{ id: 'service-1', name: 'Cars', type: 'FREE_FLOATING', fleetId: 'FLEET-1', cityId: 'city-1' }],
+          profiles: [{ profileId: 'profile-1', profileType: 'Single', profileStatus: 'APPROVED', services: { approved: ['service-1'] } }],
+        },
+      ],
+      'GET user/scheduleATrip/fleets/FLEET-1/bookingrequests/users/user-1/active': [],
+      'POST user/scheduleATrip/fleets/FLEET-1/bookingrequests': { id: 'booking-1' },
+      'POST user/scheduleATrip/fleets/FLEET-1/bookingrequests/booking-1': {},
+      'POST user/scheduleATrip/fleets/FLEET-1/bookingrequests/cancel/booking-1': {},
+      'POST user/scheduleATrip/fleets/FLEET-1/bookingrequests/booking-1/allocate/vehicle-2': {},
+      'POST fleetmanager/public/fleets/FLEET-1/vehicles/vehicle-2/disable': {},
+      'POST fleetmanager/public/fleets/FLEET-1/vehicles/vehicle-2/enable': {},
     },
   },
 });

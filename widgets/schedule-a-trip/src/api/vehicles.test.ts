@@ -2,6 +2,8 @@ import type { AuthFetch } from '@vulog/bo-widget-sdk';
 import { describe, expect, it, vi } from 'vitest';
 import { jsonResponse } from '../test/fake-bo';
 import {
+  disableVehicle,
+  enableVehicle,
   listLiveVehicles,
   listModels,
   listTripsInProgress,
@@ -229,5 +231,23 @@ describe('listTripsInProgress', () => {
       ok: false,
       error: { kind: 'http', status: 503 },
     });
+  });
+});
+
+describe('disableVehicle and enableVehicle', () => {
+  it('put a vehicle out of service with a reason, and back', async () => {
+    const authFetch = vi.fn<AuthFetch>(async () => new Response(null, { status: 200 }));
+    expect(await disableVehicle(authFetch, 'FLEET-1', 'vehicle-1', 'Reason')).toEqual({ ok: true, data: null });
+    expect(await enableVehicle(authFetch, 'FLEET-1', 'vehicle-1')).toEqual({ ok: true, data: null });
+    const [disablePath, disableInit] = authFetch.mock.calls[0] ?? [];
+    expect(disablePath).toBe('fleetmanager/public/fleets/FLEET-1/vehicles/vehicle-1/disable');
+    expect(disableInit).toMatchObject({ method: 'POST', body: '{"subStatus":"Reason"}' });
+    expect(authFetch.mock.calls[1]?.[0]).toBe('fleetmanager/public/fleets/FLEET-1/vehicles/vehicle-1/enable');
+  });
+
+  it('report a refusal', async () => {
+    const authFetch = vi.fn<AuthFetch>(async () => new Response('', { status: 404 }));
+    const result = await disableVehicle(authFetch, 'FLEET-1', 'vehicle-1', 'Reason');
+    expect(result.ok ? null : result.error.kind).toBe('not-found');
   });
 });

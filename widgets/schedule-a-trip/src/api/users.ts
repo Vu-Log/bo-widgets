@@ -100,3 +100,149 @@ export async function listUsersByIds(
     })),
   };
 }
+
+/** A customer found by the search of the back office. */
+export interface CustomerMatch {
+  readonly id: string;
+  readonly firstName: string | null;
+  readonly lastName: string | null;
+  readonly userName: string | null;
+}
+
+const searchSchema = z.array(
+  z.looseObject({
+    type: z.string().nullish(),
+    id: z.string().nullish(),
+    firstname: nullableString,
+    lastname: nullableString,
+    username: nullableString,
+  }),
+);
+
+/**
+ * Finds customers by name, user name, email or phone, with the search of the back office.
+ * `GET search/fleets/{fleetId}/search/{text}`: the route the back office calls for its search (not
+ * in the public reference). Spaces are removed from a phone number, as the back office does. A
+ * `404` means nothing was found. Only the users are kept, with their names: never other data.
+ *
+ * @param authFetch - `useAuthFetch()`.
+ * @param fleetId - The fleet.
+ * @param text - What the operator typed; a blank text resolves `[]` without a call.
+ * @param signal - Aborts the call.
+ * @returns The customers found, or why the call failed.
+ */
+export async function searchCustomers(
+  authFetch: AuthFetch,
+  fleetId: string,
+  text: string,
+  signal?: AbortSignal,
+): Promise<ApiResult<readonly CustomerMatch[]>> {
+  const trimmed = text.trim();
+  if (trimmed === '') return { ok: true, data: [] };
+  const query = /^\+?[\d\s]+$/.test(trimmed) ? trimmed.replace(/\s/g, '') : trimmed;
+  const result = await requestJson(
+    authFetch,
+    `search/fleets/${segment(fleetId)}/search/${segment(query)}`,
+    searchSchema,
+    { signal },
+  );
+  if (!result.ok) return result.error.kind === 'not-found' ? { ok: true, data: [] } : result;
+  return {
+    ok: true,
+    data: result.data.body.flatMap((entry) =>
+      entry.type === 'user' && entry.id
+        ? [{ id: entry.id, firstName: entry.firstname, lastName: entry.lastname, userName: entry.username }]
+        : [],
+    ),
+  };
+}
+
+/** A profile of a customer and the services approved for it. */
+export interface RegisteredProfile {
+  readonly profileId: string;
+  /** `Single`, `Business`… */
+  readonly type: string;
+  /** `APPROVED`, `SUSPENDED`, `INACTIVE`, `ARCHIVED`… */
+  readonly status: string;
+  readonly approvedServiceIds: readonly string[];
+}
+
+/** A service of the catalogue of a customer. */
+export interface RegisteredService {
+  readonly id: string;
+  readonly name: string;
+  /** `FREE_FLOATING`, `BOOKING`… */
+  readonly type: string;
+  readonly fleetId: string;
+  readonly cityId: string;
+}
+
+/** The profiles of a customer and the services they can book. */
+export interface RegistrationOverview {
+  readonly profiles: readonly RegisteredProfile[];
+  readonly services: readonly RegisteredService[];
+}
+
+const overviewSchema = z.array(
+  z.object({
+    catalog: z
+      .array(
+        z.object({
+          id: z.string(),
+          name: z.string(),
+          type: z.string(),
+          fleetId: z.string(),
+          cityId: z.string(),
+        }),
+      )
+      .nullish(),
+    profiles: z
+      .array(
+        z.object({
+          profileId: z.string(),
+          profileType: z.string(),
+          profileStatus: z.string(),
+          services: z.object({ approved: z.array(z.string()).nullish() }).nullish(),
+        }),
+      )
+      .nullish(),
+  }),
+);
+
+/**
+ * The profiles of a customer and the services approved for each.
+ * `GET user/fleets/{fleetId}/serviceRegistrationOverview?userId=` (reference: admin-user).
+ *
+ * @param authFetch - `useAuthFetch()`.
+ * @param fleetId - The fleet.
+ * @param userId - The customer.
+ * @param signal - Aborts the call.
+ * @returns The profiles and the services, empty for an unknown customer, or why the call failed.
+ */
+export async function getRegistrationOverview(
+  authFetch: AuthFetch,
+  fleetId: string,
+  userId: string,
+  signal?: AbortSignal,
+): Promise<ApiResult<RegistrationOverview>> {
+  const result = await requestJson(
+    authFetch,
+    `user/fleets/${segment(fleetId)}/serviceRegistrationOverview?${new URLSearchParams({ userId })}`,
+    overviewSchema,
+    { signal },
+  );
+  if (!result.ok) return result;
+  const first = result.data.body[0];
+  return {
+    ok: true,
+    data: {
+      profiles: (first?.profiles ?? []).map((profile) => ({
+        profileId: profile.profileId,
+        type: profile.profileType,
+        status: profile.profileStatus,
+        approvedServiceIds: profile.services?.approved ?? [],
+      })),
+      services: first?.catalog ?? [],
+    },
+  };
+}
