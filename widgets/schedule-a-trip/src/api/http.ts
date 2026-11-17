@@ -1,5 +1,6 @@
 import { BoError, type AuthFetch } from '@vulog/bo-widget-sdk';
 import type { z } from 'zod';
+import { translate, type MessageKey, type MessageParams } from '../i18n';
 
 /**
  * Why a call to the Vulog API failed.
@@ -51,33 +52,46 @@ export class ApiRequestError extends Error {
 }
 
 /**
- * A short message for an operator, in English. A 403 says the action is not allowed, never a
- * generic failure.
+ * The message of a failure for an operator, as a catalogue key and its parameters: translate it
+ * with `useI18n().t`. A 403 says the action is not allowed, never a generic failure.
+ *
+ * @param error - The failure of a call.
+ * @returns The key of `src/locales/*.json` and the values of its placeholders.
+ */
+export function apiErrorText(error: ApiError): { key: MessageKey; params?: MessageParams } {
+  switch (error.kind) {
+    case 'not-allowed':
+      return { key: 'api.error.notAllowed' };
+    case 'session-lost':
+      return { key: 'api.error.sessionLost' };
+    case 'not-found':
+      return { key: 'api.error.notFound' };
+    case 'http':
+      return { key: 'api.error.http', params: { status: error.status } };
+    case 'network':
+      return { key: 'api.error.network' };
+    case 'aborted':
+      return { key: 'api.error.aborted' };
+    case 'invalid-request':
+      return { key: 'api.error.invalidRequest', params: { detail: error.message } };
+    case 'invalid-response':
+      return { key: 'api.error.invalidResponse' };
+    case 'back-office':
+      return { key: 'api.error.backOffice', params: { detail: error.error.message } };
+  }
+}
+
+/**
+ * The message of a failure in English, for logs and `Error.message`. Show {@link apiErrorText}
+ * translated to an operator instead.
  *
  * @param error - The failure of a call.
  * @returns A readable sentence.
  */
 export function apiErrorMessage(error: ApiError): string {
-  switch (error.kind) {
-    case 'not-allowed':
-      return 'You are not allowed to do this: ask an administrator for the right role.';
-    case 'session-lost':
-      return 'Your session has expired: reload the back office and sign in again.';
-    case 'not-found':
-      return 'Not found.';
-    case 'http':
-      return `The Vulog API failed (HTTP ${error.status}).`;
-    case 'network':
-      return 'The Vulog API could not be reached.';
-    case 'aborted':
-      return 'The request was cancelled.';
-    case 'invalid-request':
-      return error.message;
-    case 'invalid-response':
-      return `The Vulog API answered an unexpected response: ${error.message}`;
-    case 'back-office':
-      return error.error.message;
-  }
+  const { key, params } = apiErrorText(error);
+  const message = translate('en', key, params);
+  return error.kind === 'invalid-response' ? `${message} ${error.message}` : message;
 }
 
 /**

@@ -60,6 +60,9 @@ export type WidgetSettings = z.output<typeof settingsSchema>;
 /** A setting that is missing or invalid: its key and why. */
 export interface SettingsIssue {
   readonly key: string;
+  /** `missing` when the setting has no value, `invalid` otherwise. */
+  readonly problem: 'missing' | 'invalid';
+  /** Why, in English (zod), for the logs and a tooltip. */
   readonly message: string;
 }
 
@@ -81,10 +84,18 @@ export function parseSettings(raw: unknown): SettingsResult {
   if (result.success) return { ok: true, settings: result.data };
   return {
     ok: false,
-    issues: result.error.issues.map((issue) => ({
-      key: issue.path.length > 0 ? issue.path.join('.') : '(settings)',
-      message: issue.message,
-    })),
+    issues: result.error.issues.map((issue) => {
+      const field = issue.path[0];
+      const value =
+        typeof raw === 'object' && raw !== null && typeof field === 'string'
+          ? (raw as Record<string, unknown>)[field]
+          : raw;
+      return {
+        key: issue.path.length > 0 ? issue.path.join('.') : '(settings)',
+        problem: value === undefined || value === null ? 'missing' : 'invalid',
+        message: issue.message,
+      };
+    }),
   };
 }
 

@@ -7,9 +7,9 @@ let unmount: (() => void) | undefined;
 afterEach(() => unmount?.());
 
 const issues = [
-  { key: 'ratio', message: 'Too small' },
-  { key: 'mapboxToken', message: 'Required' },
-];
+  { key: 'ratio', problem: 'invalid', message: 'Too small' },
+  { key: 'mapboxToken', problem: 'missing', message: 'Required' },
+] as const;
 
 describe('ConfigurationBanner', () => {
   it('lists the settings to fix', async () => {
@@ -19,20 +19,22 @@ describe('ConfigurationBanner', () => {
       expect(view.container.textContent).toContain('Configuration incomplete'),
     );
     expect(view.container.querySelector('[role="alert"]')).not.toBeNull();
+    expect(view.container.querySelector('li')?.getAttribute('title')).toBe('Too small');
     expect([...view.container.querySelectorAll('li')].map((item) => item.textContent)).toEqual([
-      'ratio: Too small',
-      'mapboxToken: Required',
+      'ratio: invalid value',
+      'mapboxToken: missing',
     ]);
   });
 
   it('speaks the language of the back office', async () => {
     const { api } = fakeBo({
-      getContext: async () => ({ fleetId: 'FLEET-1', locale: 'fr_FR', basename: '/' }),
+      getContext: async () => ({ fleetId: 'FLEET-1', locale: 'de_DE', basename: '/' }),
     });
     const view = await renderInWidget(<ConfigurationBanner issues={issues} />, api);
     unmount = view.unmount;
     await vi.waitFor(() =>
-      expect(view.container.textContent).toContain('Configuration incomplète'),
+      expect(view.container.textContent).toContain('Konfiguration unvollständig'),
     );
+    expect(view.container.textContent).toContain('ungültiger Wert');
   });
 });

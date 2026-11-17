@@ -43,8 +43,18 @@ Before you say a change is done: `npm test` and `npm run build` pass.
 | `query/`                   | TanStack Query: client, persistence, query keys and query options.                                                                            |
 | `ui/`                      | Primitives without business logic: `ListGrid`, `SkeletonCell`, `ConfigurationBanner`, the `IntersectionObserver` hooks.                       |
 | `settings.ts`              | The installation settings, checked with zod.                                                                                                  |
-| `i18n.ts`                  | The texts, in English and French.                                                                                                             |
+| `i18n.ts`, `locales/`      | Translation (`useI18n().t`) and `Intl`/date-fns formatting; one flat JSON catalogue per language.                                             |
 | `test/`                    | Test helpers only: the fake BO (with an in-memory storage), the fake `IntersectionObserver`, `renderInWidget`.                                |
+
+## Languages
+
+The widget speaks 8 languages: English (source and fallback), German, French, Italian, Dutch, Spanish, Portuguese and Hungarian (`LANGUAGES` in `src/i18n.ts`). The language comes from the BO locale (`useBoContext().locale`, followed on `localeChanged`): the full locale, then its language, then English.
+
+- **Every string shown to an operator goes through `useI18n().t('key', { param })`**: never a literal in a component. Error messages too: `apiErrorText(error)` gives the key of an API failure.
+- **A new string is added to the 8 catalogues `src/locales/{en,de,fr,it,nl,es,pt,hu}.json` in the same change**, with a real translation: flat keys (`area.name`), the same keys and the same `{param}` placeholders as `en.json`. `src/i18n.test.tsx` fails otherwise, and the type check refuses a catalogue missing a key.
+- Keep the product name "Schedule a trip" untranslated. Keep UI wording short.
+- Format numbers, amounts and dates with `formatNumber`, `formatCurrency` and `formatDate` of `useI18n()` (`Intl` and the date-fns locale), never by hand.
+- The manifest labels (`menu.label`, each setting `label`) carry the 8 languages too: the test checks it.
 
 ## Data rules
 

@@ -1,5 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import Widget from './main';
+import { CATALOGUES } from './i18n';
 import { fakeBo, VALID_SETTINGS } from './test/fake-bo';
 
 customElements.define('test-widget', Widget);
@@ -100,6 +101,36 @@ describe('Widget', () => {
     emit('localeChanged', { locale: 'fr_FR' });
 
     await vi.waitFor(() => expect(tabs(element)[1]?.textContent).toBe('À venir'));
+  });
+
+  it.each([
+    ['de_DE', 'de'],
+    ['it_IT', 'it'],
+    ['nl_NL', 'nl'],
+    ['es_ES', 'es'],
+    ['pt_BR', 'pt'],
+    ['hu_HU', 'hu'],
+  ] as const)('speaks the language of the BO locale %s', async (locale, language) => {
+    const messages = CATALOGUES[language];
+    const element = mount(
+      fakeBo({
+        getContext: async () => ({ fleetId: 'FLEET-1', locale, basename: '/' }),
+        getSettings: async () => ({ ...VALID_SETTINGS, ratio: 0 }),
+      }).api,
+    );
+
+    await vi.waitFor(() => expect(text(element)).toContain(messages['settings.incomplete.title']));
+    expect(tabs(element).map((tab) => tab.textContent)).toEqual([
+      messages['tabs.alert'],
+      messages['tabs.upcoming'],
+      messages['tabs.ongoing'],
+      messages['tabs.completed'],
+      messages['tabs.cancelled'],
+    ]);
+    expect(element.shadowRoot?.querySelector('[role="tabpanel"]')?.textContent).toBe(
+      messages['tabs.empty.upcoming'],
+    );
+    expect(text(element)).toContain(messages['settings.issue.invalid']);
   });
 
   it('shows an error when the back office state cannot be loaded', async () => {

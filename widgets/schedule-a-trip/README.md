@@ -26,6 +26,12 @@ Filled in by an administrator at installation, in **Configuration > Widgets**, a
 
 Prepayment amount: `round2(whole hours × 60 × dayRate / 1440 × ratio)`, at least `minimumAmount`. The operator can change it before charging; an amount above the computed one or below the minimum is warned about, not refused.
 
+## Languages
+
+English, German, French, Italian, Dutch, Spanish, Portuguese and Hungarian. The widget follows the language of the back office: the full locale (`pt_BR`), then its language (`pt`), then English. Numbers, amounts and dates use the BO locale (`Intl` and date-fns). The menu entry and the settings are labelled in the same 8 languages.
+
+To add a text: add its key to the 8 catalogues `src/locales/{en,de,fr,it,nl,es,pt,hu}.json` (flat keys, `{param}` placeholders, English is the source), then use `useI18n().t('key', { param })`. The tests fail when a catalogue misses a key, has an extra one, or changes a placeholder.
+
 ## Data kept in the back office
 
 One document per booking, in the collection `bookings` of `bo.storage`, under the id of the booking. A server scheduler reads and writes the same documents, each side its own fields (`update` merges the first level). The contract is `src/storage/booking-state.ts` (`schemaVersion: 1`):

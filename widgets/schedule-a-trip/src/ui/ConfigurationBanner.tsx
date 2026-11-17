@@ -1,5 +1,5 @@
 import { Alert, AlertTitle, Box } from '@mui/material';
-import { useMessages } from '../i18n';
+import { useI18n } from '../i18n';
 import type { SettingsIssue } from '../settings';
 
 /**
@@ -10,15 +10,15 @@ import type { SettingsIssue } from '../settings';
  * @returns The banner.
  */
 export function ConfigurationBanner({ issues }: { readonly issues: readonly SettingsIssue[] }) {
-  const t = useMessages();
+  const { t } = useI18n();
   return (
     <Alert severity="warning" sx={{ flex: 'none', borderRadius: 0 }}>
-      <AlertTitle>{t.configurationIncomplete}</AlertTitle>
-      {t.configurationIncompleteDetails}
+      <AlertTitle>{t('settings.incomplete.title')}</AlertTitle>
+      {t('settings.incomplete.details')}
       <Box component="ul" sx={{ m: 0, pl: 3 }}>
         {issues.map((issue) => (
-          <li key={`${issue.key}:${issue.message}`}>
-            <code>{issue.key}</code>: {issue.message}
+          <li key={`${issue.key}:${issue.message}`} title={issue.message}>
+            <code>{issue.key}</code>: {t(`settings.issue.${issue.problem}`)}
           </li>
         ))}
       </Box>

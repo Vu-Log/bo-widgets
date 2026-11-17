@@ -8,6 +8,7 @@ import {
   type ReactElement,
   type ReactNode,
 } from 'react';
+import { useI18n } from '../i18n';
 import { SkeletonCell } from './SkeletonCell';
 import { useEndReached, useVisibleRows, type RegisterRow } from './use-intersection';
 
@@ -37,16 +38,11 @@ export interface ListGridPagination {
   readonly fetchNextPage: () => void;
 }
 
-/** Texts of a {@link ListGrid}, English by default. */
+/** Texts of a {@link ListGrid}: those of the catalogues (`grid.*`) by default. */
 export interface ListGridLabels {
   readonly nextPageError: string;
   readonly retry: string;
 }
-
-const DEFAULT_LABELS: ListGridLabels = {
-  nextPageError: 'The next rows could not be loaded.',
-  retry: 'Retry',
-};
 
 /** Props of {@link ListGrid}. */
 export interface ListGridProps<Row> {
@@ -162,11 +158,13 @@ export function ListGrid<Row>({
   marginRows = DEFAULT_MARGIN_ROWS,
   isLoading = false,
   pagination,
-  labels = DEFAULT_LABELS,
+  labels,
   onVisibleRowsChange,
   empty,
   loadingRows = 3,
 }: ListGridProps<Row>) {
+  const { t } = useI18n();
+  const texts = labels ?? { nextPageError: t('grid.nextPageError'), retry: t('grid.retry') };
   const [root, setRoot] = useState<HTMLDivElement | null>(null);
   const marginPx = marginRows * rowHeight;
   const register = useVisibleRows({ root, marginPx, onChange: onVisibleRowsChange ?? noop });
@@ -250,9 +248,9 @@ export function ListGrid<Row>({
           {failed && !isFetchingNextPage && (
             <TableRow component="div" role="row" sx={rowSx}>
               <TableCell component="div" role="gridcell" sx={errorCellSx}>
-                {labels.nextPageError}{' '}
+                {texts.nextPageError}{' '}
                 <Button size="small" onClick={pagination?.fetchNextPage}>
-                  {labels.retry}
+                  {texts.retry}
                 </Button>
               </TableCell>
             </TableRow>

@@ -106,6 +106,20 @@ describe('parseSettings', () => {
     ).toEqual(['mapboxToken', 'currency', 'timezone']);
   });
 
+  it('says whether each setting is missing or invalid', () => {
+    const result = parseSettings({
+      ...VALID_SETTINGS,
+      ratio: -1,
+      dayRate: null,
+      mapboxToken: undefined,
+    });
+    expect(result.ok ? [] : result.issues.map(({ key, problem }) => ({ key, problem }))).toEqual([
+      { key: 'dayRate', problem: 'missing' },
+      { key: 'ratio', problem: 'invalid' },
+      { key: 'mapboxToken', problem: 'missing' },
+    ]);
+  });
+
   it('refuses a secret Mapbox token', () => {
     expect(issueKeys(parseSettings({ ...VALID_SETTINGS, mapboxToken: 'sk.secret' }))).toEqual([
       'mapboxToken',
