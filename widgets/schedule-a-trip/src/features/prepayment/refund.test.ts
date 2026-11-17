@@ -275,6 +275,32 @@ describe('executeRefund', () => {
     expect(eventTypes()).toContain('refund-confirmed');
   });
 
+  it('records a confirmed refund whose record failed, without refunding again', async () => {
+    await start();
+    setup.aima.failNext('refund', { reject: new TypeError('Failed to fetch') });
+    await executeRefund(setup.deps, await plan(10));
+    setup.setNow(new Date(NOW.getTime() + 11 * 60_000));
+    const resumed = await plan(10);
+    // The decision is written, then the record of the refund fails.
+    const update = setup.bo.storage.api.update;
+    const real = update.getMockImplementation();
+    let writes = 0;
+    update.mockImplementation(async (...args) => {
+      writes += 1;
+      if (writes === 2) throw Object.assign(new Error('quota'), { code: 'quota-exceeded', status: 507 });
+      return real!(...args);
+    });
+    expect(await executeRefund(setup.deps, resumed, { refund: 'refunded' })).toMatchObject({ kind: 'write-failed', step: 'refund' });
+    update.mockImplementation(real!);
+
+    const again = await plan(10);
+    expect(again.refund).toEqual({ kind: 'record-only' });
+    const stale = { ...again, refund: { kind: 'call' as const, amount: 50, currency: 'EUR', pspReference: null } };
+    expect(await executeRefund(setup.deps, stale)).toMatchObject({ kind: 'write-failed', failure: { reason: 'refund-in-progress' } });
+    expect(await executeRefund(setup.deps, again)).toMatchObject({ kind: 'done' });
+    expect(setup.aima.callsTo('POST', '/refund')).toHaveLength(1);
+  });
+
   it('refunds again only when the operator says the lost refund was not done', async () => {
     await start();
     setup.aima.failNext('refund', { status: 502 });

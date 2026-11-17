@@ -484,9 +484,10 @@ export const MONEY_EVENT_TYPES: ReadonlySet<string> = new Set([
 ]);
 
 /**
- * Appends an entry to a journal of at most {@link MAX_EVENTS} entries. When it is full, the oldest
- * entry that is not a {@link MONEY_EVENT_TYPES} one is dropped first; the oldest money entry only
- * when the journal holds nothing else.
+ * Appends an entry to a journal of at most {@link MAX_EVENTS} entries. A {@link MONEY_EVENT_TYPES}
+ * entry is never dropped: when the journal is full, the oldest other entry is dropped; when there
+ * is none, a new entry that is not a money one is dropped itself, and a new money entry is kept
+ * past the limit, so that the write is refused (`invalid-write`) instead of losing a payment step.
  *
  * @param events - The current journal, if any.
  * @param event - The new entry.
@@ -496,12 +497,14 @@ export function withEvent(
   events: readonly BookingEvent[] | undefined,
   event: BookingEvent,
 ): BookingEvent[] {
-  const all = [...(events ?? []), event];
-  while (all.length > MAX_EVENTS) {
+  const all = [...(events ?? [])];
+  while (all.length >= MAX_EVENTS) {
     const droppable = all.findIndex((entry) => !MONEY_EVENT_TYPES.has(entry.type));
-    all.splice(droppable === -1 || droppable === all.length - 1 ? 0 : droppable, 1);
+    if (droppable === -1) break;
+    all.splice(droppable, 1);
   }
-  return all;
+  if (all.length >= MAX_EVENTS && !MONEY_EVENT_TYPES.has(event.type)) return all;
+  return [...all, event];
 }
 
 /** What a new document holds besides the fields always written. */

@@ -561,12 +561,27 @@ describe('withEvent', () => {
     expect(result[1]).toEqual(event(2));
   });
 
-  it('drops the oldest money step only when the journal holds nothing else', () => {
+  it('drops a new note rather than a money step when the journal is full of them', () => {
     const events = Array.from({ length: MAX_EVENTS }, (_, index) => ({ ...event(index), type: 'refunded' }));
-    const result = withEvent(events, event(MAX_EVENTS));
-    expect(result).toHaveLength(MAX_EVENTS);
-    expect(result[0]?.at).toBe(event(1).at);
-    expect(result.at(-1)).toEqual(event(MAX_EVENTS));
+    expect(withEvent(events, event(MAX_EVENTS))).toEqual(events);
+  });
+
+  it('drops an old note for a new money step', () => {
+    const note = event(0);
+    const money = Array.from({ length: MAX_EVENTS - 1 }, (_, index) => ({ ...event(index + 1), type: 'refunded' }));
+    const added = { ...event(MAX_EVENTS), type: 'cancellation-fee-started' };
+    const result = withEvent([note, ...money], added);
+    expect(result).toEqual([...money, added]);
+  });
+
+  it('never drops an unresolved started entry: the write is refused instead', async () => {
+    const started = Array.from({ length: MAX_EVENTS }, (_, index) => ({ ...event(index), type: 'refund-started' }));
+    const result = withEvent(started, { ...event(MAX_EVENTS), type: 'cancellation-fee-started' });
+    expect(result).toHaveLength(MAX_EVENTS + 1);
+    expect(result.slice(0, MAX_EVENTS)).toEqual(started);
+    await seed({ events: started });
+    const written = await updateBookingState(collection, await current(), { events: result });
+    expect(written).toMatchObject({ ok: false, error: { kind: 'invalid-write' } });
   });
 });
 

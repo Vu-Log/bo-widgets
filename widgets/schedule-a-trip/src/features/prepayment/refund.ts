@@ -222,7 +222,10 @@ export async function planRefund(
   const now = deps.now();
 
   let refund: RefundStepPlan = { kind: 'done' };
-  if (progress.refund !== 'done') {
+  if (!progress.refunded && progress.refund === 'done') {
+    // Confirmed by an operator, or refunded, but `refundedAt` not written yet: record it only.
+    refund = { kind: 'record-only' };
+  } else if (!progress.refunded) {
     const invoice = await getInvoice(deps.authFetch, deps.fleetId, value.invoiceId);
     if (!invoice.ok) return fail({ kind: 'api', error: invoice.error });
     const inDoubt = progress.refund === 'in-doubt';
@@ -484,7 +487,7 @@ export async function executeRefund(
       () => [entry(deps, EVENTS.refundStarted, { amount: call.amount })],
       (current) => {
         if (current.value.refundedAt) return refuse('already-refunded');
-        return refundProgress(current.value).refund === 'in-doubt' ? refuse('refund-in-progress') : null;
+        return refundProgress(current.value).refund === 'todo' ? null : refuse('refund-in-progress');
       },
     );
     if (!started.ok) return { kind: 'write-failed', step: 'refund', failure: started.error };
