@@ -16,6 +16,7 @@ import {
 import { WidgetQueryProvider } from './query/WidgetQueryProvider';
 import { bookingsCollection, BOOKINGS_COLLECTION, claimCharge } from './storage/booking-state';
 import App from './App';
+import { dialogShown } from './test/dom';
 import { fakeAima } from './test/fake-aima';
 import { API_BASE_URL, fakeBo, jsonResponse, VALID_SETTINGS } from './test/fake-bo';
 import { apiBooking, fleetApi, stubVulogApi } from './test/vulog-api';
@@ -335,6 +336,7 @@ describe('the widget, from the list to the regularization', () => {
     await showRow(root, 'booking-1');
     await vi.waitFor(() => expect(buttonIn(row()!, 'Prepay')?.disabled).toBe(false));
     buttonIn(row()!, 'Prepay')?.click();
+    await dialogShown();
     await vi.waitFor(() => expect(dialogButton('Prepay')?.disabled).toBe(false));
     dialogButton('Prepay')?.click();
     await vi.waitFor(() => expect(buttonIn(document.body, 'Charge €50.00')).toBeDefined());
@@ -356,6 +358,7 @@ describe('the widget, from the list to the regularization', () => {
     // Paid: the pre-allocation is the primary action now.
     await vi.waitFor(() => expect(buttonIn(row()!, 'Pre-allocate a vehicle')).toBeDefined());
     buttonIn(row()!, 'Pre-allocate a vehicle')?.click();
+    await dialogShown();
     await vi.waitFor(() => expect(dialogButton('Pre-allocate')).toBeDefined());
     dialogButton('Pre-allocate')?.click();
     await vi.waitFor(() => expect(row()?.textContent).toContain('AA-001-AA'));
@@ -380,6 +383,7 @@ describe('the widget, from the list to the regularization', () => {
     await showRow(root, 'booking-1');
     await vi.waitFor(() => expect(buttonIn(row()!, 'Refund')).toBeDefined());
     buttonIn(row()!, 'Refund')?.click();
+    await dialogShown();
     await vi.waitFor(() => expect(document.body.textContent).toContain('Fees not covered by the credits left: €10.00'));
     dialogButton('Refund')?.click();
     await vi.waitFor(() => expect(buttonIn(document.body, 'Confirm the refund')).toBeDefined());
@@ -395,6 +399,7 @@ describe('the widget, from the list to the regularization', () => {
 
     await vi.waitFor(() => expect(buttonIn(row()!, 'Mark as regularized')).toBeDefined());
     buttonIn(row()!, 'Mark as regularized')?.click();
+    await dialogShown();
     await vi.waitFor(() => expect(dialogButton('Mark as regularized')).toBeDefined());
     dialogButton('Mark as regularized')?.click();
     await vi.waitFor(() => expect(document.body.textContent).toContain('Marked as regularized.'));

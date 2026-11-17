@@ -24,8 +24,8 @@ import { useI18n } from '../../i18n';
 import { queryKeys } from '../../query/keys';
 import { liveVehiclesQueryOptions, vehicleCatalogQueryOptions } from '../../query/queries';
 import { SkeletonCell } from '../../ui/SkeletonCell';
-import { StaticMap } from '../../ui/StaticMap';
-import { queryErrorText } from '../core/cards';
+import { MapView } from '../../ui/map/MapView';
+import { queryErrorText } from '../core/common';
 import { Plate } from '../core/cells';
 import type { BookingContext } from '../extensions';
 import { useSection } from '../section-context';
@@ -224,7 +224,7 @@ export function VehiclePickerDialog({
         </Alert>
       ) : (
         <Box sx={{ display: 'grid', gridTemplateColumns: { xs: '1fr', md: '1fr 1fr' }, gap: 2, minHeight: 360 }}>
-          <StaticMap
+          <MapView
             token={mapboxToken}
             center={center}
             radiusMeters={radius}
@@ -238,6 +238,7 @@ export function VehiclePickerDialog({
               label: vehicle.plate ?? vehicle.id,
             }))}
             onMarkerClick={setHovered}
+            onMarkerHover={setHovered}
           />
           <Box sx={{ display: 'grid', gap: 1, alignContent: 'start' }}>
             <ToggleButtonGroup

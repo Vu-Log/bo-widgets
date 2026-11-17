@@ -1,5 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import {
+  boundsOf,
+  circleRing,
   fitZoom,
   fromViewPixel,
   MAX_ZOOM,
@@ -9,6 +11,7 @@ import {
   toViewPixel,
   worldPixel,
 } from './geo';
+import { haversineMeters } from './vehicles-in-range';
 
 const center = { latitude: 48.8566, longitude: 2.3522 };
 
@@ -86,5 +89,41 @@ describe('fitZoom', () => {
     expect(fitZoom({ center, radiusMeters: -5, points: [], width: 400, height: 220 })).toBe(
       MAX_ZOOM,
     );
+  });
+});
+
+describe('circleRing', () => {
+  it('puts every point at the radius from the center, and closes the ring', () => {
+    const ring = circleRing(center, 500, 16);
+    expect(ring).toHaveLength(17);
+    expect(ring[16]).toEqual(ring[0]);
+    for (const [longitude, latitude] of ring) {
+      expect(haversineMeters(center, { latitude, longitude })).toBeCloseTo(500, 0);
+    }
+  });
+
+  it('collapses to the center for a radius of 0', () => {
+    for (const [longitude, latitude] of circleRing(center, 0, 4)) {
+      expect(longitude).toBeCloseTo(center.longitude, 9);
+      expect(latitude).toBeCloseTo(center.latitude, 9);
+    }
+  });
+
+  it('refuses a negative or infinite radius, and fewer than 3 steps', () => {
+    expect(() => circleRing(center, -1)).toThrow(RangeError);
+    expect(() => circleRing(center, Number.NaN)).toThrow(RangeError);
+    expect(() => circleRing(center, Number.POSITIVE_INFINITY)).toThrow(RangeError);
+    expect(() => circleRing(center, 100, 2)).toThrow(RangeError);
+  });
+});
+
+describe('boundsOf', () => {
+  it('gives the west-south and east-north corners', () => {
+    expect(boundsOf([[2, 48], [2.5, 48.9], [1.9, 48.5]])).toEqual([[1.9, 48], [2.5, 48.9]]);
+    expect(boundsOf([[2, 48]])).toEqual([[2, 48], [2, 48]]);
+  });
+
+  it('is null without position', () => {
+    expect(boundsOf([])).toBeNull();
   });
 });

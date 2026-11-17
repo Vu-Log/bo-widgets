@@ -15,10 +15,11 @@ import type { ListTab } from '../domain/statuses';
 import { useI18n } from '../i18n';
 import { queryKeys, type BookingListSort } from '../query/keys';
 import { describeError } from '../query/WidgetQueryProvider';
+import { whenIdle } from '../ui/lazy';
 import { ListGrid, type ListGridColumn } from '../ui/ListGrid';
-import { queryErrorText } from './core/cards';
+import { queryErrorText } from './core/common';
 import { HIDDEN_CORE_COLUMNS } from './core';
-import { BookingDrawer } from './detail/BookingDrawer';
+import { BookingDrawer, preloadDetail } from './detail/BookingDrawer';
 import { useDetailRoute } from './detail/use-detail-route';
 import type { BookingContext, BookingKpi } from './extensions';
 import { KpiBar } from './list/KpiBar';
@@ -29,6 +30,7 @@ import { panelId, TabBar, tabId, useTabCounts } from './list/TabBar';
 import { Toolbar } from './list/Toolbar';
 import { useBookingContexts } from './list/use-booking-contexts';
 import { DEFAULT_SORTS, useTabBookings } from './list/use-tab-bookings';
+import { preloadPrepaymentDialogs } from './prepayment';
 import { useBookingFeatures, type SectionFeature } from './registry';
 import { useSourceBookings } from './list/use-source-bookings';
 import { SectionProvider, type SectionContextValue } from './section-context';
@@ -141,6 +143,20 @@ function FleetSection({
   const { features, headerActions: featureActions } = useBookingFeatures(
     { t, openDetail: route.open, copyId, sortHeader, now: getNow },
     extraFeatures,
+  );
+
+  // The chunks an operator is likely to need: the drawer as soon as a row is hovered or focused,
+  // the drawer and the prepayment dialogs when the browser is idle after the first render.
+  const featuresRef = useRef(features);
+  featuresRef.current = features;
+  const preloadDrawer = useCallback(() => void preloadDetail(featuresRef.current), []);
+  useEffect(
+    () =>
+      whenIdle(() => {
+        void preloadDetail(featuresRef.current);
+        void preloadPrepaymentDialogs();
+      }),
+    [],
   );
 
   const tabFilters = useMemo(
@@ -451,6 +467,8 @@ function FleetSection({
         role="tabpanel"
         id={panelId(tab)}
         aria-labelledby={tabId(tab)}
+        onPointerOver={preloadDrawer}
+        onFocus={preloadDrawer}
         sx={{ flex: 1, minHeight: 0, display: 'flex', flexDirection: 'column' }}
       >
         {tabBookings.error ? (

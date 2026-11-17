@@ -187,7 +187,7 @@ export function StaticMap({
           color="text.secondary"
           sx={{ position: 'absolute', left: 8, bottom: 4 }}
         >
-          {token === null ? t('map.noToken') : t('map.unavailable')}
+          {token === null ? t('map.tokenNeeded') : t('map.unavailable')}
         </Typography>
       )}
       <Box sx={{ position: 'absolute', right: 4, top: 4, display: 'grid', gap: 0.5 }}>

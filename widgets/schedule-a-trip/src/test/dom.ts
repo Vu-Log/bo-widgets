@@ -29,8 +29,9 @@ export function field(): HTMLInputElement | HTMLTextAreaElement {
   return element;
 }
 
-/** Waits until a dialog is rendered. */
+/** Waits until a dialog is rendered, its chunk loaded (no skeleton of a lazy part left). */
 export const dialogShown = (): Promise<void> =>
   vi.waitFor(() => {
     if (!document.body.querySelector('[role="dialog"]')) throw new Error('No dialog yet');
+    if (document.body.querySelector('[data-lazy-fallback]')) throw new Error('A lazy part is still loading');
   });

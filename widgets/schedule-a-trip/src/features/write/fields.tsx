@@ -6,7 +6,7 @@ import { unwrap } from '../../api/http';
 import { isValidRadius, MAX_RADIUS, toPickup, toZonedInput, fromZonedInput } from '../../domain/booking-dates';
 import { useI18n } from '../../i18n';
 import { queryKeys } from '../../query/keys';
-import { StaticMap } from '../../ui/StaticMap';
+import { MapView } from '../../ui/map/MapView';
 import { useSection } from '../section-context';
 
 /** The dates of a booking being edited. */
@@ -166,7 +166,7 @@ export function PickupFields({
         />
       </Box>
       {proximity && (
-        <StaticMap
+        <MapView
           token={mapboxToken}
           center={proximity}
           radiusMeters={isValidRadius(value.radius) ? value.radius : null}

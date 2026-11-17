@@ -28,7 +28,7 @@
   "api.error.invalidRequest": "The request was not sent: {detail}",
   "api.error.invalidResponse": "The Vulog API sent an unexpected answer.",
   "api.error.backOffice": "The back office refused the request: {detail}",
-  "map.noToken": "No map: the Mapbox token is missing from the settings.",
+  "map.tokenNeeded": "The map needs a valid Mapbox public token restricted to this back office. Set it in Configuration > Widgets.",
   "map.unavailable": "The map image could not be loaded.",
   "map.zoomIn": "Zoom in",
   "map.zoomOut": "Zoom out",
@@ -413,5 +413,7 @@
   "write.preallocateNeedsPayment": "Pre-allocation needs a paid prepayment, or a business booking.",
   "list.sourceError": "The bookings of this filter could not be found: the list may be incomplete.",
   "prepayment.refund.refundUnrecorded": "The refund of {amount} was made, but it could not be recorded. Never refund this booking again: resume the refund to record it.",
-  "prepayment.charge.idUnknownUnrecorded": "The Vulog API accepted the invoice without giving its id, and this could not be recorded. Never charge nor unlock this booking: find the invoice in billing and attach it."
+  "prepayment.charge.idUnknownUnrecorded": "The Vulog API accepted the invoice without giving its id, and this could not be recorded. Never charge nor unlock this booking: find the invoice in billing and attach it.",
+  "i18n.loadFailed": "The texts in your language could not be loaded: the widget is shown in English.",
+  "lazy.loadFailed": "This part of the widget could not be loaded. Check the connection and retry."
 }

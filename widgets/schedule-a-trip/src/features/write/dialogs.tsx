@@ -16,7 +16,7 @@ import { deallocateVehicle, updateBookingRequest, type BookingRequestChanges } f
 import { datesProblems } from '../../domain/booking-dates';
 import { useI18n } from '../../i18n';
 import { modelsQueryOptions } from '../../query/queries';
-import { queryErrorText } from '../core/cards';
+import { queryErrorText } from '../core/common';
 import type { BookingContext } from '../extensions';
 import { useSection } from '../section-context';
 import { cancel, removePreallocation, type OperationResult } from './operations';

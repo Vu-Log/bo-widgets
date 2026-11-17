@@ -120,3 +120,63 @@ export function fitZoom(input: {
   }
   return MIN_ZOOM;
 }
+
+const EARTH_RADIUS_METERS = 6_371_008.8;
+const toRadians = (degrees: number): number => (degrees * Math.PI) / 180;
+const toDegrees = (radians: number): number => (radians * 180) / Math.PI;
+
+/**
+ * A circle on the ground as a closed ring of points (great-circle destinations), to draw a radius
+ * on a map library.
+ *
+ * @param center - The center.
+ * @param radiusMeters - The radius in meters.
+ * @param steps - The number of distinct points of the ring, 64 by default.
+ * @returns `steps + 1` positions `[longitude, latitude]`, the last one equal to the first.
+ * @throws {RangeError} When the radius is negative or not finite, or `steps` is below 3.
+ */
+export function circleRing(center: GeoPoint, radiusMeters: number, steps = 64): [number, number][] {
+  if (!Number.isFinite(radiusMeters) || radiusMeters < 0) {
+    throw new RangeError(`Invalid radius: ${radiusMeters}`);
+  }
+  if (!Number.isInteger(steps) || steps < 3) throw new RangeError(`Invalid number of steps: ${steps}`);
+  const angular = radiusMeters / EARTH_RADIUS_METERS;
+  const latitude = toRadians(center.latitude);
+  const longitude = toRadians(center.longitude);
+  const ring: [number, number][] = [];
+  for (let step = 0; step < steps; step++) {
+    const bearing = (2 * Math.PI * step) / steps;
+    const lat = Math.asin(
+      Math.sin(latitude) * Math.cos(angular) +
+        Math.cos(latitude) * Math.sin(angular) * Math.cos(bearing),
+    );
+    const lon =
+      longitude +
+      Math.atan2(
+        Math.sin(bearing) * Math.sin(angular) * Math.cos(latitude),
+        Math.cos(angular) - Math.sin(latitude) * Math.sin(lat),
+      );
+    ring.push([toDegrees(lon), toDegrees(lat)]);
+  }
+  const first = ring[0] ?? [center.longitude, center.latitude];
+  ring.push([first[0], first[1]]);
+  return ring;
+}
+
+/**
+ * The bounding box of positions.
+ *
+ * @param positions - Positions `[longitude, latitude]`.
+ * @returns `[[west, south], [east, north]]`, `null` without position.
+ */
+export function boundsOf(
+  positions: readonly (readonly [number, number])[],
+): [[number, number], [number, number]] | null {
+  if (positions.length === 0) return null;
+  const longitudes = positions.map(([lon]) => lon);
+  const latitudes = positions.map(([, lat]) => lat);
+  return [
+    [Math.min(...longitudes), Math.min(...latitudes)],
+    [Math.max(...longitudes), Math.max(...latitudes)],
+  ];
+}

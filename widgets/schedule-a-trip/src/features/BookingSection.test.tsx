@@ -8,8 +8,20 @@ import { activeObservers, installFakeIntersectionObserver } from '../test/inters
 import { renderInWidget } from '../test/render';
 import { apiBooking, calledPaths, fleetApi, stubVulogApi } from '../test/vulog-api';
 import { BookingSection } from './BookingSection';
+import { preloadDetail } from './detail/BookingDrawer';
+import { preloadPrepaymentDialogs } from './prepayment';
 import type { BookingContext, BookingFeature } from './extensions';
 import type { SectionFeature } from './registry';
+
+// The real preloads, observed: the section asks for the chunks of the drawer and the dialogs.
+vi.mock('./detail/BookingDrawer', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('./detail/BookingDrawer')>();
+  return { ...actual, preloadDetail: vi.fn(actual.preloadDetail) };
+});
+vi.mock('./prepayment', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('./prepayment')>();
+  return { ...actual, preloadPrepaymentDialogs: vi.fn(actual.preloadPrepaymentDialogs) };
+});
 
 let unmount: (() => void) | undefined;
 
@@ -74,6 +86,31 @@ const upcoming = [
 ];
 
 describe('the booking section', () => {
+  it('preloads the drawer on a row hovered or focused, and the likely chunks when idle', async () => {
+    let idle: (() => void) | undefined;
+    vi.stubGlobal('requestIdleCallback', (task: () => void) => {
+      idle = task;
+      return 1;
+    });
+    vi.stubGlobal('cancelIdleCallback', vi.fn());
+    vi.mocked(preloadDetail).mockClear();
+    vi.mocked(preloadPrepaymentDialogs).mockClear();
+    stubVulogApi(fleetApi({ bookings: { PENDING: upcoming } }));
+    const view = await render(routedBo().api);
+    await vi.waitFor(() => expect(view.row('booking-1')).not.toBeNull());
+    expect(preloadDetail).not.toHaveBeenCalled();
+
+    view.row('booking-1')?.dispatchEvent(new PointerEvent('pointerover', { bubbles: true }));
+    expect(preloadDetail).toHaveBeenCalledTimes(1);
+    view.row('booking-1')?.dispatchEvent(new FocusEvent('focusin', { bubbles: true }));
+    expect(preloadDetail).toHaveBeenCalledTimes(2);
+    expect(vi.mocked(preloadDetail).mock.calls[0]?.[0].map((feature) => feature.id)).toEqual(['core', 'prepayment', 'write']);
+
+    idle?.();
+    expect(preloadDetail).toHaveBeenCalledTimes(3);
+    expect(preloadPrepaymentDialogs).toHaveBeenCalledTimes(1);
+  });
+
   it('lists a tab, enriches the visible rows only, and shows the pre-allocation kept in storage', async () => {
     const fetch = stubVulogApi(
       fleetApi({

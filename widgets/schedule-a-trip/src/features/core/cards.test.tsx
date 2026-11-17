@@ -4,7 +4,8 @@ import { createI18n } from '../../i18n';
 import { fakeBo, jsonResponse } from '../../test/fake-bo';
 import { booking, context, renderInSection, stateDoc } from '../../test/section';
 import { stubVulogApi } from '../../test/vulog-api';
-import { CustomerCard, queryErrorText, TripCard, VehicleCard } from './cards';
+import { CustomerCard, TripCard, VehicleCard } from './cards';
+import { queryErrorText } from './common';
 
 let unmount: (() => void) | undefined;
 afterEach(() => {

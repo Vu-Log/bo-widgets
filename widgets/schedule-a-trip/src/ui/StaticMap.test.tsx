@@ -33,6 +33,8 @@ describe('StaticMap', () => {
     const image = view.container.querySelector('img');
     expect(image?.getAttribute('src')).toMatch(/^https:\/\/api\.mapbox\.com\/styles\/v1\/mapbox\/streets-v12\/static\//);
     expect(image?.getAttribute('src')).toContain('access_token=pk.test');
+    // The image keeps the Mapbox logo and the attribution that the Static Images API draws.
+    expect(image?.getAttribute('src')).not.toMatch(/(attribution|logo)=false/);
     expect(view.container.querySelector('svg')?.getAttribute('aria-label')).toBe('Pickup point');
     expect(Number(view.container.querySelector('[data-radius]')?.getAttribute('r'))).toBeGreaterThan(0);
     expect(view.container.querySelector('[data-marker="v2"]')?.getAttribute('r')).toBe('8');
@@ -43,7 +45,7 @@ describe('StaticMap', () => {
     const view = await render(<StaticMap token={null} center={center} radiusMeters={null} label="Map" />);
     expect(view.container.querySelector('img')).toBeNull();
     expect(view.container.querySelector('[data-radius]')).toBeNull();
-    expect(view.container.textContent).toContain('the Mapbox token is missing');
+    expect(view.container.textContent).toContain('The map needs a valid Mapbox public token restricted to this back office.');
   });
 
   it('says when the image cannot load', async () => {

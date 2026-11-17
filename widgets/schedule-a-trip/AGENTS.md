@@ -28,8 +28,10 @@ Before you say a change is done: `npm test` and `npm run build` pass.
 - Do not set `container` on MUI portals and do not use `cssVariables` in the theme: its `:root` variables do not apply in a shadow root. Customize the theme with the `customizeTheme` option of `toCustomElement`.
 - The BO registers the class under a tag it chooses: never call `customElements.define`, never register other elements globally, never assume the tag name.
 - Fill the content zone: `:host` at 100 %, a column root, only the main area scrolls (`flex: 1; min-height: 0; overflow: auto`). Never use `100vh` or `100vw`.
-- Keep every style in the shadow root: nothing in `document.head`.
+- Keep every style in the shadow root: nothing in `document.head`, no CSS file in the bundle. A library CSS is imported with `?inline` and added to the shadow root once (as `injectMapboxCss` does).
+- Heavy or rarely used UI is lazy: a drawer, a dialog, a wizard, a map, a language. Load it with `lazyModule` / `lazyComponent` (`src/ui/lazy.tsx`, a literal `import()`, declared at module scope) under a `LazyBoundary` (or `LazyDialogBoundary` for a dialog): a skeleton while it loads, an error with Retry (and Close for a dialog) when its chunk fails, logged with `bo.log.error`. Never import it statically from the shell too, or it stays in `shell` (the build says `INEFFECTIVE_DYNAMIC_IMPORT`). Preload what an operator is likely to open next (`preload`, `whenIdle`). Check the chunks of `dist/assets/` after `npm run build`.
 - A request needing a permission (`apiInfo`, `accessToken`, `navigate`, `notify`, `storage`, `sharedStorage`) needs it in `permissions` of `widget.config.ts`.
+- Mapbox GL JS (`mapbox-gl`) is imported only by `src/ui/map/MapboxMap.tsx`, in the lazy map chunk. Never hide the Mapbox logo or the attribution, on the interactive map or the static image (Mapbox terms). The token is the installer's public token (`pk.…`) from the settings, never one in the code.
 - The bundle is public: no secret, no API key, no token in the code or in `widget.config.ts`. `.env.local` holds the developer's values and is never committed.
 - Errors the BO cannot see (anything after the element is inserted) are shown by the widget itself, with a loading and an error state.
 
@@ -42,10 +44,10 @@ Before you say a change is done: `npm test` and `npm run build` pass.
 | `storage/booking-state.ts` | The contract of the `bookings` collection of `bo.storage`, shared with a server scheduler.                                                    |
 | `query/`                   | TanStack Query: client, persistence, query keys and query options.                                                                            |
 | `features/`                | The booking section: `BookingSection`, the list (`list/`), the drawer (`detail/`), the `core`, `prepayment` and `write` features, `registry.tsx`, `extensions.ts`. |
-| `ui/`                      | Primitives without business logic: `ListGrid`, `SkeletonCell`, `StaticMap`, `ConfigurationBanner`, the `IntersectionObserver` hooks.          |
+| `ui/`                      | Primitives without business logic: `ListGrid`, `SkeletonCell`, `StaticMap`, `ConfigurationBanner`, the `IntersectionObserver` hooks, the lazy loading (`lazy.tsx`, `LazyBoundary.tsx`) and the map (`map/`: `MapView`, the lazy `MapboxMap` of Mapbox GL JS, its fallback to `StaticMap`). |
 | `settings.ts`              | The installation settings, checked with zod.                                                                                                  |
 | `features/prepayment/`     | The prepayment feature: charge with its claim, verification, retry, refund, regularization, internal notes, journal.                     |
-| `i18n.ts`, `locales/`      | Translation (`useI18n().t`) and `Intl`/date-fns formatting; one flat JSON catalogue per language.                                             |
+| `i18n.ts`, `locales/`      | Translation (`useI18n().t`) and `Intl`/date-fns formatting; one flat JSON catalogue per language, and its pack `locales/<language>.ts` (catalogue and date-fns locale), a chunk loaded on demand (English is bundled). |
 | `test/`                    | Test helpers only: the fake BO (in-memory storage), the fake `IntersectionObserver`, `renderInWidget`, the fake Vulog API, `renderInSection`, the fake billing API (`fake-aima.ts`), a minimal host of a feature (`feature-host.tsx`). |
 
 ## Languages
@@ -53,7 +55,8 @@ Before you say a change is done: `npm test` and `npm run build` pass.
 The widget speaks 8 languages: English (source and fallback), German, French, Italian, Dutch, Spanish, Portuguese and Hungarian (`LANGUAGES` in `src/i18n.ts`). The language comes from the BO locale (`useBoContext().locale`, followed on `localeChanged`): the full locale, then its language, then English.
 
 - **Every string shown to an operator goes through `useI18n().t('key', { param })`**: never a literal in a component. Error messages too: `apiErrorText(error)` gives the key of an API failure.
-- **A new string is added to the 8 catalogues `src/locales/{en,de,fr,it,nl,es,pt,hu}.json` in the same change**, with a real translation: flat keys (`area.name`), the same keys and the same `{param}` placeholders as `en.json`. `src/i18n.test.tsx` fails otherwise, and the type check refuses a catalogue missing a key.
+- **A new string is added to the 8 catalogues `src/locales/{en,de,fr,it,nl,es,pt,hu}.json` in the same change**, with a real translation: flat keys (`area.name`), the same keys and the same `{param}` placeholders as `en.json`. `src/i18n.test.tsx` fails otherwise, and the type check refuses a catalogue missing a key (`satisfies Catalogue` in `src/locales/<language>.ts`).
+- Only English is in the main bundle: the other packs are loaded by `loadLanguage` (`LANGUAGE_LOADERS`, one literal `import()` per language, so one chunk per language), and `useI18n()` speaks English until the pack arrives. A test that expects another language awaits `loadLanguage(language)` first (or waits with `vi.waitFor`); `createI18n` and `translate` use the packs loaded so far.
 - Keep the product name "Schedule a trip" untranslated. Keep UI wording short.
 - Format numbers, amounts and dates with `formatNumber`, `formatCurrency` and `formatDate` of `useI18n()` (`Intl` and the date-fns locale), never by hand.
 - The manifest labels (`menu.label`, each setting `label`) carry the 8 languages too: the test checks it.

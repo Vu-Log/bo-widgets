@@ -2,7 +2,7 @@ import { Box, Button, Stack, Typography } from '@mui/material';
 import type { ReactNode } from 'react';
 import type { MessageKey } from '../../i18n';
 import type { BookingEvent } from '../../storage/booking-state';
-import { DetailCardFrame } from '../core/cards';
+import { DetailCardFrame } from '../core/common';
 import type { BookingContext } from '../extensions';
 import { CreditsCell, PrepaymentStatusCell, RegularizationCell } from './cells';
 import { EVENTS, isArchived } from './rules';

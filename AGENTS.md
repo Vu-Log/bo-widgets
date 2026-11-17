@@ -29,3 +29,4 @@ Before you say a change is done: `npm test`, `npm run typecheck` and `npm run bu
 - Add a widget with `npm create @vulog/bo-widget@latest <id>` in `widgets/`, then remove its `.github` and `.gitlab-ci.yml`, and list it in `README.md`.
 - Major versions of the dependencies (React, MUI, Vite, Vitest, TypeScript…) follow the templates of the SDK (`npm create @vulog/bo-widget`): Dependabot ignores them, and they are aligned by hand when the SDK moves.
 - Raise the `version` of a widget in its `package.json` before publishing it: the BO only accepts a greater version.
+- Keep `index.js` small: heavy or rarely used UI (drawers, dialogs, wizards, maps, the languages other than English) is loaded on demand with `import()`, with a loading state and a Retry when its chunk fails. Never write CSS to `document.head`: every style stays in the shadow root of the widget.

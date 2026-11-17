@@ -13,3 +13,4 @@ export {
   type PrepaymentFeatureOptions,
   type Translate,
 } from './feature';
+export { preloadPrepaymentDialogs } from './Host';

@@ -3,13 +3,25 @@ import type { ReactNode } from 'react';
 import { storedDataStatus } from '../../domain/archive';
 import { preallocationPrepayment } from '../../domain/preallocation';
 import type { MessageKey, MessageParams } from '../../i18n';
-import { DetailCardFrame } from '../core/cards';
+import { DetailCardFrame } from '../core/common';
 import { isActionDisabled, WithDisabledReason } from '../list/ActionReason';
 import type { BookingAction, BookingContext, BookingFeature } from '../extensions';
-import { CreateBookingDialog } from './CreateBooking';
-import { ConfirmDialog, EditModelDialog, EditTripDialog } from './dialogs';
+import { lazyComponent, lazyModule } from '../../ui/lazy';
+import { LazyDialogBoundary } from '../../ui/LazyBoundary';
 import { useOpenDialog, type DialogStore, type WriteDialog } from './store';
-import { VehiclePickerDialog } from './VehiclePicker';
+
+// The dialogs of the writes are loaded on first use: the wizard, the edit and confirm dialogs, and
+// the vehicle picker (with the map), one chunk each.
+const CreateBookingDialog = lazyComponent('create-booking', () =>
+  import('./CreateBooking').then((module) => module.CreateBookingDialog),
+);
+const editDialogs = lazyModule('write-dialogs', () => import('./dialogs'));
+const EditTripDialog = editDialogs.component((module) => module.EditTripDialog);
+const EditModelDialog = editDialogs.component((module) => module.EditModelDialog);
+const ConfirmDialog = editDialogs.component((module) => module.ConfirmDialog);
+const VehiclePickerDialog = lazyComponent('vehicle-picker', () =>
+  import('./VehiclePicker').then((module) => module.VehiclePickerDialog),
+);
 
 /** What the write feature needs from the section. */
 export interface WriteFeatureDeps {
@@ -154,21 +166,33 @@ function ActionsCard({ ctx, actions, title }: { readonly ctx: BookingContext; re
 export function WriteHost({ store }: { readonly store: DialogStore }) {
   const dialog = useOpenDialog(store);
   if (dialog === null) return null;
-  const close = store.close;
+  return (
+    <LazyDialogBoundary key={dialogKey(dialog)} onClose={store.close}>
+      <OpenDialog dialog={dialog} onClose={store.close} />
+    </LazyDialogBoundary>
+  );
+}
+
+/** A new dialog starts with a fresh boundary: the failure of another one is not kept. */
+const dialogKey = (dialog: WriteDialog): string =>
+  dialog.kind === 'create' ? 'create' : `${dialog.kind}:${dialog.ctx.booking.id}`;
+
+/** The dialog of a request. */
+function OpenDialog({ dialog, onClose }: { readonly dialog: WriteDialog; readonly onClose: () => void }) {
   switch (dialog.kind) {
     case 'create':
-      return <CreateBookingDialog onClose={close} />;
+      return <CreateBookingDialog onClose={onClose} />;
     case 'edit-trip':
-      return <EditTripDialog ctx={dialog.ctx} onClose={close} />;
+      return <EditTripDialog ctx={dialog.ctx} onClose={onClose} />;
     case 'edit-model':
-      return <EditModelDialog ctx={dialog.ctx} onClose={close} />;
+      return <EditModelDialog ctx={dialog.ctx} onClose={onClose} />;
     case 'allocate':
     case 'preallocate':
-      return <VehiclePickerDialog mode={dialog.kind} ctx={dialog.ctx} onClose={close} />;
+      return <VehiclePickerDialog mode={dialog.kind} ctx={dialog.ctx} onClose={onClose} />;
     case 'cancel':
     case 'deallocate':
     case 'remove-preallocation':
-      return <ConfirmDialog kind={dialog.kind} ctx={dialog.ctx} onClose={close} />;
+      return <ConfirmDialog kind={dialog.kind} ctx={dialog.ctx} onClose={onClose} />;
   }
 }
 

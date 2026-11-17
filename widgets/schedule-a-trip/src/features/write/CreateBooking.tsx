@@ -25,7 +25,7 @@ import { customerName } from '../../domain/customers';
 import { useI18n } from '../../i18n';
 import { queryKeys } from '../../query/keys';
 import { modelsQueryOptions, vehicleCatalogQueryOptions } from '../../query/queries';
-import { queryErrorText } from '../core/cards';
+import { queryErrorText } from '../core/common';
 import { useSection } from '../section-context';
 import { WriteDialogFrame } from './dialogs';
 import { DateFields, isPickupComplete, PickupFields, type DatesValue, type PickupValue } from './fields';

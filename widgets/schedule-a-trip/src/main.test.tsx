@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import Widget from './main';
-import { CATALOGUES } from './i18n';
+import { loadLanguage } from './i18n';
 import { fakeBo, jsonResponse, VALID_SETTINGS } from './test/fake-bo';
 import { installFakeIntersectionObserver } from './test/intersection-observer';
 
@@ -127,7 +127,7 @@ describe('Widget', () => {
     ['pt_BR', 'pt'],
     ['hu_HU', 'hu'],
   ] as const)('speaks the language of the BO locale %s', async (locale, language) => {
-    const messages = CATALOGUES[language];
+    const { messages } = await loadLanguage(language);
     const element = mount(
       fakeBo({
         getContext: async () => ({ fleetId: 'FLEET-1', locale, basename: '/' }),

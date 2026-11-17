@@ -27,7 +27,9 @@ const clampSize = (value: number): number =>
 
 /**
  * The URL of a Mapbox static image (Static Images API), at twice the density for sharp screens.
- * The widget draws the markers and the radius over it.
+ * The widget draws the markers and the radius over it. The image keeps the Mapbox logo and the
+ * attribution (© Mapbox, © OpenStreetMap) the API draws by default: the terms of Mapbox require
+ * them, never turn them off.
  *
  * @param request - Token, center, zoom, size in px and theme.
  * @returns The image URL.

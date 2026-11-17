@@ -3,7 +3,7 @@ import { fakeBo } from '../../test/fake-bo';
 import { booking, context, renderInSection } from '../../test/section';
 import { fleetApi, stubVulogApi } from '../../test/vulog-api';
 import type { BookingFeature } from '../extensions';
-import { BookingDrawer, type BookingDrawerProps } from './BookingDrawer';
+import { BookingDrawer, preloadDetail, type BookingDrawerProps } from './BookingDrawer';
 
 let unmount: (() => void) | undefined;
 afterEach(() => {
@@ -119,5 +119,20 @@ describe('BookingDrawer', () => {
     await vi.waitFor(() => expect(document.body.textContent).toContain('could not be read'));
     [...document.body.querySelectorAll('button')].find((b) => b.textContent === 'Retry')?.click();
     await vi.waitFor(() => expect(document.body.textContent).not.toContain('could not be read'));
+  });
+});
+
+describe('BookingDrawer, lazy', () => {
+  it('preloads the drawer and the cards of the features that have a chunk', async () => {
+    const preload = vi.fn(() => Promise.resolve());
+    const other = vi.fn(() => Promise.resolve());
+    await expect(
+      preloadDetail([
+        { id: 'a', detailCards: [{ id: 'one', order: 1, render: () => null, preload }] },
+        { id: 'b', detailCards: [{ id: 'two', order: 2, render: () => null }, { id: 'three', order: 3, render: () => null, preload: other }] },
+      ]),
+    ).resolves.toBeUndefined();
+    expect(preload).toHaveBeenCalledTimes(1);
+    expect(other).toHaveBeenCalledTimes(1);
   });
 });

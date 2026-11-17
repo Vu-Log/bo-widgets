@@ -28,7 +28,7 @@
   "api.error.invalidRequest": "A kérés nem lett elküldve: {detail}",
   "api.error.invalidResponse": "A Vulog API váratlan választ küldött.",
   "api.error.backOffice": "A back office elutasította a kérést: {detail}",
-  "map.noToken": "Nincs térkép: a Mapbox-token hiányzik a beállításokból.",
+  "map.tokenNeeded": "A térképhez érvényes, erre a back office-ra korlátozott nyilvános Mapbox-token szükséges. Állítsa be a Konfiguráció > Widgetek menüpontban.",
   "map.unavailable": "A térképkép nem tölthető be.",
   "map.zoomIn": "Nagyítás",
   "map.zoomOut": "Kicsinyítés",
@@ -413,5 +413,7 @@
   "write.preallocateNeedsPayment": "Az előzetes hozzárendeléshez kifizetett előleg vagy céges foglalás szükséges.",
   "list.sourceError": "A szűrő foglalásai nem találhatók: a lista hiányos lehet.",
   "prepayment.refund.refundUnrecorded": "A(z) {amount} visszatérítése megtörtént, de nem sikerült rögzíteni. Ezt a foglalást soha ne térítse vissza újra: folytassa a visszatérítést a rögzítéshez.",
-  "prepayment.charge.idUnknownUnrecorded": "A Vulog API az azonosító megadása nélkül fogadta el a számlát, és ezt nem sikerült rögzíteni. Ezt a foglalást soha ne terhelje és ne oldja fel: keresse meg a számlát a számlázásban, és csatolja."
+  "prepayment.charge.idUnknownUnrecorded": "A Vulog API az azonosító megadása nélkül fogadta el a számlát, és ezt nem sikerült rögzíteni. Ezt a foglalást soha ne terhelje és ne oldja fel: keresse meg a számlát a számlázásban, és csatolja.",
+  "i18n.loadFailed": "Az Ön nyelvén nem sikerült betölteni a szövegeket: a widget angolul jelenik meg.",
+  "lazy.loadFailed": "A widget ezen része nem tölthető be. Ellenőrizze a kapcsolatot, és próbálja újra."
 }

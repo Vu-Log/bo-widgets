@@ -28,7 +28,7 @@
   "api.error.invalidRequest": "Die Anfrage wurde nicht gesendet: {detail}",
   "api.error.invalidResponse": "Die Vulog-API hat eine unerwartete Antwort gesendet.",
   "api.error.backOffice": "Das Backoffice hat die Anfrage abgelehnt: {detail}",
-  "map.noToken": "Keine Karte: Das Mapbox-Token fehlt in den Einstellungen.",
+  "map.tokenNeeded": "Die Karte benötigt einen gültigen öffentlichen Mapbox-Token, der auf dieses Back-Office beschränkt ist. Legen Sie ihn unter Konfiguration > Widgets fest.",
   "map.unavailable": "Das Kartenbild konnte nicht geladen werden.",
   "map.zoomIn": "Vergrößern",
   "map.zoomOut": "Verkleinern",
@@ -413,5 +413,7 @@
   "write.preallocateNeedsPayment": "Eine Vorabzuweisung erfordert eine bezahlte Vorauszahlung oder eine Geschäftsbuchung.",
   "list.sourceError": "Die Buchungen dieses Filters konnten nicht gefunden werden: Die Liste ist möglicherweise unvollständig.",
   "prepayment.refund.refundUnrecorded": "Die Erstattung von {amount} wurde ausgeführt, konnte aber nicht gespeichert werden. Diese Buchung nie erneut erstatten: Setzen Sie die Erstattung fort, um sie zu speichern.",
-  "prepayment.charge.idUnknownUnrecorded": "Die Vulog-API hat die Rechnung ohne ihre ID angenommen, und dies konnte nicht gespeichert werden. Diese Buchung nie belasten oder entsperren: Suchen Sie die Rechnung in der Abrechnung und verknüpfen Sie sie."
+  "prepayment.charge.idUnknownUnrecorded": "Die Vulog-API hat die Rechnung ohne ihre ID angenommen, und dies konnte nicht gespeichert werden. Diese Buchung nie belasten oder entsperren: Suchen Sie die Rechnung in der Abrechnung und verknüpfen Sie sie.",
+  "i18n.loadFailed": "Die Texte in Ihrer Sprache konnten nicht geladen werden: Das Widget wird auf Englisch angezeigt.",
+  "lazy.loadFailed": "Dieser Teil des Widgets konnte nicht geladen werden. Prüfen Sie die Verbindung und versuchen Sie es erneut."
 }

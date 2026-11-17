@@ -28,7 +28,7 @@
   "api.error.invalidRequest": "Het verzoek is niet verzonden: {detail}",
   "api.error.invalidResponse": "De Vulog-API gaf een onverwacht antwoord.",
   "api.error.backOffice": "De backoffice heeft het verzoek geweigerd: {detail}",
-  "map.noToken": "Geen kaart: het Mapbox-token ontbreekt in de instellingen.",
+  "map.tokenNeeded": "De kaart heeft een geldig openbaar Mapbox-token nodig dat beperkt is tot deze back-office. Stel het in via Configuratie > Widgets.",
   "map.unavailable": "De kaartafbeelding kon niet worden geladen.",
   "map.zoomIn": "Inzoomen",
   "map.zoomOut": "Uitzoomen",
@@ -413,5 +413,7 @@
   "write.preallocateNeedsPayment": "Voor een voortoewijzing is een betaalde vooruitbetaling of een zakelijke boeking nodig.",
   "list.sourceError": "De boekingen van dit filter konden niet worden gevonden: de lijst is mogelijk onvolledig.",
   "prepayment.refund.refundUnrecorded": "De terugbetaling van {amount} is gedaan, maar kon niet worden vastgelegd. Betaal deze boeking nooit opnieuw terug: hervat de terugbetaling om ze vast te leggen.",
-  "prepayment.charge.idUnknownUnrecorded": "De Vulog-API heeft de factuur aanvaard zonder het id te geven, en dit kon niet worden vastgelegd. Belast of ontgrendel deze boeking nooit: zoek de factuur in de facturatie en koppel ze."
+  "prepayment.charge.idUnknownUnrecorded": "De Vulog-API heeft de factuur aanvaard zonder het id te geven, en dit kon niet worden vastgelegd. Belast of ontgrendel deze boeking nooit: zoek de factuur in de facturatie en koppel ze.",
+  "i18n.loadFailed": "De teksten in uw taal konden niet worden geladen: de widget wordt in het Engels getoond.",
+  "lazy.loadFailed": "Dit deel van de widget kon niet worden geladen. Controleer de verbinding en probeer het opnieuw."
 }

@@ -4,8 +4,15 @@ import type { ListTab } from '../../domain/statuses';
 import type { MessageKey, MessageParams } from '../../i18n';
 import type { ListGridColumn } from '../../ui/ListGrid';
 import type { BookingContext, BookingFeature } from '../extensions';
-import { CustomerCard, TripCard, VehicleCard } from './cards';
+import { lazyModule } from '../../ui/lazy';
 import { CustomerCell, DateCell, ModelCell, VehicleCell } from './cells';
+
+// The cards of the drawer: one chunk, loaded with the drawer (`DetailCard.preload`).
+const cards = lazyModule('core-cards', () => import('./cards'));
+const TripCard = cards.component((module) => module.TripCard);
+const VehicleCard = cards.component((module) => module.VehicleCard);
+const CustomerCard = cards.component((module) => module.CustomerCard);
+const preloadCards = cards.preload;
 
 /** What the core feature needs from the section. */
 export interface CoreFeatureDeps {
@@ -161,9 +168,9 @@ export function createCoreFeature(deps: CoreFeatureDeps): BookingFeature {
       },
     ],
     detailCards: [
-      { id: 'trip', order: 10, render: (ctx) => <TripCard ctx={ctx} /> },
-      { id: 'vehicle', order: 20, render: (ctx) => <VehicleCard ctx={ctx} /> },
-      { id: 'customer', order: 30, render: (ctx) => <CustomerCard ctx={ctx} /> },
+      { id: 'trip', order: 10, render: (ctx) => <TripCard ctx={ctx} />, preload: preloadCards },
+      { id: 'vehicle', order: 20, render: (ctx) => <VehicleCard ctx={ctx} />, preload: preloadCards },
+      { id: 'customer', order: 30, render: (ctx) => <CustomerCard ctx={ctx} />, preload: preloadCards },
     ],
   };
 }

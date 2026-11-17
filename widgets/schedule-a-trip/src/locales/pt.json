@@ -28,7 +28,7 @@
   "api.error.invalidRequest": "O pedido não foi enviado: {detail}",
   "api.error.invalidResponse": "A API da Vulog enviou uma resposta inesperada.",
   "api.error.backOffice": "O back office recusou o pedido: {detail}",
-  "map.noToken": "Sem mapa: o token do Mapbox não está nas configurações.",
+  "map.tokenNeeded": "O mapa precisa de um token público do Mapbox válido, restrito a este back office. Defina-o em Configuração > Widgets.",
   "map.unavailable": "Não foi possível carregar a imagem do mapa.",
   "map.zoomIn": "Aproximar",
   "map.zoomOut": "Afastar",
@@ -413,5 +413,7 @@
   "write.preallocateNeedsPayment": "A pré-atribuição requer um pré-pagamento pago ou uma reserva empresarial.",
   "list.sourceError": "Não foi possível encontrar as reservas deste filtro: a lista pode estar incompleta.",
   "prepayment.refund.refundUnrecorded": "O reembolso de {amount} foi feito, mas não pôde ser registado. Nunca reembolse esta reserva novamente: retome o reembolso para o registar.",
-  "prepayment.charge.idUnknownUnrecorded": "A API Vulog aceitou a fatura sem indicar o id, e isso não pôde ser registado. Nunca cobre nem desbloqueie esta reserva: encontre a fatura na faturação e associe-a."
+  "prepayment.charge.idUnknownUnrecorded": "A API Vulog aceitou a fatura sem indicar o id, e isso não pôde ser registado. Nunca cobre nem desbloqueie esta reserva: encontre a fatura na faturação e associe-a.",
+  "i18n.loadFailed": "Não foi possível carregar os textos no seu idioma: o widget é mostrado em inglês.",
+  "lazy.loadFailed": "Não foi possível carregar esta parte do widget. Verifique a ligação e tente novamente."
 }

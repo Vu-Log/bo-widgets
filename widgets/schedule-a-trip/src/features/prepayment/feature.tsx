@@ -11,6 +11,7 @@ import {
   StorageRequestError,
   type BookingStateCollection,
 } from '../../storage/booking-state';
+import { lazyModule } from '../../ui/lazy';
 import type { ListGridColumn } from '../../ui/ListGrid';
 import type {
   BookingAction,
@@ -19,7 +20,6 @@ import type {
   BookingFilter,
   BookingKpi,
 } from '../extensions';
-import { InternalNotesCard, JournalCard, PaymentCard } from './cards';
 import {
   AmountCell,
   CreditsCell,
@@ -39,6 +39,13 @@ import {
   type UnavailableReason,
 } from './rules';
 import { createDialogStore, prepaymentDialogs, type DialogStore } from './store';
+
+// The cards of the drawer: one chunk, loaded with the drawer (`DetailCard.preload`).
+const cards = lazyModule('prepayment-cards', () => import('./cards'));
+const PaymentCard = cards.component((module) => module.PaymentCard);
+const InternalNotesCard = cards.component((module) => module.InternalNotesCard);
+const JournalCard = cards.component((module) => module.JournalCard);
+const preloadCards = cards.preload;
 
 /** Translates a key of the catalogues. */
 export type Translate = (key: MessageKey, params?: MessageParams) => string;
@@ -265,9 +272,19 @@ export function createPrepaymentFeature(options: PrepaymentFeatureOptions): Book
     kpis,
     // After the cards of the booking section (Actions 5, Trip 10, Vehicle 20, Customer 30).
     detailCards: [
-      { id: 'prepayment.payment', order: 40, render: (ctx) => <PaymentCard ctx={ctx} dialogs={dialogs} /> },
-      { id: 'prepayment.notes', order: 50, render: (ctx) => <InternalNotesCard ctx={ctx} dialogs={dialogs} /> },
-      { id: 'prepayment.journal', order: 90, render: (ctx) => <JournalCard ctx={ctx} /> },
+      {
+        id: 'prepayment.payment',
+        order: 40,
+        render: (ctx) => <PaymentCard ctx={ctx} dialogs={dialogs} />,
+        preload: preloadCards,
+      },
+      {
+        id: 'prepayment.notes',
+        order: 50,
+        render: (ctx) => <InternalNotesCard ctx={ctx} dialogs={dialogs} />,
+        preload: preloadCards,
+      },
+      { id: 'prepayment.journal', order: 90, render: (ctx) => <JournalCard ctx={ctx} />, preload: preloadCards },
     ],
     Host,
   };
