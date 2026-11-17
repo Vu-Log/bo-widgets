@@ -33,6 +33,8 @@ type Thenable<T> = Promise<T> & {
   status?: 'fulfilled' | 'rejected';
   value?: T;
   reason?: unknown;
+  /** A component rendered with it: its failure is shown, never forgotten by a preload. */
+  rendered?: boolean;
 };
 
 /** The code of a lazy module, and the components it gives. */
@@ -89,14 +91,19 @@ export function lazyModule<M>(chunk: string, load: () => Promise<M>): LazyModule
     const promise = start();
     return promise.then(
       () => undefined,
-      // Forgotten at once: the render loads it again, and shows the failure if it fails again.
-      () => forget(promise),
+      // Forgotten at once when no component waits for it: the next render loads it again. A load a
+      // component waits for is kept, so that its failure reaches the boundary (logged, Retry).
+      () => {
+        if (!promise.rendered) forget(promise);
+      },
     );
   };
   const component = <P extends object>(pick: (module: M) => ComponentType<P>): LazyComponent<P> => {
     function Lazy(props: P) {
       // Always through `use()`: React refuses a component that suspended once and skips it later.
-      const Component = pick(use<M>(start() as Promise<M>));
+      const promise = start();
+      promise.rendered = true;
+      const Component = pick(use<M>(promise as Promise<M>));
       return <Component {...props} />;
     }
     Lazy.displayName = `Lazy(${chunk})`;

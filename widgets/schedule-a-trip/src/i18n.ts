@@ -51,7 +51,7 @@ export const LANGUAGE_LOADERS: Readonly<
   hu: () => import('./locales/hu.ts'),
 };
 
-/** Where the pack of a language stands. `idle`: never asked for, or its load was abandoned. */
+/** Where the pack of a language stands. `idle`: never asked for. */
 export type LanguageStatus = 'idle' | 'loading' | 'loaded' | 'failed';
 
 /** The pack of a language could not be loaded (network, CDN): the widget stays in English. */
@@ -132,6 +132,7 @@ export function loadLanguage(language: Language): Promise<LanguagePack> {
       throw error;
     },
   );
+  failures.delete(language);
   loading.set(language, promise);
   notify();
   return promise;

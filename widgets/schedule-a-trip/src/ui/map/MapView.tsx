@@ -6,6 +6,7 @@ import { LazyBoundary } from '../LazyBoundary';
 import { StaticMap, type MapMarker, type StaticMapProps } from '../StaticMap';
 import type { MapFailure } from './failure';
 import { hasWebGl } from './webgl';
+import { describeError } from '../../query/WidgetQueryProvider';
 
 /** Props of {@link MapView}: those of the static view, and the hover of a vehicle. */
 export interface MapViewProps extends StaticMapProps {
@@ -61,9 +62,10 @@ export function MapView(props: MapViewProps) {
     } else if (failure.kind === 'token') {
       bo.log.error('Mapbox refused the token of the settings', { status: failure.status });
     } else {
-      bo.log.error('The interactive map could not be loaded: the static map is shown', {
-        message: failure.error instanceof Error ? failure.error.message : String(failure.error),
-      });
+      bo.log.error(
+        'The interactive map could not be loaded: the static map is shown',
+        describeError(failure.error),
+      );
     }
   }, [bo, failure]);
 

@@ -71,6 +71,16 @@ describe('BookingDrawer', () => {
     expect(onClose).toHaveBeenCalled();
   });
 
+  it('leaves the arrows a control already handled (the map pans with them)', async () => {
+    const onPrevious = vi.fn();
+    const onNext = vi.fn();
+    const { drawer } = await render({ onPrevious, onNext });
+    const handled = new KeyboardEvent('keydown', { key: 'ArrowDown', bubbles: true, cancelable: true });
+    handled.preventDefault();
+    drawer()?.dispatchEvent(handled);
+    expect(onNext).not.toHaveBeenCalled();
+  });
+
   it('marks the data of an old booking without document as archived, read only', async () => {
     const { drawer, button } = await render(
       { fromList: context({ booking: booking({ startDate: '2024-01-01T10:00:00Z', plannedReturnDate: null }) }) },
@@ -123,6 +133,27 @@ describe('BookingDrawer', () => {
 });
 
 describe('BookingDrawer, lazy', () => {
+  it('never rejects, even when the preload of a feature throws or rejects', async () => {
+    await expect(
+      preloadDetail([
+        {
+          id: 'broken',
+          detailCards: [
+            { id: 'rejects', order: 1, render: () => null, preload: () => Promise.reject(new Error('offline')) },
+            {
+              id: 'throws',
+              order: 2,
+              render: () => null,
+              preload: () => {
+                throw new Error('bug');
+              },
+            },
+          ],
+        },
+      ]),
+    ).resolves.toBeUndefined();
+  });
+
   it('preloads the drawer and the cards of the features that have a chunk', async () => {
     const preload = vi.fn(() => Promise.resolve());
     const other = vi.fn(() => Promise.resolve());

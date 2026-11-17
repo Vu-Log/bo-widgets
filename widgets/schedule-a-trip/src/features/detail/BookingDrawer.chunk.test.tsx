@@ -18,7 +18,7 @@ afterEach(() => unmount?.());
 const features: BookingFeature[] = [{ id: 'f' }];
 
 describe('BookingDrawer, when its chunk cannot be loaded', () => {
-  it('shows a skeleton while its chunk loads, then an error with Retry and Close when it fails', async () => {
+  it('shows an error with Retry and Close when its chunk fails, and loads it on Retry', async () => {
     control.fail = true;
     stubVulogApi(fleetApi({}));
     const onClose = vi.fn();
@@ -42,5 +42,4 @@ describe('BookingDrawer, when its chunk cannot be loaded', () => {
     await vi.waitFor(() => expect(document.body.textContent).toContain('Jane Doe'));
     expect(document.body.textContent).not.toContain('could not be loaded');
   });
-
 });

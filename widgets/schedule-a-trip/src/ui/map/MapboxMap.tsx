@@ -5,6 +5,8 @@ import mapboxgl from 'mapbox-gl';
 import mapboxCss from 'mapbox-gl/dist/mapbox-gl.css?inline';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { boundsOf, circleRing } from '../../domain/geo';
+import { useI18n } from '../../i18n';
+import { describeError } from '../../query/WidgetQueryProvider';
 import type { GeoPoint } from '../../domain/vehicles-in-range';
 import type { MapMarker } from '../StaticMap';
 import type { MapFailure } from './failure';
@@ -74,7 +76,7 @@ const vehicleData = (markers: readonly MapMarker[]): GeoJSON.FeatureCollection<G
 const radiusData = (center: GeoPoint, radiusMeters: number | null): GeoJSON.FeatureCollection => ({
   type: 'FeatureCollection',
   features:
-    radiusMeters === null || radiusMeters <= 0
+    radiusMeters === null || !Number.isFinite(radiusMeters) || radiusMeters <= 0
       ? []
       : [
           {
@@ -104,6 +106,9 @@ export default function MapboxMap(props: MapboxMapProps) {
   const { token, center, radiusMeters, markers, label, height } = props;
   const theme = useTheme();
   const bo = useBoClient();
+  const { t } = useI18n();
+  const zoomIn = t('map.zoomIn');
+  const zoomOut = t('map.zoomOut');
   const dark = theme.palette.mode === 'dark';
   const containerRef = useRef<HTMLDivElement>(null);
   const mapRef = useRef<mapboxgl.Map | null>(null);
@@ -131,6 +136,7 @@ export default function MapboxMap(props: MapboxMapProps) {
         zoom: 13,
         attributionControl: true,
         logoPosition: 'bottom-left',
+        locale: { 'NavigationControl.ZoomIn': zoomIn, 'NavigationControl.ZoomOut': zoomOut },
       });
     } catch (error) {
       latest.current.onFailure({ kind: 'load', error });
@@ -138,7 +144,8 @@ export default function MapboxMap(props: MapboxMapProps) {
     }
     mapRef.current = map;
     let loaded = false;
-    let warned = false;
+    // Once per kind of error (HTTP status or error name) after the map showed: logged, never fatal.
+    const warned = new Set<string>();
     map.addControl(new mapboxgl.NavigationControl({ showCompass: false }), 'top-right');
     map.on('error', (event) => {
       const status = statusOf(event.error);
@@ -146,17 +153,29 @@ export default function MapboxMap(props: MapboxMapProps) {
         latest.current.onFailure({ kind: 'token', status });
       } else if (!loaded) {
         latest.current.onFailure({ kind: 'load', error: event.error });
-      } else if (!warned) {
-        // A tile or an image that failed after the map showed: the map stays, logged once.
-        warned = true;
-        bo.log.warn('The map could not load a resource', {
-          status,
-          message: event.error instanceof Error ? event.error.message : String(event.error),
-        });
+      } else {
+        // A tile, an image or a source that failed after the map showed: the map stays.
+        const error = describeError(event.error);
+        const kind = status === null ? error.name : String(status);
+        if (warned.has(kind)) return;
+        warned.add(kind);
+        bo.log.warn('The interactive map reported an error', { status, ...error });
       }
     });
+    // The browser took the WebGL context back (too many, a GPU reset): the map would stay blank.
+    map.on('webglcontextlost', () =>
+      latest.current.onFailure({ kind: 'load', error: new Error('The WebGL context of the map was lost') }),
+    );
     map.on('load', () => {
       loaded = true;
+      try {
+        addLayers();
+        setReady(true);
+      } catch (error) {
+        latest.current.onFailure({ kind: 'load', error });
+      }
+    });
+    const addLayers = () => {
       map.addSource(RADIUS_SOURCE, { type: 'geojson', data: radiusData(latest.current.center, latest.current.radiusMeters) });
       map.addLayer({
         id: `${RADIUS_SOURCE}-fill`,
@@ -204,8 +223,7 @@ export default function MapboxMap(props: MapboxMapProps) {
           'circle-stroke-width': 2,
         },
       });
-      setReady(true);
-    });
+    };
     map.on('click', VEHICLE_LAYER, (event) => {
       const id = event.features?.[0]?.properties?.id;
       if (typeof id === 'string') latest.current.onMarkerClick?.(id);
@@ -226,7 +244,10 @@ export default function MapboxMap(props: MapboxMapProps) {
       if (typeof clusterId !== 'number' || !source || feature?.geometry.type !== 'Point') return;
       const [longitude = 0, latitude = 0] = feature.geometry.coordinates;
       source.getClusterExpansionZoom(clusterId, (error, zoom) => {
-        if (error || typeof zoom !== 'number') return;
+        if (error || typeof zoom !== 'number') {
+          bo.log.warn('The map could not expand a cluster', describeError(error));
+          return;
+        }
         map.easeTo({ center: [longitude, latitude], zoom });
       });
     });
@@ -257,8 +278,8 @@ export default function MapboxMap(props: MapboxMapProps) {
       pinRef.current = null;
       setReady(false);
     };
-    // The map is built again for a new token or theme only; the rest follows in the effects below.
-  }, [token, dark, bo, primary, ok, muted, outline]);
+    // The map is built again for a new token, theme or language only; the rest follows below.
+  }, [token, dark, bo, primary, ok, muted, outline, zoomIn, zoomOut]);
 
   // The pickup point and its radius.
   useEffect(() => {

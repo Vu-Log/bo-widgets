@@ -23,8 +23,9 @@ export interface BookingAction { id: string; label: string; run: (ctx: BookingCo
 export interface BookingFilter { id: string; label: string; tabs: ListTab[]; test: (ctx: BookingContext) => boolean; needsAllPages: boolean }
 export interface BookingKpi { id: string; label: string; tab: ListTab; filterId: string; tone: 'warn' | 'err' | 'info' }
 /**
- * A card of the drawer. A card whose code is lazy (`lazyComponent`) gives its `preload`, so that the
- * drawer loads it ahead of time with its own chunk.
+ * A card of the drawer. A card whose code is lazy (`lazyModule`) gives its `preload`, so that the
+ * drawer loads it ahead of time with its own chunk: `LazyModule.preload`, which never rejects (the
+ * render shows the failure). The drawer ignores a preload that rejects anyway.
  */
 export interface DetailCard { id: string; order: number; render: (ctx: BookingContext) => ReactNode; preload?: () => Promise<void> }
 /** A feature plugs columns, actions, filters, KPIs and detail cards into the list and the drawer. */

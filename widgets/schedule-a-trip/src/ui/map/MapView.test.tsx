@@ -25,6 +25,10 @@ const fake = vi.hoisted(() => {
     readonly remove = vi.fn();
     readonly queryRenderedFeatures = vi.fn((): unknown[] => []);
     constructor(readonly options: Record<string, unknown>) {
+      if (state.failNext) {
+        state.failNext = false;
+        throw new Error('Failed to initialize WebGL');
+      }
       state.maps.push(this);
     }
     on(event: string, layerOrHandler: string | Handler, handler?: Handler) {
@@ -74,7 +78,7 @@ const fake = vi.hoisted(() => {
     }
   }
   class NavigationControl {}
-  const state = { maps: [] as FakeMap[], markers: [] as FakeMarker[], FakeMap, FakeMarker, NavigationControl };
+  const state = { failNext: false, maps: [] as FakeMap[], markers: [] as FakeMarker[], FakeMap, FakeMarker, NavigationControl };
   return state;
 });
 
@@ -195,6 +199,66 @@ describe('MapView', () => {
     const { map, pin } = await renderLoaded();
     expect(pin.options.draggable).toBe(false);
     map.emit('click', { point: { x: 1, y: 2 }, lngLat: { lat: 48.9, lng: 2.4 } });
+    expect(pin.position).toEqual([center.longitude, center.latitude]);
+  });
+
+  it('moves the pin and the radius with the props, and fits the view again', async () => {
+    const { map, pin, rerender } = await renderLoaded();
+    const fits = map.fitBounds.mock.calls.length;
+    rerender(<MapView token="pk.test" center={{ latitude: 48.9, longitude: 2.4 }} radiusMeters={null} label="Pickup point" />);
+    await vi.waitFor(() => expect(pin.position).toEqual([2.4, 48.9]));
+    expect(map.sources.get('pickup-radius')?.setData).toHaveBeenLastCalledWith({ type: 'FeatureCollection', features: [] });
+    expect(map.fitBounds.mock.calls.length).toBeGreaterThan(fits);
+  });
+
+  it('labels the zoom buttons of the map in the language of the back office', async () => {
+    const { map } = await renderLoaded();
+    expect(map.options.locale).toEqual({ 'NavigationControl.ZoomIn': 'Zoom in', 'NavigationControl.ZoomOut': 'Zoom out' });
+  });
+
+  it('falls back to the static image when the map cannot be created (no WebGL context)', async () => {
+    fake.failNext = true;
+    const view = await render();
+    await vi.waitFor(() => expect(view.container.querySelector('img')).not.toBeNull());
+    expect(fake.maps).toHaveLength(0);
+    expect(view.bo.api.log.error).toHaveBeenCalledWith(
+      'The interactive map could not be loaded: the static map is shown',
+      { name: 'Error', message: 'Failed to initialize WebGL' },
+    );
+  });
+
+  it('falls back to the static image when the browser takes the WebGL context back', async () => {
+    const { map, container } = await renderLoaded();
+    map.emit('webglcontextlost');
+    await vi.waitFor(() => expect(container.querySelector('img')).not.toBeNull());
+    expect(map.remove).toHaveBeenCalled();
+  });
+
+  it('falls back when the layers cannot be added once the style loaded', async () => {
+    const view = await render();
+    await vi.waitFor(() => expect(fake.maps).toHaveLength(1));
+    const map = fake.maps[0]!;
+    map.addLayer = () => {
+      throw new Error('Invalid paint color');
+    };
+    map.emit('load');
+    await vi.waitFor(() => expect(view.container.querySelector('img')).not.toBeNull());
+    expect(view.bo.api.log.error).toHaveBeenCalledWith(
+      'The interactive map could not be loaded: the static map is shown',
+      { name: 'Error', message: 'Invalid paint color' },
+    );
+  });
+
+  it('tries the interactive map again with a new token after Mapbox refused the previous one', async () => {
+    const { map, container, rerender } = await renderLoaded();
+    map.emit('error', { error: Object.assign(new Error('Unauthorized'), { status: 401 }) });
+    await vi.waitFor(() => expect(container.textContent).toContain('The map needs a valid Mapbox public token'));
+
+    rerender(<MapView token="pk.new" center={center} radiusMeters={500} label="Pickup point" />);
+
+    await vi.waitFor(() => expect(fake.maps).toHaveLength(2));
+    expect(fake.maps[1]?.options.accessToken).toBe('pk.new');
+    expect(container.textContent).not.toContain('The map needs a valid Mapbox public token');
   });
 
   it('syncs the hover and the click of a vehicle with the list, and draws the highlighted one', async () => {
@@ -247,6 +311,20 @@ describe('MapView', () => {
     expect(map.easeTo).toHaveBeenCalledWith({ center: [2.35, 48.85], zoom: 15 });
   });
 
+  it('logs a cluster it cannot expand', async () => {
+    const { map, bo } = await renderLoaded({ markers });
+    map.sources.get('vehicles')!.getClusterExpansionZoom.mockImplementation((_id: number, callback: (error: Error) => void) =>
+      callback(new Error('No cluster')),
+    );
+    map.emit(
+      'click',
+      { features: [{ properties: { cluster_id: 3 }, geometry: { type: 'Point', coordinates: [2.35, 48.85] } }] },
+      'vehicle-clusters',
+    );
+    expect(map.easeTo).not.toHaveBeenCalled();
+    expect(bo.api.log.warn).toHaveBeenCalledWith('The map could not expand a cluster', { name: 'Error', message: 'No cluster' });
+  });
+
   it.each([401, 403])('explains the token when Mapbox answers %i, and logs it', async (status) => {
     const { map, container, bo } = await renderLoaded();
 
@@ -269,16 +347,26 @@ describe('MapView', () => {
     await vi.waitFor(() => expect(view.container.querySelector('img')).not.toBeNull());
     expect(view.bo.api.log.error).toHaveBeenCalledWith(
       'The interactive map could not be loaded: the static map is shown',
-      { message: 'Failed to fetch' },
+      { name: 'Error', message: 'Failed to fetch' },
     );
   });
 
-  it('keeps the map after a tile failed once it showed, and logs it once', async () => {
+  it('keeps the map after an error once it showed, and logs each kind of error once', async () => {
     const { map, container, bo } = await renderLoaded();
     map.emit('error', { error: Object.assign(new Error('Not found'), { status: 404 }) });
     map.emit('error', { error: Object.assign(new Error('Not found'), { status: 404 }) });
-    expect(bo.api.log.warn).toHaveBeenCalledTimes(1);
-    expect(bo.api.log.warn).toHaveBeenCalledWith('The map could not load a resource', { status: 404, message: 'Not found' });
+    map.emit('error', { error: Object.assign(new Error('Too many requests'), { status: 429 }) });
+    expect(bo.api.log.warn).toHaveBeenCalledTimes(2);
+    expect(bo.api.log.warn).toHaveBeenCalledWith('The interactive map reported an error', {
+      status: 404,
+      name: 'Error',
+      message: 'Not found',
+    });
+    expect(bo.api.log.warn).toHaveBeenLastCalledWith('The interactive map reported an error', {
+      status: 429,
+      name: 'Error',
+      message: 'Too many requests',
+    });
     expect(container.querySelector('[data-mapbox-map]')).not.toBeNull();
     expect(map.remove).not.toHaveBeenCalled();
   });

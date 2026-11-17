@@ -33,9 +33,10 @@ const LazyDrawerBody = lazyComponent('drawer', () =>
  */
 export function preloadDetail(features: readonly BookingFeature[]): Promise<void> {
   const cards = features.flatMap((feature) => feature.detailCards ?? []);
-  return Promise.all([
+  // A preload of a feature that throws or rejects must not reach the event handlers that call this.
+  return Promise.allSettled([
     LazyDrawerBody.preload(),
-    ...cards.map((card) => card.preload?.() ?? Promise.resolve()),
+    ...cards.map((card) => Promise.resolve().then(() => card.preload?.())),
   ]).then(() => undefined);
 }
 
@@ -57,6 +58,8 @@ function CloseButton({ onClose }: { readonly onClose: () => void }) {
 export function BookingDrawer(props: BookingDrawerProps) {
   const { bookingId, onClose, onPrevious, onNext } = props;
   const onKeyDown = (event: KeyboardEvent) => {
+    // A key the map (or another control) already handled: its arrows pan the map.
+    if (event.defaultPrevented) return;
     const target = event.target as HTMLElement;
     if (target.closest('input, textarea, select, [contenteditable="true"], [role="listbox"]')) return;
     if (event.key === 'ArrowUp' && onPrevious) {

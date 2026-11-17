@@ -128,7 +128,10 @@ describe('loadLanguage', () => {
     expect(languageError('hu')).toBe(failure);
     expect(createI18n('hu_HU').t('grid.retry')).toBe('Retry');
 
-    await loadLanguage('hu');
+    const retry = loadLanguage('hu');
+    expect(languageStatus('hu')).toBe('loading');
+    expect(languageError('hu')).toBeNull();
+    await retry;
     expect(languageStatus('hu')).toBe('loaded');
     expect(languageError('hu')).toBeNull();
     expect(createI18n('hu_HU').t('grid.retry')).toBe('Újra');

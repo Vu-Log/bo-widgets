@@ -67,7 +67,7 @@ To add a text: add its key to the 8 catalogues `src/locales/{en,de,fr,it,nl,es,p
 | `DrawerBody`, `core-cards`, `prepayment-cards` | The content of the detail drawer and its cards               | On a row hovered or focused, when the browser is idle, or on open |
 | `prepayment-dialogs`                          | Charge, verify, retry, refund, regularize, notes              | When the browser is idle, or on open                        |
 | `CreateBooking`, `write-dialogs`, `VehiclePicker` | The create wizard, the edit and confirm dialogs, the vehicle picker | On open                                            |
-| `MapView`, `MapboxMap`                        | The map, and Mapbox GL JS with its CSS                        | When a map shows                                            |
+| `MapView`, `MapboxMap`                        | The map with its static fallback; Mapbox GL JS with its CSS   | `MapView` with the cards and dialogs that show a map; `MapboxMap` when a map shows with a token and WebGL |
 | `de`, `fr`, `it`, `nl`, `es`, `pt`, `hu`      | A language: its texts and its date-fns locale                 | When the back office speaks it                              |
 
 - A chunk that cannot be loaded (network, CDN) shows an error with a Retry (a dialog keeps its Close), logged with `bo.log.error`: never a blank widget. The map falls back to the static view instead.

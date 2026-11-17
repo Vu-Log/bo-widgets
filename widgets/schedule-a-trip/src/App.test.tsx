@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { LanguageStatusBanner } from './App';
-import { LANGUAGE_LOADERS, resetLanguagesForTests } from './i18n';
+import { LANGUAGE_LOADERS, languageStatus, resetLanguagesForTests } from './i18n';
 import { button, click } from './test/dom';
 import { fakeBo } from './test/fake-bo';
 import { renderInWidget } from './test/render';
@@ -21,7 +21,10 @@ describe('LanguageStatusBanner', () => {
     const bo = hungarian();
     const view = await renderInWidget(<LanguageStatusBanner />, bo.api);
     unmount = view.unmount;
-    await vi.waitFor(() => expect(view.container.textContent).toBe(''));
+    expect(languageStatus('hu')).not.toBe('loaded');
+    expect(view.container.textContent).toBe('');
+    await vi.waitFor(() => expect(languageStatus('hu')).toBe('loaded'));
+    expect(view.container.textContent).toBe('');
     expect(bo.api.log.error).not.toHaveBeenCalled();
   });
 

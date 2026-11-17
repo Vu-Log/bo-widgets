@@ -112,6 +112,33 @@ describe('lazyComponent', () => {
   });
 });
 
+describe('lazyComponent, preloaded while it renders', () => {
+  it('shows the failure of a load a component waits for, even when a preload shares it', async () => {
+    const { load, calls } = deferredLoader();
+    const Lazy = lazyComponent('hello', load);
+    const bo = fakeBo();
+    const preload = Lazy.preload();
+    const view = await renderInWidget(
+      <LazyBoundary fallback={<span>loading</span>}>
+        <Lazy name="Jane" />
+      </LazyBoundary>,
+      bo.api,
+    );
+    unmount = view.unmount;
+    await vi.waitFor(() => expect(view.container.textContent).toBe('loading'));
+    void Lazy.preload();
+
+    calls[0]?.reject(new TypeError('Failed to fetch dynamically imported module'));
+    await preload;
+
+    await vi.waitFor(() =>
+      expect(view.container.textContent).toContain('This part of the widget could not be loaded.'),
+    );
+    expect(load).toHaveBeenCalledTimes(1);
+    expect(bo.api.log.error).toHaveBeenCalledTimes(1);
+  });
+});
+
 describe('ChunkLoadError', () => {
   it('names the chunk and keeps the browser error', () => {
     const cause = new Error('offline');
