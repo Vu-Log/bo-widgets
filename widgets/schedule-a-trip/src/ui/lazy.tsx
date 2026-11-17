@@ -25,6 +25,16 @@ export interface LazyComponent<P> {
   readonly preload: () => Promise<void>;
 }
 
+/**
+ * A promise with the status fields `use()` reads (the protocol React documents for a thenable that
+ * is already settled), set when it settles.
+ */
+type Thenable<T> = Promise<T> & {
+  status?: 'fulfilled' | 'rejected';
+  value?: T;
+  reason?: unknown;
+};
+
 /** The code of a lazy module, and the components it gives. */
 export interface LazyModule<M> {
   /**
@@ -51,21 +61,25 @@ export interface LazyModule<M> {
  *   when it cannot be loaded.
  */
 export function lazyModule<M>(chunk: string, load: () => Promise<M>): LazyModule<M> {
-  let loaded: { readonly module: M } | null = null;
-  let loading: Promise<M> | null = null;
+  let loading: Thenable<M> | null = null;
   const forget = (promise: Promise<M>) => {
     if (loading === promise) loading = null;
   };
-  const start = (): Promise<M> => {
+  const start = (): Thenable<M> => {
     if (loading) return loading;
-    const promise: Promise<M> = load().then(
+    const promise: Thenable<M> = load().then(
       (module) => {
-        loaded = { module };
+        // Read by `use()`: once loaded, the components render without suspending, preloaded or not.
+        promise.status = 'fulfilled';
+        promise.value = module;
         return module;
       },
       (cause: unknown) => {
+        const error = new ChunkLoadError(chunk, cause, () => forget(promise));
+        promise.status = 'rejected';
+        promise.reason = error;
         // Kept until a Retry: React renders the component again to throw the error.
-        throw new ChunkLoadError(chunk, cause, () => forget(promise));
+        throw error;
       },
     );
     loading = promise;
@@ -81,7 +95,8 @@ export function lazyModule<M>(chunk: string, load: () => Promise<M>): LazyModule
   };
   const component = <P extends object>(pick: (module: M) => ComponentType<P>): LazyComponent<P> => {
     function Lazy(props: P) {
-      const Component = pick(loaded ? loaded.module : use(start()));
+      // Always through `use()`: React refuses a component that suspended once and skips it later.
+      const Component = pick(use<M>(start() as Promise<M>));
       return <Component {...props} />;
     }
     Lazy.displayName = `Lazy(${chunk})`;

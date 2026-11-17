@@ -52,13 +52,19 @@ describe('lazyComponent', () => {
     await Promise.all([first, second]);
     expect(load).toHaveBeenCalledTimes(1);
 
+    const fallback = vi.fn(() => <span>loading</span>);
+    function Fallback() {
+      return fallback();
+    }
     const view = await renderInWidget(
-      <LazyBoundary fallback={<span>loading</span>}>
+      <LazyBoundary fallback={<Fallback />}>
         <Lazy name="Jane" />
       </LazyBoundary>,
     );
     unmount = view.unmount;
     await vi.waitFor(() => expect(view.container.textContent).toBe('Hello Jane'));
+    // Preloaded: no skeleton, not even for a render.
+    expect(fallback).not.toHaveBeenCalled();
   });
 
   it('never rejects a preload, and forgets its failure: the next load tries again', async () => {
