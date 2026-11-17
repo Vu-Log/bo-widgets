@@ -39,12 +39,12 @@ describe('parseSettings', () => {
       ...VALID_SETTINGS,
       currency: '  ',
       timezone: '',
-      mapboxToken: ' token ',
+      mapboxToken: ' pk.token ',
     });
     expect(result.ok && result.settings).toMatchObject({
       currency: undefined,
       timezone: undefined,
-      mapboxToken: 'token',
+      mapboxToken: 'pk.token',
     });
     expect(parseSettings({ ...VALID_SETTINGS, currency: null }).ok).toBe(true);
   });
@@ -104,6 +104,12 @@ describe('parseSettings', () => {
         }),
       ),
     ).toEqual(['mapboxToken', 'currency', 'timezone']);
+  });
+
+  it('refuses a secret Mapbox token', () => {
+    expect(issueKeys(parseSettings({ ...VALID_SETTINGS, mapboxToken: 'sk.secret' }))).toEqual([
+      'mapboxToken',
+    ]);
   });
 
   it('refuses what is not an object', () => {

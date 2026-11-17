@@ -17,7 +17,7 @@ export const VALID_SETTINGS = {
   refundFullHours: 24,
   creditsRevokeHours: 1,
   vehicleSearchRadius: 500,
-  mapboxToken: 'mapbox-public-token-placeholder',
+  mapboxToken: 'pk.placeholder',
 };
 
 /** An error as the BO API throws it: its `code` becomes the `reason` of a `BoError`. */

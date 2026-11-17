@@ -84,6 +84,14 @@ describe('vehiclesInRange', () => {
     expect(result.closestOutOfRange.at(-1)?.id).toBe('out-2');
   });
 
+  it('throws on an invalid radius or center', () => {
+    expect(() => vehiclesInRange([], { ...search, radiusMeters: -1 })).toThrow(RangeError);
+    expect(() => vehiclesInRange([], { ...search, radiusMeters: Number.NaN })).toThrow(RangeError);
+    expect(() =>
+      vehiclesInRange([], { ...search, center: { latitude: Number.NaN, longitude: 0 } }),
+    ).toThrow(RangeError);
+  });
+
   it('gives nothing for no vehicle', () => {
     expect(vehiclesInRange([], search)).toEqual({ inRange: [], closestOutOfRange: [] });
   });

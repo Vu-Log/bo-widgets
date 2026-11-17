@@ -1,6 +1,8 @@
 import { InfiniteQueryObserver, QueryClient } from '@tanstack/react-query';
 import { connect, type AuthFetch } from '@vulog/bo-widget-sdk';
 import { afterEach, describe, expect, it, vi } from 'vitest';
+
+const disconnects: (() => void)[] = [];
 import { ApiRequestError } from '../api/http';
 import {
   bookingsCollection,
@@ -23,7 +25,10 @@ import {
 const newClient = () => new QueryClient({ defaultOptions: { queries: { retry: false } } });
 const sort = { field: 'startDate', direction: 'ASC' } as const;
 
-afterEach(() => vi.restoreAllMocks());
+afterEach(() => {
+  disconnects.splice(0).forEach((disconnect) => disconnect());
+  vi.restoreAllMocks();
+});
 
 describe('modelsQueryOptions', () => {
   it('loads the models and keeps them as long as they are persisted', async () => {
@@ -160,6 +165,7 @@ describe('bookingStateQueryOptions', () => {
   const setup = async () => {
     const bo = fakeBo();
     const client = await connect({ vulogBo: bo.api });
+    disconnects.push(() => client.disconnect());
     return { bo, collection: bookingsCollection(client.storage) };
   };
 

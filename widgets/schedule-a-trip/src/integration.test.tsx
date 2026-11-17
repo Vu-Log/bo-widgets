@@ -110,9 +110,13 @@ function Upcoming() {
       rows={rows}
       getRowId={(row) => row.id}
       totalCount={list.data?.pages[0]?.totalElements ?? null}
-      hasNextPage={list.hasNextPage}
-      isFetchingNextPage={list.isFetchingNextPage}
-      onEndReached={() => void list.fetchNextPage()}
+      isLoading={list.isPending}
+      pagination={{
+        hasNextPage: list.hasNextPage,
+        isFetchingNextPage: list.isFetchingNextPage,
+        isFetchNextPageError: list.isFetchNextPageError,
+        fetchNextPage: () => void list.fetchNextPage(),
+      }}
       onVisibleRowsChange={(ids) => setVisible([...ids])}
     />
   );

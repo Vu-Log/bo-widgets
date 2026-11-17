@@ -47,7 +47,7 @@ export const queryKeys = {
   bookings: (fleetId: string, tab: ListTab, sort: BookingListSort) =>
     ['bookings', fleetId, tab, sort.field, sort.direction] as const,
   customers: (fleetId: string, userIds: readonly string[]) =>
-    ['customers', fleetId, [...userIds].sort()] as const,
+    ['customers', fleetId, [...new Set(userIds)].sort()] as const,
   invoice: (fleetId: string, invoiceId: string) => ['invoices', fleetId, invoiceId] as const,
   bookingState: (fleetId: string, bookingId: string) =>
     ['booking-states', fleetId, bookingId] as const,

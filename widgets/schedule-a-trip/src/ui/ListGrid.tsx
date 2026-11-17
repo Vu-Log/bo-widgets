@@ -1,6 +1,13 @@
-import { Box, Table, TableBody, TableCell, TableHead, TableRow } from '@mui/material';
+import { Box, Button, Table, TableBody, TableCell, TableHead, TableRow } from '@mui/material';
 import type { SxProps, Theme } from '@mui/material/styles';
-import { memo, useState, type CSSProperties, type ReactElement, type ReactNode } from 'react';
+import {
+  memo,
+  useMemo,
+  useState,
+  type CSSProperties,
+  type ReactElement,
+  type ReactNode,
+} from 'react';
 import { SkeletonCell } from './SkeletonCell';
 import { useEndReached, useVisibleRows, type RegisterRow } from './use-intersection';
 
@@ -16,6 +23,31 @@ export interface ListGridColumn<Row> {
   readonly render: (row: Row) => ReactNode;
 }
 
+/**
+ * The paging of a {@link ListGrid}, as `useInfiniteQuery` gives it: pass its `hasNextPage`,
+ * `isFetchingNextPage`, `isFetchNextPageError` and `fetchNextPage`.
+ */
+export interface ListGridPagination {
+  readonly hasNextPage: boolean;
+  /** Shows skeleton rows at the end while the next page loads. */
+  readonly isFetchingNextPage: boolean;
+  /** The last next page failed: no page is asked for again until the operator retries. */
+  readonly isFetchNextPageError: boolean;
+  /** Asked for when the end of the list comes near, and by the retry button. */
+  readonly fetchNextPage: () => void;
+}
+
+/** Texts of a {@link ListGrid}, English by default. */
+export interface ListGridLabels {
+  readonly nextPageError: string;
+  readonly retry: string;
+}
+
+const DEFAULT_LABELS: ListGridLabels = {
+  nextPageError: 'The next rows could not be loaded.',
+  retry: 'Retry',
+};
+
 /** Props of {@link ListGrid}. */
 export interface ListGridProps<Row> {
   /** Accessible name of the grid. */
@@ -23,7 +55,7 @@ export interface ListGridProps<Row> {
   /** Keep the array stable (`useMemo`): the rows are memoized on it. */
   readonly columns: readonly ListGridColumn<Row>[];
   readonly rows: readonly Row[];
-  /** Stable, unique id of a row. */
+  /** Stable id of a row. Rows with the same id (a row moved between two pages) are shown once. */
   readonly getRowId: (row: Row) => string;
   /** Height of a row in px: 48 by default (36 compact, 56 comfortable). */
   readonly rowHeight?: number;
@@ -31,16 +63,16 @@ export interface ListGridProps<Row> {
   readonly totalCount?: number | null;
   /** Rows around the visible area that count as visible, and that trigger the next page. 20 by default. */
   readonly marginRows?: number;
-  readonly hasNextPage?: boolean;
-  /** Shows skeleton rows at the end while the next page loads. */
-  readonly isFetchingNextPage?: boolean;
-  /** Asked for when the end of the list comes near, while `hasNextPage` and not loading. */
-  readonly onEndReached?: () => void;
+  /** The first rows are loading: skeleton rows instead of the empty state. */
+  readonly isLoading?: boolean;
+  /** Without it, the grid shows its rows only. */
+  readonly pagination?: ListGridPagination;
+  readonly labels?: ListGridLabels;
   /** The ids of the rows in view, plus the margin: load their extra data only. */
   readonly onVisibleRowsChange?: (ids: ReadonlySet<string>) => void;
   /** Shown when there is no row and nothing is loading. */
   readonly empty?: ReactNode;
-  /** Skeleton rows shown while loading. 3 by default. */
+  /** Skeleton rows shown while the first or the next rows load. 3 by default. */
   readonly loadingRows?: number;
 }
 
@@ -70,13 +102,15 @@ const bodyRowSx: SxProps<Theme> = {
   contentVisibility: 'auto',
   containIntrinsicSize: 'auto var(--row-height)',
 };
-const cellSx: SxProps<Theme> = {
+const cellStyle = {
   display: 'block',
   overflow: 'hidden',
   textOverflow: 'ellipsis',
   whiteSpace: 'nowrap',
   py: 1,
-};
+} as const;
+const cellSx: SxProps<Theme> = cellStyle;
+const errorCellSx: SxProps<Theme> = { ...cellStyle, gridColumn: '1 / -1', color: 'error.main' };
 
 interface RowProps<Row> {
   readonly row: Row;
@@ -126,9 +160,9 @@ export function ListGrid<Row>({
   rowHeight = DEFAULT_ROW_HEIGHT,
   totalCount = null,
   marginRows = DEFAULT_MARGIN_ROWS,
-  hasNextPage = false,
-  isFetchingNextPage = false,
-  onEndReached,
+  isLoading = false,
+  pagination,
+  labels = DEFAULT_LABELS,
   onVisibleRowsChange,
   empty,
   loadingRows = 3,
@@ -136,12 +170,25 @@ export function ListGrid<Row>({
   const [root, setRoot] = useState<HTMLDivElement | null>(null);
   const marginPx = marginRows * rowHeight;
   const register = useVisibleRows({ root, marginPx, onChange: onVisibleRowsChange ?? noop });
+  const isFetchingNextPage = pagination?.isFetchingNextPage ?? false;
+  const failed = pagination?.isFetchNextPageError ?? false;
   const endRef = useEndReached({
     root,
     marginPx,
-    enabled: hasNextPage && !isFetchingNextPage && onEndReached !== undefined,
-    onEndReached: onEndReached ?? noop,
+    // Never after a failure: a new observer would ask again at once, in a loop.
+    enabled: (pagination?.hasNextPage ?? false) && !isFetchingNextPage && !failed,
+    onEndReached: pagination?.fetchNextPage ?? noop,
   });
+  const uniqueRows = useMemo(() => {
+    const seen = new Set<string>();
+    return rows.flatMap((row) => {
+      const rowId = getRowId(row);
+      if (seen.has(rowId)) return [];
+      seen.add(rowId);
+      return [{ row, rowId }];
+    });
+  }, [rows, getRowId]);
+  const showSkeletons = isLoading || isFetchingNextPage;
   const style = {
     '--grid-columns': columns.map((column) => column.width).join(' '),
     '--row-height': `${rowHeight}px`,
@@ -154,7 +201,7 @@ export function ListGrid<Row>({
         role="grid"
         aria-label={label}
         aria-rowcount={totalCount === null ? -1 : totalCount + 1}
-        aria-busy={isFetchingNextPage}
+        aria-busy={showSkeletons}
         style={style}
         sx={tableSx}
       >
@@ -174,20 +221,17 @@ export function ListGrid<Row>({
           </TableRow>
         </TableHead>
         <TableBody component="div" role="rowgroup" sx={groupSx}>
-          {rows.map((row, index) => {
-            const rowId = getRowId(row);
-            return (
-              <MemoGridRow
-                key={rowId}
-                row={row}
-                rowId={rowId}
-                rowIndex={index + 2}
-                columns={columns}
-                register={register}
-              />
-            );
-          })}
-          {isFetchingNextPage &&
+          {uniqueRows.map(({ row, rowId }, index) => (
+            <MemoGridRow
+              key={rowId}
+              row={row}
+              rowId={rowId}
+              rowIndex={index + 2}
+              columns={columns}
+              register={register}
+            />
+          ))}
+          {showSkeletons &&
             Array.from({ length: loadingRows }, (_, index) => (
               <TableRow
                 key={`loading-${index}`}
@@ -203,9 +247,19 @@ export function ListGrid<Row>({
                 ))}
               </TableRow>
             ))}
+          {failed && (
+            <TableRow component="div" role="row" sx={rowSx}>
+              <TableCell component="div" role="gridcell" sx={errorCellSx}>
+                {labels.nextPageError}{' '}
+                <Button size="small" onClick={pagination?.fetchNextPage}>
+                  {labels.retry}
+                </Button>
+              </TableCell>
+            </TableRow>
+          )}
         </TableBody>
       </Table>
-      {rows.length === 0 && !isFetchingNextPage && empty}
+      {uniqueRows.length === 0 && !showSkeletons && empty}
       <Box ref={endRef} aria-hidden="true" sx={{ height: '1px' }} />
     </Box>
   );

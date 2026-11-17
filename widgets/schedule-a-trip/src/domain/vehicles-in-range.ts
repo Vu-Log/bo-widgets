@@ -66,11 +66,19 @@ export function haversineMeters(from: GeoPoint, to: GeoPoint): number {
  * @param vehicles - The vehicles of the fleet.
  * @param search - Service, model, pickup point and radius.
  * @returns The vehicles in range and the closest out of range, each sorted by distance.
+ * @throws {RangeError} When the radius is negative or not a number, or the center is not a point.
  */
 export function vehiclesInRange<V extends CandidateVehicle>(
   vehicles: readonly V[],
   search: VehicleSearch,
 ): VehiclesInRange<V> {
+  const { center, radiusMeters } = search;
+  if (!Number.isFinite(radiusMeters) || radiusMeters < 0) {
+    throw new RangeError(`Invalid radius: ${radiusMeters}`);
+  }
+  if (!Number.isFinite(center.latitude) || !Number.isFinite(center.longitude)) {
+    throw new RangeError('Invalid center');
+  }
   const candidates = vehicles
     .flatMap((vehicle) =>
       vehicle.status === 'AVAILABLE' &&

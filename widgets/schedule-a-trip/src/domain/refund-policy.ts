@@ -46,10 +46,11 @@ export function refundPolicy(
   const start = startAt.getTime();
   if (Number.isNaN(cancelled) || Number.isNaN(start)) throw new RangeError('Invalid date');
   const hoursBeforeStart = (start - cancelled) / HOUR_MS;
-  if (hoursBeforeStart >= settings.refundFullHours)
-    return { kind: 'full-refund', hoursBeforeStart };
-  if (hoursBeforeStart >= settings.creditsRevokeHours) {
-    return { kind: 'refund-with-fee', hoursBeforeStart };
+  // The revocation is checked first: thresholds given the wrong way round still revoke the credits.
+  if (hoursBeforeStart < settings.creditsRevokeHours) {
+    return { kind: 'refund-with-fee-and-credits-revocation', hoursBeforeStart };
   }
-  return { kind: 'refund-with-fee-and-credits-revocation', hoursBeforeStart };
+  if (hoursBeforeStart < settings.refundFullHours)
+    return { kind: 'refund-with-fee', hoursBeforeStart };
+  return { kind: 'full-refund', hoursBeforeStart };
 }

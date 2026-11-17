@@ -13,9 +13,17 @@ afterEach(() => {
   vi.unstubAllGlobals();
 });
 
-function Rows({ ids, onChange }: { ids: string[]; onChange: (ids: ReadonlySet<string>) => void }) {
+function Rows({
+  ids,
+  onChange,
+  marginPx = 960,
+}: {
+  ids: string[];
+  onChange: (ids: ReadonlySet<string>) => void;
+  marginPx?: number;
+}) {
   const [root, setRoot] = useState<HTMLDivElement | null>(null);
-  const register = useVisibleRows({ root, marginPx: 960, onChange });
+  const register = useVisibleRows({ root, marginPx, onChange });
   return (
     <div ref={setRoot}>
       {ids.map((id) => (
@@ -64,6 +72,34 @@ describe('useVisibleRows', () => {
 
     activeObservers()[0]?.report([a!], false);
     expect(onChange).not.toHaveBeenCalled();
+  });
+
+  it('drops one removed row and keeps the others', async () => {
+    const onChange = vi.fn();
+    const view = await renderInWidget(<Rows ids={['a', 'b']} onChange={onChange} />);
+    unmount = view.unmount;
+    await vi.waitFor(() => expect(activeObservers()[0]?.targets.size).toBe(2));
+    activeObservers()[0]?.report(rowElements(view.container), true);
+
+    view.rerender(<Rows ids={['a']} onChange={onChange} />);
+
+    await vi.waitFor(() => expect(onChange).toHaveBeenLastCalledWith(new Set(['a'])));
+    expect(activeObservers()[0]?.targets.size).toBe(1);
+  });
+
+  it('observes the rows again with a new margin', async () => {
+    const onChange = vi.fn();
+    const view = await renderInWidget(<Rows ids={['a', 'b']} onChange={onChange} />);
+    unmount = view.unmount;
+    await vi.waitFor(() => expect(activeObservers()[0]?.targets.size).toBe(2));
+
+    view.rerender(<Rows ids={['a', 'b']} onChange={onChange} marginPx={720} />);
+
+    await vi.waitFor(() => expect(activeObservers()[0]?.options.rootMargin).toBe('720px 0px'));
+    expect(activeObservers()).toHaveLength(1);
+    expect(activeObservers()[0]?.targets.size).toBe(2);
+    activeObservers()[0]?.report([rowElements(view.container)[1]!], true);
+    expect(onChange).toHaveBeenLastCalledWith(new Set(['b']));
   });
 
   it('forgets a row once removed', async () => {

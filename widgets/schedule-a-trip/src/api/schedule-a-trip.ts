@@ -14,6 +14,9 @@ const nullableString = z
   .string()
   .nullish()
   .transform((value) => value ?? null);
+/** A date the domain functions can read: an unreadable one is an unexpected response. */
+const date = z.string().refine((value) => !Number.isNaN(Date.parse(value)), 'Invalid date');
+const nullableDate = date.nullish().transform((value) => value ?? null);
 const nullableNumber = z
   .number()
   .nullish()
@@ -22,11 +25,11 @@ const nullableNumber = z
 const scheduledBookingSchema = z.object({
   id: z.string().min(1),
   status: z.string(),
-  creationDate: nullableString,
-  startDate: z.string(),
-  endDate: nullableString,
-  plannedReturnDate: nullableString,
-  cancellationDate: nullableString,
+  creationDate: nullableDate,
+  startDate: date,
+  endDate: nullableDate,
+  plannedReturnDate: nullableDate,
+  cancellationDate: nullableDate,
   userId: nullableString,
   profileId: nullableString,
   serviceId: nullableString,

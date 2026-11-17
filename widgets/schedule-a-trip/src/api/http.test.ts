@@ -82,6 +82,18 @@ describe('requestJson', () => {
     expect(result).toEqual({ ok: false, error: { kind: 'aborted' } });
   });
 
+  it('maps an abort with a reason of the caller', async () => {
+    const controller = new AbortController();
+    controller.abort(new Error('closed'));
+    const result = await requestJson(
+      fetchWith(() => Promise.reject(controller.signal.reason)),
+      'x',
+      schema,
+      { signal: controller.signal },
+    );
+    expect(result).toEqual({ ok: false, error: { kind: 'aborted' } });
+  });
+
   it('maps a lost token of the back office to session-lost', async () => {
     const error = new BoError('INTERNAL', 'no token', { reason: 'no-token' });
     const result = await requestJson(
@@ -181,6 +193,16 @@ describe('unwrap', () => {
       expect((thrown as ApiRequestError).error).toBe(error);
       expect((thrown as ApiRequestError).message).toMatch(/not allowed/);
     }
+  });
+});
+
+describe('ApiRequestError', () => {
+  it('keeps the original error as the cause', () => {
+    const cause = new TypeError('Failed to fetch');
+    expect(new ApiRequestError({ kind: 'network', cause }).cause).toBe(cause);
+    const boError = new BoError('TIMEOUT', 'slow');
+    expect(new ApiRequestError({ kind: 'back-office', error: boError }).cause).toBe(boError);
+    expect(new ApiRequestError({ kind: 'aborted' }).cause).toBeUndefined();
   });
 });
 

@@ -103,7 +103,7 @@ export default defineWidgetConfig({
       dayRate: 100,
       ratio: 1,
       minimumAmount: 10,
-      mapboxToken: 'mapbox-public-token-placeholder',
+      mapboxToken: 'pk.placeholder',
       currency: 'EUR',
       timezone: 'Europe/Paris',
     },

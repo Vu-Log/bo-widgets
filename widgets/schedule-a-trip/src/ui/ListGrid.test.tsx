@@ -1,7 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { activeObservers, installFakeIntersectionObserver } from '../test/intersection-observer';
 import { renderInWidget } from '../test/render';
-import { ListGrid, type ListGridColumn } from './ListGrid';
+import { ListGrid, type ListGridColumn, type ListGridPagination } from './ListGrid';
 
 interface Row {
   id: string;
@@ -143,25 +143,61 @@ describe('ListGrid', () => {
     expect(onVisibleRowsChange).toHaveBeenLastCalledWith(new Set(['r2']));
   });
 
+  const pagination = (overrides: Partial<ListGridPagination> = {}): ListGridPagination => ({
+    hasNextPage: true,
+    isFetchingNextPage: false,
+    isFetchNextPageError: false,
+    fetchNextPage: vi.fn(),
+    ...overrides,
+  });
+  const endObserver = () =>
+    activeObservers().find((observer) => observer.options.rootMargin?.startsWith('0px 0px'));
+
   it('asks for the next page near the end, and shows skeleton rows while it loads', async () => {
-    const onEndReached = vi.fn();
-    const props = { label: 'Bookings', columns, rows, getRowId, hasNextPage: true, onEndReached };
-    const view = await renderInWidget(<ListGrid {...props} />);
+    const paging = pagination();
+    const props = { label: 'Bookings', columns, rows, getRowId };
+    const view = await renderInWidget(<ListGrid {...props} pagination={paging} />);
     unmount = view.unmount;
     await vi.waitFor(() => expect(activeObservers()).toHaveLength(2));
-    const end = activeObservers().find((observer) =>
-      observer.options.rootMargin?.startsWith('0px 0px'),
-    );
-    end?.report(end.targets, true);
-    expect(onEndReached).toHaveBeenCalledTimes(1);
+    endObserver()?.report(endObserver()!.targets, true);
+    expect(paging.fetchNextPage).toHaveBeenCalledTimes(1);
 
-    view.rerender(<ListGrid {...props} isFetchingNextPage />);
+    view.rerender(<ListGrid {...props} pagination={{ ...paging, isFetchingNextPage: true }} />);
 
     await vi.waitFor(() =>
       expect(view.container.querySelectorAll('[data-skeleton]')).toHaveLength(6),
     );
     expect(view.container.querySelector('[role="grid"]')?.getAttribute('aria-busy')).toBe('true');
     expect(activeObservers()).toHaveLength(1);
+
+    // Once the page has loaded, a new observer asks again if the end is still in view.
+    view.rerender(<ListGrid {...props} pagination={paging} />);
+    await vi.waitFor(() => expect(endObserver()).toBeDefined());
+    endObserver()?.report(endObserver()!.targets, true);
+    expect(paging.fetchNextPage).toHaveBeenCalledTimes(2);
+  });
+
+  it('stops asking after a failed page, and lets the operator retry', async () => {
+    const paging = pagination({ isFetchNextPageError: true });
+    const view = await renderInWidget(
+      <ListGrid
+        label="Bookings"
+        columns={columns}
+        rows={rows}
+        getRowId={getRowId}
+        pagination={paging}
+        labels={{ nextPageError: 'Next rows failed.', retry: 'Try again' }}
+      />,
+    );
+    unmount = view.unmount;
+    await vi.waitFor(() => expect(view.container.textContent).toContain('Next rows failed.'));
+    expect(endObserver()).toBeUndefined();
+
+    const retry = [...view.container.querySelectorAll('button')].find(
+      (button) => button.textContent === 'Try again',
+    );
+    retry?.click();
+    expect(paging.fetchNextPage).toHaveBeenCalledTimes(1);
   });
 
   it('does not ask for more without a next page', async () => {
@@ -171,12 +207,28 @@ describe('ListGrid', () => {
         columns={columns}
         rows={rows}
         getRowId={getRowId}
-        onEndReached={vi.fn()}
+        pagination={pagination({ hasNextPage: false })}
       />,
     );
     unmount = view.unmount;
     await vi.waitFor(() => expect(activeObservers()).toHaveLength(1));
-    expect(activeObservers()[0]?.options.rootMargin).toBe(`${20 * 48}px 0px`);
+    expect(endObserver()).toBeUndefined();
+  });
+
+  it('shows a row once when two pages hold it', async () => {
+    const view = await renderInWidget(
+      <ListGrid
+        label="Bookings"
+        columns={columns}
+        rows={[...rows, { id: 'r2', name: 'Two again' }]}
+        getRowId={getRowId}
+      />,
+    );
+    unmount = view.unmount;
+    await vi.waitFor(() =>
+      expect(view.container.querySelectorAll('[data-row-id]')).toHaveLength(2),
+    );
+    expect(view.container.textContent).not.toContain('Two again');
   });
 
   it('shows the empty state without rows', async () => {
@@ -201,7 +253,7 @@ describe('ListGrid', () => {
         columns={columns}
         rows={[]}
         getRowId={getRowId}
-        isFetchingNextPage
+        pagination={pagination({ isFetchingNextPage: true })}
         loadingRows={1}
         empty={<p>No booking</p>}
       />,
@@ -209,6 +261,24 @@ describe('ListGrid', () => {
     unmount = view.unmount;
     await vi.waitFor(() =>
       expect(view.container.querySelectorAll('[data-skeleton]')).toHaveLength(2),
+    );
+    expect(view.container.textContent).not.toContain('No booking');
+  });
+
+  it('shows skeleton rows instead of the empty state on the first load', async () => {
+    const view = await renderInWidget(
+      <ListGrid
+        label="Bookings"
+        columns={columns}
+        rows={[]}
+        getRowId={getRowId}
+        isLoading
+        empty={<p>No booking</p>}
+      />,
+    );
+    unmount = view.unmount;
+    await vi.waitFor(() =>
+      expect(view.container.querySelectorAll('[data-skeleton]')).toHaveLength(6),
     );
     expect(view.container.textContent).not.toContain('No booking');
   });

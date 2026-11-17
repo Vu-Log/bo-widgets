@@ -27,6 +27,12 @@ describe('queryKeys', () => {
     );
   });
 
+  it('gives the same customers key with or without duplicates', () => {
+    expect(queryKeys.customers('FLEET-1', ['a', 'a', 'b'])).toEqual(
+      queryKeys.customers('FLEET-1', ['b', 'a']),
+    );
+  });
+
   it('does not change the ids given', () => {
     const ids = ['b', 'a'];
     queryKeys.customers('FLEET-1', ids);

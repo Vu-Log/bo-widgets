@@ -92,6 +92,14 @@ describe('listBookingRequests', () => {
     });
   });
 
+  it('reports an unreadable date as an unexpected response', async () => {
+    const authFetch = vi.fn<AuthFetch>(async () =>
+      jsonResponse([{ ...apiBooking, startDate: 'tomorrow' }]),
+    );
+    const result = await listBookingRequests(authFetch, params);
+    expect(result.ok === false && result.error.kind).toBe('invalid-response');
+  });
+
   it('reports a booking without an id as an unexpected response', async () => {
     const authFetch = vi.fn<AuthFetch>(async () =>
       jsonResponse([{ ...apiBooking, id: undefined }]),

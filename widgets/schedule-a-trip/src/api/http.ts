@@ -25,7 +25,10 @@ export type ApiError =
   | { readonly kind: 'invalid-response'; readonly message: string }
   | { readonly kind: 'back-office'; readonly error: BoError };
 
-/** The outcome of a call to the Vulog API: its data, or why it failed. Never throws. */
+/**
+ * The outcome of a call to the Vulog API: its data, or why it failed. The API modules resolve it for
+ * every failure of the API, the network or the back office; they only reject on a bug.
+ */
 export type ApiResult<T> =
   { readonly ok: true; readonly data: T } | { readonly ok: false; readonly error: ApiError };
 
@@ -34,7 +37,14 @@ export class ApiRequestError extends Error {
   readonly error: ApiError;
 
   constructor(error: ApiError) {
-    super(apiErrorMessage(error));
+    super(apiErrorMessage(error), {
+      cause:
+        error.kind === 'network'
+          ? error.cause
+          : error.kind === 'back-office'
+            ? error.error
+            : undefined,
+    });
     this.name = 'ApiRequestError';
     this.error = error;
   }
@@ -110,7 +120,9 @@ const statusError = (status: number): ApiError => {
   return { kind: 'http', status };
 };
 
-const rejectionError = (error: unknown): ApiError => {
+const rejectionError = (error: unknown, signal: AbortSignal | null | undefined): ApiError => {
+  // Aborted by the caller, whatever the reason it gave (`abort(reason)`, `AbortSignal.timeout`).
+  if (signal?.aborted) return { kind: 'aborted' };
   if (error instanceof DOMException && error.name === 'AbortError') return { kind: 'aborted' };
   if (error instanceof BoError) {
     if (error.code === 'INTERNAL' && error.reason === 'no-token') {
@@ -149,7 +161,7 @@ export async function requestJson<S extends z.ZodType>(
   try {
     response = await authFetch(path, init);
   } catch (error) {
-    return { ok: false, error: rejectionError(error) };
+    return { ok: false, error: rejectionError(error, init?.signal) };
   }
   if (!response.ok) return { ok: false, error: statusError(response.status) };
 
@@ -160,7 +172,7 @@ export async function requestJson<S extends z.ZodType>(
     if (error instanceof SyntaxError) {
       return { ok: false, error: { kind: 'invalid-response', message: 'not JSON' } };
     }
-    return { ok: false, error: rejectionError(error) };
+    return { ok: false, error: rejectionError(error, init?.signal) };
   }
   const parsed = schema.safeParse(json);
   if (!parsed.success) {

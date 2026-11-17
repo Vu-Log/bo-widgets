@@ -35,7 +35,10 @@ export const settingsSchema = z
     refundFullHours: z.number().nonnegative().default(24),
     creditsRevokeHours: z.number().nonnegative().default(1),
     vehicleSearchRadius: z.number().positive().default(500),
-    mapboxToken: z.string().trim().min(1),
+    mapboxToken: z
+      .string()
+      .trim()
+      .startsWith('pk.', 'Expected a public Mapbox token (pk.…), never a secret one'),
     currency: optionalText(
       z
         .string()

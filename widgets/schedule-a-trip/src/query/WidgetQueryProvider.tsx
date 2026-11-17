@@ -3,6 +3,17 @@ import { useBoClient, useBoContext } from '@vulog/bo-widget-react';
 import { useMemo, useState, type ReactNode } from 'react';
 import { browserStorage, createPersistOptions, createWidgetQueryClient } from './client';
 
+/**
+ * The name and message of an error, for a log.
+ *
+ * @param error - What was thrown.
+ * @returns `{ name, message }`.
+ */
+export const describeError = (error: unknown): { name: string; message: string } =>
+  error instanceof Error || error instanceof DOMException
+    ? { name: error.name, message: error.message }
+    : { name: typeof error, message: String(error) };
+
 /** Fleet of the cache when the back office gives none. */
 const NO_FLEET = 'no-fleet';
 
@@ -19,8 +30,9 @@ export function WidgetQueryProvider({ children }: { readonly children: ReactNode
   const { fleetId } = useBoContext();
   const [queryClient] = useState(createWidgetQueryClient);
   const persistOptions = useMemo(() => {
+    // A DOMException (QuotaExceededError…) is not serialized by the log: keep its name and message.
     const onError = (operation: string, error: unknown) =>
-      bo.log.warn('Query cache: browser storage failed', { operation, error });
+      bo.log.warn('Query cache: browser storage failed', { operation, ...describeError(error) });
     return createPersistOptions({
       fleetId: fleetId ?? NO_FLEET,
       storage: browserStorage(onError),
@@ -29,7 +41,13 @@ export function WidgetQueryProvider({ children }: { readonly children: ReactNode
   }, [bo, fleetId]);
 
   return (
-    <PersistQueryClientProvider client={queryClient} persistOptions={persistOptions}>
+    <PersistQueryClientProvider
+      client={queryClient}
+      persistOptions={persistOptions}
+      onError={() =>
+        bo.log.warn('Query cache: the saved cache could not be restored; it was dropped')
+      }
+    >
       {children}
     </PersistQueryClientProvider>
   );

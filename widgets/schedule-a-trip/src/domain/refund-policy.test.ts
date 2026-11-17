@@ -47,6 +47,14 @@ describe('refundPolicy', () => {
     );
   });
 
+  it('revokes the credits first when the thresholds are the wrong way round', () => {
+    const inverted = { refundFullHours: 1, creditsRevokeHours: 24 };
+    expect(refundPolicy(before(10 * 60), start, inverted).kind).toBe(
+      'refund-with-fee-and-credits-revocation',
+    );
+    expect(refundPolicy(before(30 * 60), start, inverted).kind).toBe('full-refund');
+  });
+
   it('never changes the dates it reads', () => {
     const cancelledAt = before(90);
     refundPolicy(cancelledAt, start, settings);

@@ -4,7 +4,7 @@ import { fakeBo } from '../test/fake-bo';
 import { renderInWidget } from '../test/render';
 import { persistKey } from './client';
 import { queryKeys } from './keys';
-import { WidgetQueryProvider } from './WidgetQueryProvider';
+import { describeError, WidgetQueryProvider } from './WidgetQueryProvider';
 
 function Probe() {
   const client = useQueryClient();
@@ -32,6 +32,20 @@ afterEach(() => {
   unmount = undefined;
   vi.restoreAllMocks();
   localStorage.clear();
+});
+
+describe('describeError', () => {
+  it('keeps the name and message of an error or a DOMException', () => {
+    expect(describeError(new DOMException('full', 'QuotaExceededError'))).toEqual({
+      name: 'QuotaExceededError',
+      message: 'full',
+    });
+    expect(describeError(new TypeError('bad'))).toEqual({ name: 'TypeError', message: 'bad' });
+  });
+
+  it('describes what is not an error', () => {
+    expect(describeError('oops')).toEqual({ name: 'string', message: 'oops' });
+  });
 });
 
 describe('WidgetQueryProvider', () => {
@@ -71,10 +85,11 @@ describe('WidgetQueryProvider', () => {
     await vi.waitFor(() => expect(view.container.textContent).toBe('City car / Jane Doe'));
     await vi.waitFor(
       () =>
-        expect(api.log.warn).toHaveBeenCalledWith(
-          'Query cache: browser storage failed',
-          expect.objectContaining({ operation: 'setItem' }),
-        ),
+        expect(api.log.warn).toHaveBeenCalledWith('Query cache: browser storage failed', {
+          operation: 'setItem',
+          name: 'QuotaExceededError',
+          message: 'full',
+        }),
       { timeout: 3000 },
     );
   });
