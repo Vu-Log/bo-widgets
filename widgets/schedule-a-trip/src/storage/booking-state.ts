@@ -3,6 +3,7 @@ import {
   type BoStorage,
   type BoStorageCollection,
   type BoStorageDocument,
+  type BoStorageWhereValue,
 } from '@vulog/bo-widget-sdk';
 import { z } from 'zod';
 
@@ -77,7 +78,10 @@ const fields = {
   chargeStartedBy: z.string().nullable(),
   /** The prepayment invoice. */
   invoiceId: z.string().min(1).nullable(),
-  /** Amount charged, and so of the credits granted. */
+  /**
+   * Amount charged, and so of the credits granted. Written with the charge claim, before the
+   * invoice exists: credits are only due once `invoiceId` is set and the invoice is paid.
+   */
   chargeAmount: z.number().positive().nullable(),
   /** Amount computed by the formula, `null` without a planned return date. */
   computedAmount: z.number().nullable(),
@@ -454,16 +458,54 @@ export async function readBookingState(
 }
 
 /**
- * Appends an entry to a journal, keeping the {@link MAX_EVENTS} newest.
+ * Journal entries that record a step of a money action (a charge, a refund, the fees, the
+ * credits): the widget reads them back to resume an action without paying or charging twice, so
+ * they are the last ones dropped when the journal is full.
+ */
+export const MONEY_EVENT_TYPES: ReadonlySet<string> = new Set([
+  'charge-started',
+  'charge-accepted',
+  'charge-released',
+  'charged',
+  'charge-attached',
+  'refund-started',
+  'refund-released',
+  'refund-confirmed',
+  'refunded',
+  'cancellation-fee-started',
+  'cancellation-fee-charged',
+  'cancellation-fee-released',
+  'cancellation-fee-confirmed',
+  'cancellation-fee-skipped',
+  'credits-revocation-started',
+  'credits-revocation-skipped',
+  'credits-revoked',
+  'refund-completed',
+]);
+
+/**
+ * Appends an entry to a journal of at most {@link MAX_EVENTS} entries. A {@link MONEY_EVENT_TYPES}
+ * entry is never dropped: when the journal is full, the oldest other entry is dropped; when there
+ * is none, a new entry that is not a money one is dropped itself, and a new money entry is kept
+ * past the limit, so that the write is refused (`invalid-write`) instead of losing a payment step.
  *
  * @param events - The current journal, if any.
  * @param event - The new entry.
- * @returns A new array; `events` is not changed.
+ * @returns A new array, in order; `events` is not changed.
  */
-export const withEvent = (
+export function withEvent(
   events: readonly BookingEvent[] | undefined,
   event: BookingEvent,
-): BookingEvent[] => [...(events ?? []), event].slice(-MAX_EVENTS);
+): BookingEvent[] {
+  const all = [...(events ?? [])];
+  while (all.length >= MAX_EVENTS) {
+    const droppable = all.findIndex((entry) => !MONEY_EVENT_TYPES.has(entry.type));
+    if (droppable === -1) break;
+    all.splice(droppable, 1);
+  }
+  if (all.length >= MAX_EVENTS && !MONEY_EVENT_TYPES.has(event.type)) return all;
+  return [...all, event];
+}
 
 /** What a new document holds besides the fields always written. */
 export interface CreateBookingStateInput {
@@ -568,6 +610,22 @@ export interface ClaimChargeInput {
   readonly now: Date;
 }
 
+/** What a charge is about to bill, written with its claim (the amount is required: the search of a
+ * lost invoice needs it). */
+export interface ClaimPatch {
+  readonly chargeAmount: number;
+  readonly computedAmount: number | null;
+  readonly amountWarnings: readonly StoredAmountWarning[];
+  readonly entityId: string;
+  readonly isB2B: boolean;
+}
+
+/** A charge claim, with what the charge is about to bill (written in the same call). */
+export interface ClaimChargeWithInput extends ClaimChargeInput {
+  /** Amounts and entity of the charge, written with the claim. */
+  readonly patch?: ClaimPatch;
+}
+
 /** Tries of {@link claimCharge} when the document changes between its read and its write. */
 const CLAIM_ATTEMPTS = 3;
 
@@ -588,7 +646,8 @@ const existingClaim = (current: BookingStateDoc | null): ClaimFailure | null => 
 /**
  * Claims the charge of a booking before creating its invoice, against a double charge (the API
  * creates one invoice per call). Writes `chargeStartedAt` and `chargeStartedBy`, and a
- * `charge-started` entry of the journal, over the version read (`ifVersion`), or only if the
+ * `charge-started` entry of the journal (and the amounts of `input.patch`), over the version read
+ * (`ifVersion`), or only if the
  * document does not exist (`ifVersion: 0`). When the document changed meanwhile (a note, the
  * scheduler), it reads it again and checks again, {@link CLAIM_ATTEMPTS} times at most.
  *
@@ -601,7 +660,7 @@ const existingClaim = (current: BookingStateDoc | null): ClaimFailure | null => 
 export async function claimCharge(
   collection: BookingStateCollection,
   bookingId: string,
-  input: ClaimChargeInput,
+  input: ClaimChargeWithInput,
 ): Promise<StorageResult<BookingStateDoc, ClaimFailure>> {
   const at = input.now.toISOString();
   let failure: ClaimFailure = { kind: 'conflict' };
@@ -612,7 +671,17 @@ export async function claimCharge(
     const claimed = existingClaim(current);
     if (claimed) return { ok: false, error: claimed };
 
+    const billed = input.patch;
     const patch: BookingStatePatch = {
+      ...(billed
+        ? {
+            chargeAmount: billed.chargeAmount,
+            computedAmount: billed.computedAmount,
+            amountWarnings: [...billed.amountWarnings],
+            entityId: billed.entityId,
+            isB2B: billed.isB2B,
+          }
+        : {}),
       chargeStartedAt: at,
       chargeStartedBy: input.userId,
       events: withEvent(current?.value.events, { at, by: input.userId, type: 'charge-started' }),
@@ -630,6 +699,7 @@ export async function claimCharge(
 /**
  * Releases the charge claim of a booking, when the API refused to create its invoice (nothing was
  * charged) or once an operator checked that no invoice exists. Refused once an invoice is known.
+ * The amounts written with the claim are cleared with it.
  *
  * @param collection - {@link bookingsCollection}.
  * @param current - The document as read, holding the claim.
@@ -648,6 +718,9 @@ export async function releaseCharge(
   return updateBookingState(collection, current, {
     chargeStartedAt: null,
     chargeStartedBy: null,
+    chargeAmount: null,
+    computedAmount: null,
+    amountWarnings: [],
     events: withEvent(current.value.events, { at, by: input.userId, type: 'charge-released' }),
   });
 }
@@ -682,20 +755,11 @@ export interface FleetDocs {
   readonly invalid: readonly { readonly id: string; readonly issues: readonly string[] }[];
 }
 
-/**
- * Reads every booking state of a fleet: `query({ where: { fleetId } })`, by pages of
- * {@link FLEET_PAGE_SIZE}, until the cursor is `null` (a page may be empty while the cursor is not).
- * A failure of any page fails the whole listing: no partial result.
- *
- * @param collection - {@link bookingsCollection}.
- * @param fleetId - The fleet.
- * @returns The valid documents and the invalid ones, or the failure of a page (`too-many-pages`
- *   past {@link MAX_FLEET_PAGES} pages).
- */
-export async function listFleetDocs(
+/** Reads every document whose fields equal `where`, page by page, until the cursor is `null`. */
+const queryAllDocs = async (
   collection: BookingStateCollection,
-  fleetId: string,
-): Promise<StorageResult<FleetDocs>> {
+  where: Record<string, BoStorageWhereValue>,
+): Promise<StorageResult<FleetDocs>> => {
   const docs: BookingStateDoc[] = [];
   const invalid: FleetDocs['invalid'][number][] = [];
   let cursor: string | null = null;
@@ -703,7 +767,7 @@ export async function listFleetDocs(
     let result: Awaited<ReturnType<BookingStateCollection['query']>>;
     try {
       result = await collection.query({
-        where: { fleetId },
+        where,
         limit: FLEET_PAGE_SIZE,
         ...(cursor === null ? {} : { cursor }),
       });
@@ -719,4 +783,35 @@ export async function listFleetDocs(
     if (cursor === null) return { ok: true, value: { docs, invalid } };
   }
   return { ok: false, error: { kind: 'too-many-pages' } };
-}
+};
+
+/**
+ * Reads every booking state of a fleet: `query({ where: { fleetId } })`, by pages of
+ * {@link FLEET_PAGE_SIZE}, until the cursor is `null` (a page may be empty while the cursor is not).
+ * A failure of any page fails the whole listing: no partial result.
+ *
+ * @param collection - {@link bookingsCollection}.
+ * @param fleetId - The fleet.
+ * @returns The valid documents and the invalid ones, or the failure of a page (`too-many-pages`
+ *   past {@link MAX_FLEET_PAGES} pages).
+ */
+export const listFleetDocs = (
+  collection: BookingStateCollection,
+  fleetId: string,
+): Promise<StorageResult<FleetDocs>> => queryAllDocs(collection, { fleetId });
+
+/**
+ * The ids of the bookings of a fleet with a regularization to do:
+ * `query({ where: { fleetId, regularizationPending: true } })`, by pages of {@link FLEET_PAGE_SIZE},
+ * without reading every document of the fleet.
+ *
+ * @param collection - {@link bookingsCollection}.
+ * @param fleetId - The fleet.
+ * @returns The documents found (valid ones only, with the invalid ids apart), or the failure of a
+ *   page.
+ */
+export const listPendingRegularizations = (
+  collection: BookingStateCollection,
+  fleetId: string,
+): Promise<StorageResult<FleetDocs>> =>
+  queryAllDocs(collection, { fleetId, regularizationPending: true });

@@ -19,6 +19,8 @@ describe('queryKeys', () => {
       'FLEET-1',
       'booking-1',
     ]);
+    expect(queryKeys.pendingRegularizations('FLEET-1')).toEqual(['regularizations', 'FLEET-1']);
+    expect(isPersistedQueryKey(queryKeys.pendingRegularizations('FLEET-1'))).toBe(false);
   });
 
   it('gives the same customers key whatever the order of the ids', () => {

@@ -228,3 +228,60 @@ export async function requestNoContent(
  * @returns The value, URI-encoded.
  */
 export const segment = (value: string | number): string => encodeURIComponent(String(value));
+
+/**
+ * Calls the Vulog API with `authFetch` when only the status matters: a 2xx is a success whatever
+ * its body (empty, a bare string, an object). For the writes the reference gives no readable answer
+ * for (refund, retry of a payment, wallet patch): read the resource again to know its new state.
+ *
+ * @param authFetch - `useAuthFetch()` of `@vulog/bo-widget-react`, or `bo.authFetch`.
+ * @param path - A path relative to the back office admin API (`user/...`).
+ * @param init - `fetch` options (method, body, `signal`…).
+ * @returns `ok` for a 2xx, or why the call failed.
+ * @throws What `authFetch` rejects with when it is neither a `BoError`, a `TypeError` nor an
+ *   `AbortError`: a bug, not a failure of the API.
+ */
+export async function requestStatus(
+  authFetch: AuthFetch,
+  path: string,
+  init?: RequestInit,
+): Promise<ApiResult<{ readonly status: number }>> {
+  let response: Response;
+  try {
+    response = await authFetch(path, init);
+  } catch (error) {
+    return { ok: false, error: rejectionError(error, init?.signal) };
+  }
+  if (!response.ok) return { ok: false, error: statusError(response.status) };
+  return { ok: true, data: { status: response.status } };
+}
+
+/**
+ * Calls the Vulog API and reads its answer as text, for a route whose 2xx body may be JSON or a
+ * bare value (the id of what it created).
+ *
+ * @param authFetch - `useAuthFetch()`, or `bo.authFetch`.
+ * @param path - A path relative to the back office admin API (`user/...`).
+ * @param init - `fetch` options.
+ * @returns The body as text, or why the call failed (`network` when the body was lost).
+ * @throws What `authFetch` rejects with when it is not a failure of the API (a bug).
+ */
+export async function requestText(
+  authFetch: AuthFetch,
+  path: string,
+  init?: RequestInit,
+): Promise<ApiResult<string>> {
+  let response: Response;
+  try {
+    response = await authFetch(path, init);
+  } catch (error) {
+    return { ok: false, error: rejectionError(error, init?.signal) };
+  }
+  if (!response.ok) return { ok: false, error: statusError(response.status) };
+  try {
+    return { ok: true, data: await response.text() };
+  } catch (error) {
+    // A body lost on the way is a `network` failure: the call may have been done.
+    return { ok: false, error: rejectionError(error, init?.signal) };
+  }
+}

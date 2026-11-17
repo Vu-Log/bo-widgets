@@ -41,11 +41,12 @@ Before you say a change is done: `npm test` and `npm run build` pass.
 | `domain/`                  | Pure business rules (amount, refund policy, statuses, vehicles in range): no React, no I/O, 100 % covered.                                    |
 | `storage/booking-state.ts` | The contract of the `bookings` collection of `bo.storage`, shared with a server scheduler.                                                    |
 | `query/`                   | TanStack Query: client, persistence, query keys and query options.                                                                            |
-| `features/`                | The booking section: `BookingSection`, the list (`list/`), the drawer (`detail/`), the `core` and `write` features, `registry.tsx`, `extensions.ts`. |
+| `features/`                | The booking section: `BookingSection`, the list (`list/`), the drawer (`detail/`), the `core`, `prepayment` and `write` features, `registry.tsx`, `extensions.ts`. |
 | `ui/`                      | Primitives without business logic: `ListGrid`, `SkeletonCell`, `StaticMap`, `ConfigurationBanner`, the `IntersectionObserver` hooks.          |
 | `settings.ts`              | The installation settings, checked with zod.                                                                                                  |
+| `features/prepayment/`     | The prepayment feature: charge with its claim, verification, retry, refund, regularization, internal notes, journal.                     |
 | `i18n.ts`, `locales/`      | Translation (`useI18n().t`) and `Intl`/date-fns formatting; one flat JSON catalogue per language.                                             |
-| `test/`                    | Test helpers only: the fake BO (in-memory storage), the fake `IntersectionObserver`, `renderInWidget`, the fake Vulog API, `renderInSection`. |
+| `test/`                    | Test helpers only: the fake BO (in-memory storage), the fake `IntersectionObserver`, `renderInWidget`, the fake Vulog API, `renderInSection`, the fake billing API (`fake-aima.ts`), a minimal host of a feature (`feature-host.tsx`). |
 
 ## Languages
 
@@ -85,3 +86,11 @@ In `npm run dev` (mock mode), API calls are answered by `dev.responses` of `widg
 ## Documentation
 
 <https://vu-log.github.io/bo-widget-sdk/> (`llms.txt` and `llms-full.txt` for agents).
+
+## Money paths (prepayment feature)
+
+- A money call (invoice, refund, fees, wallet) never runs without its document, and never without a write before it: the charge claim (`claimCharge`, with the amounts) before an invoice, a journal mark (`refund-started`, `cancellation-fee-started`, `credits-revocation-started`) before a refund step. Each later write is built again on the fresh document (`writeOver`), so a step someone else did meanwhile is refused.
+- Only a clear refusal of the API (a 4xx, a request never sent: `isClearRefusal`) releases a claim. A lost answer, a 5xx or an unreadable answer is "to verify": search the invoice, never charge again.
+- The steps of a refund are read back from the document (`refundProgress`); a refund stopped on the way resumes where it stopped. A refund or a fee call with an unknown outcome is "in doubt": never done again until an operator says it was not, at least 10 minutes after it started. The journal keeps these money entries (`MONEY_EVENT_TYPES`) when it is full: add a new money entry type there.
+- The dialogs run the workflows through `guard` (an unexpected error is logged and shown, the dialog never stays busy) and log every money outcome that is not a plain success with `logOutcome`.
+- The dialogs check the live data (settings, invoice status, refundable amount) before any call: the cached `invoiceStatus` of a document only drives the actions and filters of the list.

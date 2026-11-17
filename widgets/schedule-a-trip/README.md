@@ -2,7 +2,7 @@
 
 A widget of the Vulog back office to handle the scheduled bookings ("Schedule a trip") of a fleet, with their prepayment: the booking list by tab (Alert, Upcoming, Ongoing, Completed, Cancelled), the prepayment invoice and its refund, the credits, the pre-allocation of a vehicle and internal notes. Built with React and [MUI](https://mui.com) (7.3.6 or later). It calls the Vulog API with the token of the operator (`authFetch`) and keeps the state of each booking in the storage of the back office (`bo.storage`): no backend of its own.
 
-**Status: booking section.** The five tabs list the bookings page by page, with the customer, the model and the vehicle of the visible rows; a booking opens in a drawer (its URL is `{view}/{bookingId}`) with its lifecycle, its trip on a map, its vehicle and its customer. Bookings are created, edited, cancelled, allocated and pre-allocated from the widget. The prepayment comes next.
+**Status: booking section.** The five tabs list the bookings page by page, with the customer, the model and the vehicle of the visible rows; a booking opens in a drawer (its URL is `{view}/{bookingId}`) with its lifecycle, its trip on a map, its vehicle and its customer. Bookings are created, edited, cancelled, allocated and pre-allocated from the widget. Bookings to prepay are charged, verified, retried, refunded and regularized from the list and the drawer (see Prepayment).
 
 ## The booking section
 
@@ -17,6 +17,15 @@ A widget of the Vulog back office to handle the scheduled bookings ("Schedule a 
 - **Vehicle picker**: a map and a list side by side, the available vehicles of the service and model in the radius, or the 10 closest outside it, by distance, with energy, range and mileage.
 - **Pre-allocation**: the vehicle is put out of service until the start, its reason naming the booking (`Schedule a trip {bookingId}`), and recorded in the stored state (`preallocatedVehicleId`, `preallocatedPlate`, journal). Changing it puts the previous vehicle back in service if it is still held for the booking; removing it, allocating another vehicle or cancelling the booking does the same. A vehicle out of service for another reason since is left as it is, with a warning. When the stored state cannot be written, the vehicle is put back in service. Refused once the scheduler handled the booking (`allocationProcessed`).
 - **Extension point**: everything the list and the drawer show comes from the features of `src/features/registry.ts` (`BookingFeature` in `src/features/extensions.ts`): columns, a primary action per row (the first feature that gives one wins), menu actions, filters (`needsAllPages` when the API cannot apply them), KPIs, detail cards (by `order`: Trip 10, Vehicle 20, Customer 30) and a `Host` rendered once (dialogs).
+
+## Prepayment
+
+- **Charge**: a dialog prefilled with the computed amount (or a required amount with its duration estimated, without a planned return date). Warnings never block: "Prepay anyway", then a confirmation. The charge is claimed in the document before the invoice is created (`POST user/billing/fleets/{fleetId}/invoices/product`, notes `Schedule a trip {bookingId} – N h`, `originId` the operator). No prepayment for a business profile.
+- **Prepayment to verify**: when the answer of the invoice is lost, the claim stays; the widget searches the invoice (`GET .../invoices`, created since the claim, exact amount, then customer, product and notes) and attaches it, or offers "No invoice found, unlock" once the claim is 10 minutes old, never after a failed or incomplete search nor when the API accepted the invoice.
+- **Retry payment**: only for an invoice `REFUSED` or `ERROR` (`POST .../invoices/{invoiceId}/retry-payment`); any other status is explained.
+- **Refund** (Cancelled tab, paid invoice): the refundable amount (`GET .../refundableAmount`, `POST .../refund`), the cancellation fees (price of `cancellationFeesProductId`, `GET user/fleets/{fleetId}/products/{productId}`) and the revocation of the credits (`GET .../wallet/entity/{entityId}`, `PATCH .../wallets/{walletId}`) by the thresholds of the settings. Each step is recorded as it is done: a refund stopped on the way resumes where it stopped, and a refund or fees with an unknown outcome are never done again until an operator says they were not (10 minutes after they started). Fees the credits left do not cover are to regularize by hand: "Mark as regularized" (with a note), which can be undone.
+- **Internal notes** (500 characters) and a **journal** of every action, newest first.
+- Every money action is disabled, with the reason, while the settings are invalid; a 403 says which action the role of the operator does not allow.
 
 ## Settings
 

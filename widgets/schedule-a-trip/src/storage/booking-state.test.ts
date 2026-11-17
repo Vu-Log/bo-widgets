@@ -9,6 +9,7 @@ import {
   createBookingState,
   END_OF_CYCLE_TTL_SECONDS,
   listFleetDocs,
+  listPendingRegularizations,
   mapStorageError,
   MAX_EVENTS,
   MAX_FLEET_PAGES,
@@ -19,6 +20,7 @@ import {
   StorageRequestError,
   updateBookingState,
   withEvent,
+  MONEY_EVENT_TYPES,
   type BookingEvent,
   type BookingStateDoc,
   type BookingStateCollection,
@@ -385,6 +387,23 @@ describe('claimCharge', () => {
     expect(result.ok && result.value.value.internalNotes).toBe('Call before');
   });
 
+  it('writes the amounts and the entity of the charge with the claim, in one write', async () => {
+    const result = await claimCharge(collection, BOOKING, {
+      ...input,
+      patch: { chargeAmount: 42, computedAmount: 40, amountWarnings: ['above-computed'], entityId: 'entity-1', isB2B: false },
+    });
+
+    expect(result.ok && result.value.value).toMatchObject({
+      chargeStartedAt: now.toISOString(),
+      chargeAmount: 42,
+      computedAmount: 40,
+      amountWarnings: ['above-computed'],
+      entityId: 'entity-1',
+      isB2B: false,
+    });
+    expect(bo.storage.api.set).toHaveBeenCalledOnce();
+  });
+
   it('keeps a null operator id', async () => {
     const result = await claimCharge(collection, BOOKING, { ...input, userId: null });
     expect(result.ok && result.value.value.chargeStartedBy).toBeNull();
@@ -476,6 +495,23 @@ describe('releaseCharge', () => {
     ]);
   });
 
+  it('clears the amounts written with the claim', async () => {
+    await claimCharge(collection, BOOKING, {
+      ...input,
+      fleetId: 'FLEET-1',
+      patch: { chargeAmount: 42, computedAmount: null, amountWarnings: ['below-minimum'], entityId: 'entity-1', isB2B: false },
+    });
+
+    const result = await releaseCharge(collection, await current(), input);
+
+    expect(result.ok && result.value.value).toMatchObject({
+      chargeAmount: null,
+      computedAmount: null,
+      amountWarnings: [],
+      entityId: 'entity-1',
+    });
+  });
+
   it('refuses once an invoice is known', async () => {
     await seed({ chargeStartedAt: now.toISOString(), invoiceId: 'invoice-1' });
     expect(await releaseCharge(collection, await current(), input)).toEqual({
@@ -513,6 +549,39 @@ describe('withEvent', () => {
     expect(result).toHaveLength(MAX_EVENTS);
     expect(result[0]).toEqual(event(1));
     expect(result.at(-1)).toEqual(event(MAX_EVENTS));
+  });
+
+  it('drops the other entries before the money steps when full', () => {
+    expect(MONEY_EVENT_TYPES.has('cancellation-fee-started')).toBe(true);
+    const money = { ...event(0), type: 'cancellation-fee-started' };
+    const events = [money, ...Array.from({ length: MAX_EVENTS - 1 }, (_, index) => event(index + 1))];
+    const result = withEvent(events, event(MAX_EVENTS));
+    expect(result).toHaveLength(MAX_EVENTS);
+    expect(result[0]).toEqual(money);
+    expect(result[1]).toEqual(event(2));
+  });
+
+  it('drops a new note rather than a money step when the journal is full of them', () => {
+    const events = Array.from({ length: MAX_EVENTS }, (_, index) => ({ ...event(index), type: 'refunded' }));
+    expect(withEvent(events, event(MAX_EVENTS))).toEqual(events);
+  });
+
+  it('drops an old note for a new money step', () => {
+    const note = event(0);
+    const money = Array.from({ length: MAX_EVENTS - 1 }, (_, index) => ({ ...event(index + 1), type: 'refunded' }));
+    const added = { ...event(MAX_EVENTS), type: 'cancellation-fee-started' };
+    const result = withEvent([note, ...money], added);
+    expect(result).toEqual([...money, added]);
+  });
+
+  it('never drops an unresolved started entry: the write is refused instead', async () => {
+    const started = Array.from({ length: MAX_EVENTS }, (_, index) => ({ ...event(index), type: 'refund-started' }));
+    const result = withEvent(started, { ...event(MAX_EVENTS), type: 'cancellation-fee-started' });
+    expect(result).toHaveLength(MAX_EVENTS + 1);
+    expect(result.slice(0, MAX_EVENTS)).toEqual(started);
+    await seed({ events: started });
+    const written = await updateBookingState(collection, await current(), { events: result });
+    expect(written).toMatchObject({ ok: false, error: { kind: 'invalid-write' } });
   });
 });
 
@@ -658,5 +727,26 @@ describe('StorageRequestError', () => {
     expect(
       new StorageRequestError({ kind: 'invalid-write', issues: ['x: bad'] }).message,
     ).toContain('x: bad');
+  });
+});
+
+describe('listPendingRegularizations', () => {
+  const pending = { toRegularize: { missingAmount: 5, at: now.toISOString() }, regularizationPending: true };
+
+  it('queries the documents of the fleet with a regularization to do only', async () => {
+    await seed(pending, 'booking-a');
+    await seed({ ...pending, regularizationPending: false }, 'booking-b');
+    await seed({}, 'booking-c');
+    await bo.storage.api.set(BOOKINGS_COLLECTION, 'booking-d', { schemaVersion: 1, fleetId: 'FLEET-2', allocationProcessed: false, ...pending });
+
+    const result = await listPendingRegularizations(collection, 'FLEET-1');
+
+    expect(result.ok && result.value.docs.map((doc) => doc.id)).toEqual(['booking-a']);
+    expect(bo.storage.api.query.mock.calls[0]?.[1]).toMatchObject({ where: { fleetId: 'FLEET-1', regularizationPending: true } });
+  });
+
+  it('gives the failure of a page', async () => {
+    bo.storage.api.query.mockRejectedValueOnce(hostError('rate-limited', 429));
+    expect(await listPendingRegularizations(collection, 'FLEET-1')).toEqual({ ok: false, error: { kind: 'rate-limited' } });
   });
 });
