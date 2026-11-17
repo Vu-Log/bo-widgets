@@ -1,5 +1,7 @@
 # The actions of .github/workflows are pinned by commit SHA, so that a moved tag cannot change what the CI runs.
 # The SDK packages (@vulog/bo-widget-*) are raised together, in every widget at once.
+# Major versions (React, MUI, Vite, Vitest, TypeScript…) follow the templates of the SDK
+# (npm create @vulog/bo-widget): they are aligned by hand when the SDK moves, not by Dependabot.
 version: 2
 updates:
   - package-ecosystem: github-actions
@@ -10,7 +12,13 @@ updates:
     directory: /
     schedule:
       interval: weekly
+    ignore:
+      - dependency-name: "*"
+        update-types: ["version-update:semver-major"]
+      # TypeScript breaks on its minor versions (6.0 → 6.1): the SDK templates pin ~6.0.x.
+      - dependency-name: "typescript"
+        update-types: ["version-update:semver-minor"]
     groups:
       bo-widget-sdk:
         patterns:
-          - '@vulog/bo-widget-*'
+          - "@vulog/bo-widget-*"
