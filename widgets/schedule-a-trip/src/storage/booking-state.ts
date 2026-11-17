@@ -204,10 +204,10 @@ export const bookingStatePatchSchema = knownStateSchema
   .omit({
     schemaVersion: true,
     fleetId: true,
-    allocationProcessed: true,
-    creditsAdded: true,
-    walletId: true,
-    schedulerErrors: true,
+    ...(Object.fromEntries(SCHEDULER_FIELDS.map((field) => [field, true])) as Record<
+      (typeof SCHEDULER_FIELDS)[number],
+      true
+    >),
   })
   .partial()
   .strict();

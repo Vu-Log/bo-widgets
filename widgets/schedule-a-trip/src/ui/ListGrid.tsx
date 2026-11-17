@@ -247,7 +247,7 @@ export function ListGrid<Row>({
                 ))}
               </TableRow>
             ))}
-          {failed && (
+          {failed && !isFetchingNextPage && (
             <TableRow component="div" role="row" sx={rowSx}>
               <TableCell component="div" role="gridcell" sx={errorCellSx}>
                 {labels.nextPageError}{' '}
