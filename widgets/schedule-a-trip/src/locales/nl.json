@@ -198,5 +198,11 @@
   "write.storageFailed": "De gegevens van de widget konden niet worden geschreven ({reason}).",
   "write.updated": "Boeking bijgewerkt.",
   "write.vehicleHeldElsewhere": "Het voertuig {vehicle} is nu om een andere reden buiten dienst: het is zo gelaten.",
-  "write.vehicleNotEnabled": "Het voertuig {vehicle} kon niet weer in dienst worden gesteld: doe dit in het backoffice."
+  "write.vehicleNotEnabled": "Het voertuig {vehicle} kon niet weer in dienst worden gesteld: doe dit in het backoffice.",
+  "write.vehicleUnavailable": "Het voertuig {vehicle} is niet meer beschikbaar: kies een ander.",
+  "write.allocationUnknown": "De toewijzing kreeg geen antwoord en is mogelijk uitgevoerd: controleer de boeking en het voertuig {vehicle} in het backoffice.",
+  "write.vehicleNotChecked": "De status van het voertuig {vehicle} kon niet worden gelezen: het is zo gelaten, controleer het in het backoffice.",
+  "picker.customerCheckFailed": "Kon niet controleren of de klant een lopende rit heeft: {reason}",
+  "create.incomplete": "De boeking is niet meer geldig (is het vertrek voorbij?): controleer de stap Rit.",
+  "list.sourceFailed": "{count} boekingen van dit filter konden niet worden gelezen: de lijst kan onvolledig zijn."
 }

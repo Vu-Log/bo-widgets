@@ -6,14 +6,17 @@ import { BOOKINGS_COLLECTION } from '../../storage/booking-state';
 import { fakeBo, jsonResponse } from '../../test/fake-bo';
 import { installFakeIntersectionObserver } from '../../test/intersection-observer';
 import { renderInWidget } from '../../test/render';
-import { booking, buttonNamed, context, renderInSection, stateDoc } from '../../test/section';
+import { booking, buttonNamed, context, fieldLabelled, renderInSection, stateDoc, typeInto } from '../../test/section';
 import { apiBooking, fleetApi, stubVulogApi, type ApiCall } from '../../test/vulog-api';
 import { BookingSection } from '../BookingSection';
-import { canPreallocate, createWriteFeature, writeActions, WriteHost } from '.';
+import { canPreallocate, createWriteFeature, hostOf, writeActions, WriteHost } from '.';
 import { createDialogStore } from './store';
 
 const now = new Date('2026-03-10T08:00:00Z');
-const deps = () => ({ t: createI18n('en_GB').t, store: createDialogStore(), now: () => now });
+const deps = () => {
+  const store = createDialogStore();
+  return { t: createI18n('en_GB').t, store, now: () => now, Host: hostOf(store) };
+};
 const ids = (ctx: Parameters<typeof writeActions>[0]) => writeActions(ctx, deps()).map((action) => action.id);
 
 describe('writeActions', () => {
@@ -124,7 +127,7 @@ describe('the write flows in the section', () => {
       return { path: resolved };
     });
     Object.assign(bo.api, { navigate });
-    return bo;
+    return { ...bo, navigate };
   };
 
   it('pre-allocates a vehicle from the row, then shows it in the list', async () => {
@@ -187,6 +190,28 @@ describe('the write flows in the section', () => {
     await vi.waitFor(() => expect(buttonNamed('New booking', view.container)).toBeDefined());
     buttonNamed('New booking', view.container)?.click();
     await vi.waitFor(() => expect(document.body.querySelector('#write-dialog-title')?.textContent).toBe('New booking'));
-    expect(document.body.textContent).toContain('Customer and profile');
+
+    const customer = fieldLabelled('Customer') as HTMLInputElement;
+    customer.focus();
+    typeInto(customer, 'jane');
+    await vi.waitFor(() => expect(document.body.querySelector('[role="option"]')).not.toBeNull(), { timeout: 3000 });
+    document.body.querySelector<HTMLElement>('[role="option"]')?.click();
+    await vi.waitFor(() => expect(buttonNamed('Next')?.disabled).toBe(false));
+    buttonNamed('Next')?.click();
+    await vi.waitFor(() => expect(fieldLabelled('Latitude')).toBeDefined());
+    typeInto(fieldLabelled('Start')!, '2099-03-10T08:00');
+    typeInto(fieldLabelled('Planned return')!, '');
+    typeInto(fieldLabelled('Latitude')!, '48.8566');
+    typeInto(fieldLabelled('Longitude')!, '2.3522');
+    await vi.waitFor(() => expect(buttonNamed('Next')?.disabled).toBe(false));
+    buttonNamed('Next')?.click();
+    await vi.waitFor(() => expect(buttonNamed('Create the booking')).toBeDefined());
+    buttonNamed('Create the booking')?.click();
+
+    await vi.waitFor(() =>
+      expect(document.body.querySelector('[role="dialog"][aria-label="Booking details"]')?.textContent).toContain('#booking-new'),
+    );
+    expect(bo.navigate).toHaveBeenLastCalledWith({ path: 'booking-new' });
+    await vi.waitFor(() => expect(bo.api.notify).toHaveBeenCalledWith({ message: 'Booking created.', severity: 'success' }));
   });
 });

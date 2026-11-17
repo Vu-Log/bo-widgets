@@ -13,18 +13,18 @@ import { useAuthFetch } from '@vulog/bo-widget-react';
 import { useState, type ReactNode } from 'react';
 import { ApiRequestError, type ApiResult } from '../../api/http';
 import { deallocateVehicle, updateBookingRequest, type BookingRequestChanges } from '../../api/schedule-a-trip';
-import { datesProblems, isValidRadius } from '../../domain/booking-dates';
+import { datesProblems } from '../../domain/booking-dates';
 import { useI18n } from '../../i18n';
 import { modelsQueryOptions } from '../../query/queries';
 import { queryErrorText } from '../core/cards';
 import type { BookingContext } from '../extensions';
 import { useSection } from '../section-context';
 import { cancel, removePreallocation, type OperationResult } from './operations';
-import { DateFields, isPickupComplete, PickupFields, type DatesValue, type PickupValue } from './fields';
-import { failureText, useAfterWrite, useWriteDeps } from './use-write';
+import { DateFields, PickupFields, toPickup, type DatesValue, type PickupValue } from './fields';
+import { failureText, useAfterWrite, useReportFailure, useWriteDeps } from './use-write';
 
-/** Largest notes of a booking, as the back office takes them. */
-export const MAX_NOTES_LENGTH = 1024;
+export { MAX_NOTES_LENGTH } from '../../domain/new-booking';
+import { MAX_NOTES_LENGTH } from '../../domain/new-booking';
 
 /** Props of {@link WriteDialogFrame}. */
 export interface WriteDialogFrameProps {
@@ -141,14 +141,18 @@ export function EditTripDialog({ ctx, onClose }: { readonly ctx: BookingContext;
     plannedReturn: booking.plannedReturnDate ? new Date(booking.plannedReturnDate) : null,
   });
   const [notes, setNotes] = useState(booking.notes ?? '');
+  const [initialRadius] = useState(booking.radius ?? 500);
   const [pickup, setPickup] = useState<PickupValue>({
     latitude: booking.latitude,
     longitude: booking.longitude,
-    radius: booking.radius ?? 500,
+    radius: initialRadius,
   });
   const { mutation, error } = useUpdate(ctx, 'write.updated', onClose);
 
   const startChanged = dates.start?.getTime() !== Date.parse(booking.startDate);
+  const complete = toPickup(pickup);
+  const pickupChanged =
+    pickup.latitude !== booking.latitude || pickup.longitude !== booking.longitude || pickup.radius !== initialRadius;
   const problems = datesProblems({ start: dates.start, plannedReturn: dates.plannedReturn, now: new Date() })
     // An unchanged start may be past already: only a new start must be in the future.
     .filter((problem) => problem !== 'start-past' || startChanged);
@@ -159,11 +163,9 @@ export function EditTripDialog({ ctx, onClose }: { readonly ctx: BookingContext;
       ? { plannedReturn: dates.plannedReturn }
       : {}),
     ...(notes !== (booking.notes ?? '') ? { notes } : {}),
-    ...(pickup.latitude !== booking.latitude && pickup.latitude !== null ? { latitude: pickup.latitude } : {}),
-    ...(pickup.longitude !== booking.longitude && pickup.longitude !== null ? { longitude: pickup.longitude } : {}),
-    ...(pickup.radius !== booking.radius && isValidRadius(pickup.radius) ? { radius: pickup.radius } : {}),
+    ...(pickupChanged && complete ? { pickup: complete } : {}),
   };
-  const valid = problems.length === 0 && isPickupComplete(pickup) && notes.length <= MAX_NOTES_LENGTH;
+  const valid = problems.length === 0 && complete !== null && notes.length <= MAX_NOTES_LENGTH;
   return (
     <WriteDialogFrame
       title={t('write.editTrip')}
@@ -281,11 +283,14 @@ export function ConfirmDialog({
   const { t } = useI18n();
   const deps = useWriteDeps();
   const after = useAfterWrite();
+  const report = useReportFailure();
   const texts = CONFIRM_TEXTS[kind];
   const mutation = useMutation({
     mutationFn: async (): Promise<Extract<OperationResult, { ok: true }>> => {
       if (kind === 'deallocate') {
-        const result = await deallocateVehicle(deps.authFetch, deps.fleetId, ctx.booking.id, ctx.booking.vehicleId ?? '');
+        const { vehicleId } = ctx.booking;
+        if (vehicleId === null) throw new Error('The booking has no vehicle to take back');
+        const result = await deallocateVehicle(deps.authFetch, deps.fleetId, ctx.booking.id, vehicleId);
         if (!result.ok) throw new OperationError({ ok: false, failure: { kind: 'api', error: result.error } });
         return { ok: true, state: undefined, warnings: [] };
       }
@@ -296,6 +301,9 @@ export function ConfirmDialog({
     onSuccess: (result) => {
       after(t(texts.done), ctx.booking.id, result.state, result.warnings, t);
       onClose();
+    },
+    onError: (error) => {
+      if (error instanceof OperationError) report(error.result.failure, ctx.booking.id);
     },
   });
   return (

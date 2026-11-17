@@ -68,6 +68,31 @@ export function datesProblems(input: {
   return problems;
 }
 
+/** A pickup point that can be sent: coordinates in range and a valid radius. */
+export interface Pickup {
+  readonly latitude: number;
+  readonly longitude: number;
+  /** In meters. */
+  readonly radius: number;
+}
+
+/**
+ * A pickup point being typed, checked: both coordinates, in range, and a valid radius.
+ *
+ * @param value - Coordinates (`null` when empty) and radius.
+ * @returns The pickup point, or `null` when it cannot be sent.
+ */
+export function toPickup(value: {
+  readonly latitude: number | null;
+  readonly longitude: number | null;
+  readonly radius: number;
+}): Pickup | null {
+  const { latitude, longitude, radius } = value;
+  if (latitude === null || longitude === null || !isValidRadius(radius)) return null;
+  if (Math.abs(latitude) > 90 || Math.abs(longitude) > 180) return null;
+  return { latitude, longitude, radius };
+}
+
 /** Largest radius the widget accepts, in meters. */
 export const MAX_RADIUS = 50_000;
 

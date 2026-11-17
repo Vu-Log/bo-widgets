@@ -8,7 +8,16 @@ const disconnects: (() => void)[] = [];
 afterEach(() => disconnects.splice(0).forEach((disconnect) => disconnect()));
 
 /** The calls the fake API received, as `METHOD path`; `fail` makes the matching calls fail. */
-async function setup(options: { fail?: (call: string) => number | undefined; reasons?: Record<string, string | null> } = {}) {
+async function setup(
+  options: {
+    fail?: (call: string) => number | undefined;
+    reasons?: Record<string, string | null>;
+    /** Vehicles whose state cannot be read. */
+    unreadable?: string[];
+    /** Vehicles the fleet manager does not know. */
+    missing?: string[];
+  } = {},
+) {
   const bo = fakeBo();
   const client = await connect({ vulogBo: bo.api });
   disconnects.push(() => client.disconnect());
@@ -26,7 +35,11 @@ async function setup(options: { fail?: (call: string) => number | undefined; rea
     fleetId: 'FLEET-1',
     userId: 'user-9',
     now: () => new Date('2026-03-10T08:00:00Z'),
-    reasonOf: async (vehicleId) => options.reasons?.[vehicleId] ?? null,
+    reasonOf: async (vehicleId) => {
+      if (options.unreadable?.includes(vehicleId)) return { ok: false, error: { kind: 'http', status: 503 } };
+      if (options.missing?.includes(vehicleId)) return { ok: true, data: { found: false } };
+      return { ok: true, data: { found: true, reason: options.reasons?.[vehicleId] ?? null } };
+    },
   };
   const stored = () => bo.storage.docs(BOOKINGS_COLLECTION).get('booking-1')?.value;
   return { bo, deps, calls, collection, stored };
@@ -118,8 +131,40 @@ describe('preallocate', () => {
     bo.storage.api.set.mockRejectedValueOnce(hostError('quota-exceeded', 507));
     expect(await preallocate(deps, 'booking-1', { id: 'v-1', plate: null })).toEqual({
       ok: false,
-      failure: { kind: 'rollback-failed', vehicleId: 'v-1', error: { kind: 'http', status: 500 } },
+      failure: { kind: 'rollback-failed', vehicleId: 'v-1', error: { kind: 'http', status: 500 }, cause: { kind: 'quota-exceeded' } },
     });
+  });
+
+  it('refuses a vehicle someone put out of service meanwhile, or that is gone', async () => {
+    const { deps, calls } = await setup({ reasons: { 'v-1': 'Repair' }, missing: ['v-2'] });
+    expect(await preallocate(deps, 'booking-1', { id: 'v-1', plate: null })).toEqual({
+      ok: false,
+      failure: { kind: 'vehicle-unavailable', vehicleId: 'v-1' },
+    });
+    expect(await preallocate(deps, 'booking-1', { id: 'v-2', plate: null })).toEqual({
+      ok: false,
+      failure: { kind: 'vehicle-unavailable', vehicleId: 'v-2' },
+    });
+    expect(calls).toEqual([]);
+  });
+
+  it('fails before any change when the vehicle chosen cannot be checked', async () => {
+    const { deps, calls } = await setup({ unreadable: ['v-1'] });
+    expect(await preallocate(deps, 'booking-1', { id: 'v-1', plate: null })).toEqual({
+      ok: false,
+      failure: { kind: 'api', error: { kind: 'http', status: 503 } },
+    });
+    expect(calls).toEqual([]);
+  });
+
+  it('warns, never throws, when the previous vehicle cannot be checked', async () => {
+    const { deps, calls, collection } = await setup({ unreadable: ['v-1'] });
+    await createBookingState(collection, 'booking-1', { fleetId: 'FLEET-1', patch: { preallocatedVehicleId: 'v-1' } });
+    expect(await preallocate(deps, 'booking-1', { id: 'v-2', plate: null })).toMatchObject({
+      ok: true,
+      warnings: [{ kind: 'vehicle-not-checked', vehicleId: 'v-1' }],
+    });
+    expect(calls).toEqual([`POST ${fleet}/v-2/disable`]);
   });
 
   it('fails when the state cannot be read', async () => {
@@ -146,6 +191,16 @@ describe('removePreallocation', () => {
     expect(await removePreallocation(deps, 'booking-1')).toEqual({ ok: true, state: null, warnings: [] });
     await bo.storage.api.set(BOOKINGS_COLLECTION, 'booking-1', { schemaVersion: 1, fleetId: 'FLEET-1', allocationProcessed: true, preallocatedVehicleId: 'v-1' });
     expect(await removePreallocation(deps, 'booking-1')).toEqual({ ok: false, failure: { kind: 'already-processed' } });
+  });
+
+  it('keeps the pre-allocation when its vehicle cannot be put back in service', async () => {
+    const { deps, collection, stored } = await setup({ reasons: { 'v-1': reasonFor }, fail: () => 500 });
+    await createBookingState(collection, 'booking-1', { fleetId: 'FLEET-1', patch: { preallocatedVehicleId: 'v-1' } });
+    expect(await removePreallocation(deps, 'booking-1')).toMatchObject({
+      ok: true,
+      warnings: [{ kind: 'vehicle-not-enabled', vehicleId: 'v-1' }],
+    });
+    expect(stored()?.preallocatedVehicleId).toBe('v-1');
   });
 
   it('warns when the state cannot be cleared', async () => {
@@ -205,6 +260,31 @@ describe('allocate', () => {
     expect(await allocate(deps, booking, 'v-1')).toMatchObject({ ok: false, failure: { kind: 'rollback-failed', vehicleId: 'v-1' } });
   });
 
+  it('does not take the vehicle out of service again when the allocation got no answer', async () => {
+    const { deps, calls, collection } = await setup({
+      reasons: { 'v-1': reasonFor },
+      fail: (call) => (call.includes('/allocate/') ? 503 : undefined),
+    });
+    await createBookingState(collection, 'booking-1', { fleetId: 'FLEET-1', patch: { preallocatedVehicleId: 'v-1' } });
+    expect(await allocate(deps, booking, 'v-1')).toEqual({ ok: false, failure: { kind: 'allocation-unknown', vehicleId: 'v-1' } });
+    expect(calls).toEqual([`POST ${fleet}/v-1/enable`, allocatePath('v-1')]);
+  });
+
+  it('fails before any change when the state or the pre-allocated vehicle cannot be read', async () => {
+    const unreadableState = await setup();
+    unreadableState.bo.storage.api.get.mockRejectedValueOnce(hostError('rate-limited', 429));
+    expect(await allocate(unreadableState.deps, booking, 'v-1')).toEqual({
+      ok: false,
+      failure: { kind: 'storage', error: { kind: 'rate-limited' } },
+    });
+    expect(unreadableState.calls).toEqual([]);
+
+    const unreadableVehicle = await setup({ unreadable: ['v-1'] });
+    await createBookingState(unreadableVehicle.collection, 'booking-1', { fleetId: 'FLEET-1', patch: { preallocatedVehicleId: 'v-1' } });
+    expect((await allocate(unreadableVehicle.deps, booking, 'v-1')).ok).toBe(false);
+    expect(unreadableVehicle.calls).toEqual([]);
+  });
+
   it('fails when the pre-allocated vehicle cannot be put back in service', async () => {
     const { deps, calls, collection } = await setup({
       reasons: { 'v-1': reasonFor },
@@ -232,6 +312,13 @@ describe('cancel', () => {
     const { deps, calls } = await setup({ fail: () => 403 });
     expect(await cancel(deps, 'booking-1')).toEqual({ ok: false, failure: { kind: 'api', error: { kind: 'not-allowed', status: 403 } } });
     expect(calls).toHaveLength(1);
+  });
+
+  it('warns, never throws, when the pre-allocated vehicle cannot be checked after the cancellation', async () => {
+    const { deps, collection, stored } = await setup({ unreadable: ['v-1'] });
+    await createBookingState(collection, 'booking-1', { fleetId: 'FLEET-1', patch: { preallocatedVehicleId: 'v-1' } });
+    expect(await cancel(deps, 'booking-1')).toMatchObject({ ok: true, warnings: [{ kind: 'vehicle-not-checked', vehicleId: 'v-1' }] });
+    expect(stored()?.preallocatedVehicleId).toBeNull();
   });
 
   it('warns when the state cannot be read after the cancellation', async () => {

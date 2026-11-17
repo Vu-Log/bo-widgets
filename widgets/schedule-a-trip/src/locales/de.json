@@ -198,5 +198,11 @@
   "write.storageFailed": "Die Daten des Widgets konnten nicht geschrieben werden ({reason}).",
   "write.updated": "Buchung aktualisiert.",
   "write.vehicleHeldElsewhere": "Das Fahrzeug {vehicle} ist jetzt aus einem anderen Grund außer Betrieb: Es wurde so belassen.",
-  "write.vehicleNotEnabled": "Das Fahrzeug {vehicle} konnte nicht wieder in Betrieb genommen werden: Erledigen Sie dies im Backoffice."
+  "write.vehicleNotEnabled": "Das Fahrzeug {vehicle} konnte nicht wieder in Betrieb genommen werden: Erledigen Sie dies im Backoffice.",
+  "write.vehicleUnavailable": "Das Fahrzeug {vehicle} ist nicht mehr verfügbar: Wählen Sie ein anderes.",
+  "write.allocationUnknown": "Die Zuweisung erhielt keine Antwort und wurde eventuell ausgeführt: Prüfen Sie die Buchung und das Fahrzeug {vehicle} im Backoffice.",
+  "write.vehicleNotChecked": "Der Zustand des Fahrzeugs {vehicle} konnte nicht gelesen werden: Es wurde so belassen, prüfen Sie es im Backoffice.",
+  "picker.customerCheckFailed": "Ob der Kunde eine laufende Fahrt hat, konnte nicht geprüft werden: {reason}",
+  "create.incomplete": "Die Buchung ist nicht mehr gültig (ist der Beginn vorbei?): Prüfen Sie den Schritt Fahrt.",
+  "list.sourceFailed": "{count} Buchungen dieses Filters konnten nicht gelesen werden: Die Liste ist eventuell unvollständig."
 }

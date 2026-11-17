@@ -1,22 +1,11 @@
-/** What {@link bookableProfiles} and {@link bookableServices} read of a registration overview. */
-export interface OverviewInput {
-  readonly profiles: readonly {
-    readonly profileId: string;
-    readonly type: string;
-    readonly status: string;
-    readonly approvedServiceIds: readonly string[];
-  }[];
-  readonly services: readonly {
-    readonly id: string;
-    readonly name: string;
-    readonly type: string;
-    readonly fleetId: string;
-    readonly cityId: string;
-  }[];
-}
+import type { ProfileStatus, ProfileType, RegistrationOverview, ServiceType } from '../api/users';
 
-const CLOSED_PROFILE_STATUSES = new Set(['INACTIVE', 'ARCHIVED']);
-const BOOKABLE_PROFILE_TYPES = new Set(['Single', 'Business']);
+/** What {@link bookableProfiles} and {@link bookableServices} read of a registration overview. */
+export type OverviewInput = RegistrationOverview;
+
+const CLOSED_PROFILE_STATUSES: ReadonlySet<ProfileStatus> = new Set<ProfileStatus>(['INACTIVE', 'ARCHIVED']);
+const BOOKABLE_PROFILE_TYPES: ReadonlySet<ProfileType> = new Set<ProfileType>(['Single', 'Business']);
+const BOOKABLE_SERVICE_TYPE: ServiceType = 'FREE_FLOATING';
 
 /**
  * The profiles a booking can be made with: personal (`Single`) or business ones, neither inactive
@@ -49,7 +38,7 @@ export function bookableServices(
   return overview.services.filter(
     (service) =>
       approved.has(service.id) &&
-      service.type === 'FREE_FLOATING' &&
+      service.type === BOOKABLE_SERVICE_TYPE &&
       service.fleetId.toLowerCase() === fleetId.toLowerCase(),
   );
 }

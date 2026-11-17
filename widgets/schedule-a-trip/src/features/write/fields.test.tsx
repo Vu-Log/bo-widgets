@@ -15,6 +15,7 @@ describe('isPickupComplete', () => {
     expect(isPickupComplete({ latitude: 1, longitude: 2, radius: 500 })).toBe(true);
     expect(isPickupComplete({ latitude: null, longitude: 2, radius: 500 })).toBe(false);
     expect(isPickupComplete({ latitude: 1, longitude: 2, radius: 0 })).toBe(false);
+    expect(isPickupComplete({ latitude: 91, longitude: 2, radius: 500 })).toBe(false);
   });
 });
 

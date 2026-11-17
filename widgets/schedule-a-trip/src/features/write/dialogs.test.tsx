@@ -44,8 +44,45 @@ describe('EditTripDialog', () => {
 
     await vi.waitFor(() => expect(onClose).toHaveBeenCalled());
     expect(writes[0]?.path).toBe('user/scheduleATrip/fleets/FLEET-1/bookingrequests/booking-1');
-    expect(JSON.parse(String(writes[0]?.init?.body))).toEqual({ id: 'booking-1', modelId: 7, notes: 'Child seat', radius: 800 });
+    // The pickup point is sent whole.
+    expect(JSON.parse(String(writes[0]?.init?.body))).toEqual({
+      id: 'booking-1',
+      modelId: 7,
+      notes: 'Child seat',
+      latitude: 48.8566,
+      longitude: 2.3522,
+      radius: 800,
+    });
     await vi.waitFor(() => expect(bo.api.notify).toHaveBeenCalledWith({ message: 'Booking updated.', severity: 'success' }));
+  });
+
+  it('saves the notes of a booking whose start passed, without sending the start', async () => {
+    const writes = api();
+    const onClose = vi.fn();
+    const started = context({ booking: booking({ startDate: '2020-03-10T10:00:00Z', plannedReturnDate: null, radius: null }) });
+    const view = await renderInSection(<EditTripDialog ctx={started} onClose={onClose} />);
+    unmount = view.unmount;
+    await vi.waitFor(() => expect(fieldLabelled('Notes of the customer')).toBeDefined());
+    // A booking without radius shows the default one, without counting it as a change.
+    expect(buttonNamed('Save')?.disabled).toBe(true);
+    typeInto(fieldLabelled('Notes of the customer')!, 'Late');
+    await vi.waitFor(() => expect(buttonNamed('Save')?.disabled).toBe(false));
+    buttonNamed('Save')?.click();
+    await vi.waitFor(() => expect(onClose).toHaveBeenCalled());
+    expect(JSON.parse(String(writes[0]?.init?.body))).toEqual({ id: 'booking-1', modelId: 7, notes: 'Late' });
+  });
+
+  it('clears the planned return', async () => {
+    const writes = api();
+    const onClose = vi.fn();
+    const view = await renderInSection(<EditTripDialog ctx={future} onClose={onClose} />);
+    unmount = view.unmount;
+    await vi.waitFor(() => expect(fieldLabelled('Planned return')).toBeDefined());
+    typeInto(fieldLabelled('Planned return')!, '');
+    await vi.waitFor(() => expect(buttonNamed('Save')?.disabled).toBe(false));
+    buttonNamed('Save')?.click();
+    await vi.waitFor(() => expect(onClose).toHaveBeenCalled());
+    expect(JSON.parse(String(writes[0]?.init?.body))).toEqual({ id: 'booking-1', modelId: 7, plannedReturnDate: null });
   });
 
   it('refuses a past start, a return before the start and a wrong radius', async () => {

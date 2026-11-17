@@ -198,5 +198,11 @@
   "write.storageFailed": "No se pudieron escribir los datos del widget ({reason}).",
   "write.updated": "Reserva actualizada.",
   "write.vehicleHeldElsewhere": "El vehículo {vehicle} está fuera de servicio por otro motivo: se dejó como estaba.",
-  "write.vehicleNotEnabled": "No se pudo volver a poner en servicio el vehículo {vehicle}: hágalo en el back office."
+  "write.vehicleNotEnabled": "No se pudo volver a poner en servicio el vehículo {vehicle}: hágalo en el back office.",
+  "write.vehicleUnavailable": "El vehículo {vehicle} ya no está disponible: elija otro.",
+  "write.allocationUnknown": "La asignación no obtuvo respuesta y puede que se haya hecho: compruebe la reserva y el vehículo {vehicle} en el back office.",
+  "write.vehicleNotChecked": "No se pudo leer el estado del vehículo {vehicle}: se dejó como estaba, compruébelo en el back office.",
+  "picker.customerCheckFailed": "No se pudo comprobar si el cliente tiene un viaje en curso: {reason}",
+  "create.incomplete": "La reserva ya no es válida (¿ha pasado la salida?): revise el paso Viaje.",
+  "list.sourceFailed": "No se pudieron leer {count} reservas de este filtro: la lista puede estar incompleta."
 }

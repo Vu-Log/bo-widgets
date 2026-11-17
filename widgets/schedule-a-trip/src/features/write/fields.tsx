@@ -3,7 +3,7 @@ import { useQuery } from '@tanstack/react-query';
 import { useEffect, useState } from 'react';
 import { forwardGeocode, type GeocodedPlace } from '../../api/mapbox';
 import { unwrap } from '../../api/http';
-import { isValidRadius, MAX_RADIUS, toZonedInput, fromZonedInput } from '../../domain/booking-dates';
+import { isValidRadius, MAX_RADIUS, toPickup, toZonedInput, fromZonedInput } from '../../domain/booking-dates';
 import { useI18n } from '../../i18n';
 import { queryKeys } from '../../query/keys';
 import { StaticMap } from '../../ui/StaticMap';
@@ -68,14 +68,15 @@ export interface PickupValue {
   readonly radius: number;
 }
 
+export { toPickup };
+
 /**
- * Whether a pickup point can be sent: located, with a valid radius.
+ * Whether a pickup point can be sent: both coordinates in range, with a valid radius.
  *
  * @param value - The pickup point.
  * @returns `true` when complete.
  */
-export const isPickupComplete = (value: PickupValue): boolean =>
-  value.latitude !== null && value.longitude !== null && isValidRadius(value.radius);
+export const isPickupComplete = (value: PickupValue): boolean => toPickup(value) !== null;
 
 const SEARCH_DELAY_MS = 300;
 

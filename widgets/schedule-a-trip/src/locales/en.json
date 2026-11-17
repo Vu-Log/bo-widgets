@@ -198,5 +198,11 @@
   "write.storageFailed": "The data of the widget could not be written ({reason}).",
   "write.updated": "Booking updated.",
   "write.vehicleHeldElsewhere": "The vehicle {vehicle} is out of service for another reason now: it was left as it is.",
-  "write.vehicleNotEnabled": "The vehicle {vehicle} could not be put back in service: do it in the back office."
+  "write.vehicleNotEnabled": "The vehicle {vehicle} could not be put back in service: do it in the back office.",
+  "write.vehicleUnavailable": "The vehicle {vehicle} is no longer available: choose another one.",
+  "write.allocationUnknown": "The allocation got no answer and may have been done: check the booking and the vehicle {vehicle} in the back office.",
+  "write.vehicleNotChecked": "The state of the vehicle {vehicle} could not be read: it was left as it is, check it in the back office.",
+  "picker.customerCheckFailed": "Whether the customer has a trip in progress could not be checked: {reason}",
+  "create.incomplete": "The booking is no longer valid (has the start passed?): check the trip step.",
+  "list.sourceFailed": "{count} bookings of this filter could not be read: the list may be incomplete."
 }

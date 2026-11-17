@@ -10,6 +10,8 @@ describe('preallocationReason and isHeldFor', () => {
 
   it('does not take a vehicle out of service for something else', () => {
     expect(isHeldFor('Repair', 'booking-1')).toBe(false);
+    expect(isHeldFor(preallocationReason('booking-10'), 'booking-1')).toBe(false);
+    expect(isHeldFor('Repair after booking-1', 'booking-1')).toBe(false);
     expect(isHeldFor(preallocationReason('booking-2'), 'booking-1')).toBe(false);
     expect(isHeldFor(null, 'booking-1')).toBe(false);
   });

@@ -168,10 +168,10 @@ function FleetSection({
   );
   const sourced = useSourceBookings(fleetId, tab, sourceIds);
   const bookings = useMemo(() => {
-    if (sourced.length === 0) return tabBookings.bookings;
+    if (sourced.bookings.length === 0) return tabBookings.bookings;
     const known = new Set(tabBookings.bookings.map((booking) => booking.id));
-    return [...tabBookings.bookings, ...sourced.filter((booking) => !known.has(booking.id))];
-  }, [tabBookings.bookings, sourced]);
+    return [...tabBookings.bookings, ...sourced.bookings.filter((booking) => !known.has(booking.id))];
+  }, [tabBookings.bookings, sourced.bookings]);
   const enrichment = useBookingContexts({
     fleetId,
     tab,
@@ -389,6 +389,11 @@ function FleetSection({
             }
           />
         </Box>
+      )}
+      {sourced.failed > 0 && (
+        <Alert severity="warning" sx={{ flex: 'none', borderRadius: 0 }}>
+          {t('list.sourceFailed', { count: sourced.failed })}
+        </Alert>
       )}
       {tabBookings.truncated && (
         <Alert severity="warning" sx={{ flex: 'none', borderRadius: 0 }}>

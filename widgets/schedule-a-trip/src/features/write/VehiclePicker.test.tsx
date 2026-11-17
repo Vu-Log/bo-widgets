@@ -125,7 +125,16 @@ describe('VehiclePickerDialog', () => {
     expect(buttonNamed('Allocate')?.disabled).toBe(true);
   });
 
-  it('shows why a pre-allocation failed and stays open', async () => {
+  it('does not allocate while the trip in progress of the customer cannot be checked', async () => {
+    stubVulogApi((call) =>
+      call.path.endsWith('/active') ? new Response('', { status: 500 }) : call.path.includes('vehicles') ? jsonResponse([]) : undefined,
+    );
+    const view = await renderInSection(<VehiclePickerDialog mode="allocate" ctx={context()} onClose={vi.fn()} />);
+    unmount = view.unmount;
+    await vi.waitFor(() => expect(document.body.textContent).toContain('could not be checked'));
+  });
+
+  it('shows why a pre-allocation failed, logs it and stays open', async () => {
     api({ fail: true });
     const onClose = vi.fn();
     const view = await renderInSection(<VehiclePickerDialog mode="preallocate" ctx={context()} onClose={onClose} />);

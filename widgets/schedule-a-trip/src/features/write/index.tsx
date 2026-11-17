@@ -1,4 +1,5 @@
 import { Box, Button } from '@mui/material';
+import type { ReactNode } from 'react';
 import { storedDataStatus } from '../../domain/archive';
 import type { MessageKey, MessageParams } from '../../i18n';
 import { DetailCardFrame } from '../core/cards';
@@ -13,7 +14,23 @@ export interface WriteFeatureDeps {
   readonly t: (key: MessageKey, params?: MessageParams) => string;
   readonly store: DialogStore;
   readonly now: () => Date;
+  /**
+   * The host of the dialogs, built once per store: a new component on each new feature (a change
+   * of language) would remount the dialog open and lose what was typed.
+   */
+  readonly Host: () => ReactNode;
 }
+
+/**
+ * The host of the dialogs of a store, as a component of its own.
+ *
+ * @param store - The store.
+ * @returns The component.
+ */
+export const hostOf = (store: DialogStore) =>
+  function WriteDialogs() {
+    return <WriteHost store={store} />;
+  };
 
 const upcoming = (ctx: BookingContext) => ctx.tab === 'upcoming' || ctx.tab === 'alert';
 
@@ -137,7 +154,7 @@ export function WriteHost({ store }: { readonly store: DialogStore }) {
  * @returns The feature.
  */
 export function createWriteFeature(deps: WriteFeatureDeps): BookingFeature {
-  const { t, store } = deps;
+  const { t } = deps;
   return {
     id: 'write',
     primaryAction: (ctx) => {
@@ -155,6 +172,6 @@ export function createWriteFeature(deps: WriteFeatureDeps): BookingFeature {
         render: (ctx) => <ActionsCard ctx={ctx} actions={writeActions(ctx, deps)} title={t('write.actions')} />,
       },
     ],
-    Host: () => <WriteHost store={store} />,
+    Host: deps.Host,
   };
 }

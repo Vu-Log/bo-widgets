@@ -4,7 +4,7 @@ import { useEffect, useMemo, useState, type ReactNode } from 'react';
 import { LIST_TABS } from '../domain/statuses';
 import { createCoreFeature, type CoreFeatureDeps } from './core';
 import type { BookingFeature } from './extensions';
-import { createWriteFeature } from './write';
+import { createWriteFeature, hostOf } from './write';
 import { createDialogStore } from './write/store';
 
 /**
@@ -15,7 +15,7 @@ import { createDialogStore } from './write/store';
  * @param features - The features of the registry.
  * @returns The broken rules, as sentences; none when the features are consistent.
  */
-export function validateFeatures(features: readonly BookingFeature[]): string[] {
+export function validateFeatures(features: readonly SectionFeature[]): string[] {
   const problems: string[] = [];
   const unique = (kind: string, ids: readonly string[]) => {
     const seen = new Set<string>();
@@ -33,6 +33,14 @@ export function validateFeatures(features: readonly BookingFeature[]): string[] 
   const kpis = features.flatMap((feature) => feature.kpis ?? []);
   unique('KPI', kpis.map((kpi) => kpi.id));
   unique('detail card', features.flatMap((feature) => feature.detailCards ?? []).map((card) => card.id));
+  for (const feature of features) {
+    const own = new Set((feature.filters ?? []).map((filter) => filter.id));
+    for (const source of feature.filterSources ?? []) {
+      if (!own.has(source.filterId)) {
+        problems.push(`Feature ${feature.id} gives bookings to an unknown filter: ${source.filterId}`);
+      }
+    }
+  }
   for (const kpi of kpis) {
     const filter = filters.find((candidate) => candidate.id === kpi.filterId);
     if (!filter) problems.push(`KPI ${kpi.id} names an unknown filter: ${kpi.filterId}`);
@@ -89,15 +97,16 @@ export function useBookingFeatures(
   const { t, openDetail, copyId, sortHeader, now } = deps;
   const bo = useBoClient();
   const [store] = useState(createDialogStore);
+  const Host = useMemo(() => hostOf(store), [store]);
   // A feature built by a hook goes here, before the write feature:
   // const prepayment = usePrepaymentFeature();
   const features = useMemo<readonly SectionFeature[]>(
     () => [
       createCoreFeature({ t, openDetail, copyId, sortHeader, now }),
-      createWriteFeature({ t, store, now }),
+      createWriteFeature({ t, store, now, Host }),
       ...extra,
     ],
-    [t, openDetail, copyId, sortHeader, now, extra, store],
+    [t, openDetail, copyId, sortHeader, now, extra, store, Host],
   );
   const problems = useMemo(() => validateFeatures(features), [features]);
   useEffect(() => {

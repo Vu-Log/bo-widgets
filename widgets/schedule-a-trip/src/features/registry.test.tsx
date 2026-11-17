@@ -87,6 +87,12 @@ describe('validateFeatures', () => {
     ]);
   });
 
+  it('reports bookings given to a filter the feature does not have', () => {
+    expect(
+      validateFeatures([core, { id: 'x', filters: [filter], filterSources: [{ filterId: 'f', bookingIds: [] }, { filterId: 'g', bookingIds: undefined }] }]),
+    ).toEqual(['Feature x gives bookings to an unknown filter: g']);
+  });
+
   it('logs the broken rules of the registry', async () => {
     const bo = fakeBo();
     const extra: BookingFeature[] = [{ id: 'core' }];

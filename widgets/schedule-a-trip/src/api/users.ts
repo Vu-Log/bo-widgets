@@ -157,13 +157,18 @@ export async function searchCustomers(
   };
 }
 
+/** A type of profile: the known ones, open to others the API may add. */
+export type ProfileType = 'Single' | 'Business' | 'Family' | (string & {});
+/** A status of profile: the known ones, open to others. */
+export type ProfileStatus = 'APPROVED' | 'PENDING' | 'SUSPENDED' | 'REJECTED' | 'INACTIVE' | 'ARCHIVED' | (string & {});
+/** A type of service: the known ones, open to others. */
+export type ServiceType = 'FREE_FLOATING' | 'BOOKING' | 'SERVICE_TRIP' | 'SUBSCRIPTION' | (string & {});
+
 /** A profile of a customer and the services approved for it. */
 export interface RegisteredProfile {
   readonly profileId: string;
-  /** `Single`, `Business`… */
-  readonly type: string;
-  /** `APPROVED`, `SUSPENDED`, `INACTIVE`, `ARCHIVED`… */
-  readonly status: string;
+  readonly type: ProfileType;
+  readonly status: ProfileStatus;
   readonly approvedServiceIds: readonly string[];
 }
 
@@ -171,8 +176,7 @@ export interface RegisteredProfile {
 export interface RegisteredService {
   readonly id: string;
   readonly name: string;
-  /** `FREE_FLOATING`, `BOOKING`… */
-  readonly type: string;
+  readonly type: ServiceType;
   readonly fleetId: string;
   readonly cityId: string;
 }

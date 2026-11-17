@@ -18,7 +18,8 @@ import { useEffect, useMemo, useState } from 'react';
 import { ApiRequestError, unwrap } from '../../api/http';
 import { createBookingRequest } from '../../api/schedule-a-trip';
 import { getRegistrationOverview, searchCustomers, type CustomerMatch } from '../../api/users';
-import { datesProblems, defaultReturn, defaultStart, isValidRadius } from '../../domain/booking-dates';
+import { datesProblems, defaultReturn, defaultStart } from '../../domain/booking-dates';
+import { buildNewBooking, MAX_NOTES_LENGTH, type NewBookingProblem } from '../../domain/new-booking';
 import { bookableProfiles, bookableServices } from '../../domain/booking-profiles';
 import { customerName } from '../../domain/customers';
 import { useI18n } from '../../i18n';
@@ -26,11 +27,19 @@ import { queryKeys } from '../../query/keys';
 import { modelsQueryOptions, vehicleCatalogQueryOptions } from '../../query/queries';
 import { queryErrorText } from '../core/cards';
 import { useSection } from '../section-context';
-import { MAX_NOTES_LENGTH, WriteDialogFrame } from './dialogs';
+import { WriteDialogFrame } from './dialogs';
 import { DateFields, isPickupComplete, PickupFields, type DatesValue, type PickupValue } from './fields';
 import { useAfterWrite } from './use-write';
 
 const STEPS = ['create.stepCustomer', 'create.stepTrip', 'create.stepSummary'] as const;
+
+/** The booking to create broke a rule when it was sent (the start passed meanwhile…). */
+export class IncompleteBookingError extends Error {
+  constructor(readonly problems: readonly NewBookingProblem[]) {
+    super(`The booking is incomplete: ${problems.join(', ')}`);
+    this.name = 'IncompleteBookingError';
+  }
+}
 
 /** A text, once it stopped changing for a while. */
 function useSettled(text: string, delay = 300): string {
@@ -109,30 +118,33 @@ export function CreateBookingDialog({ onClose }: { readonly onClose: () => void 
   }, [catalog.data, models.data, serviceId]);
 
   const problems = datesProblems({ ...dates, now: new Date() });
+  const built = buildNewBooking(
+    {
+      userId: customer?.id ?? null,
+      profileId,
+      service,
+      ...dates,
+      modelId,
+      ...pickup,
+      notes,
+    },
+    new Date(),
+  );
   const canGo = [
     customer !== null && profileId !== null,
-    service !== null && problems.length === 0 && isPickupComplete(pickup) && isValidRadius(pickup.radius),
-    notes.length <= MAX_NOTES_LENGTH,
+    service !== null && problems.length === 0 && isPickupComplete(pickup),
+    built.ok,
   ];
 
   const mutation = useMutation({
     mutationFn: async () => {
-      if (!customer || !profileId || !service || !dates.start || pickup.latitude === null || pickup.longitude === null) {
-        throw new Error('Incomplete booking');
-      }
-      const result = await createBookingRequest(authFetch, fleetId, {
-        userId: customer.id,
-        profileId,
-        serviceId: service.id,
-        cityId: service.cityId,
-        start: dates.start,
-        plannedReturn: dates.plannedReturn,
-        modelId,
-        latitude: pickup.latitude,
-        longitude: pickup.longitude,
-        radius: pickup.radius,
-        notes,
-      });
+      // Checked again when sent: the start may have passed while the summary was open.
+      const checked = buildNewBooking(
+        { userId: customer?.id ?? null, profileId, service, ...dates, modelId, ...pickup, notes },
+        new Date(),
+      );
+      if (!checked.ok) throw new IncompleteBookingError(checked.problems);
+      const result = await createBookingRequest(authFetch, fleetId, checked.value);
       if (!result.ok) throw new ApiRequestError(result.error);
       return result.data;
     },
@@ -155,7 +167,13 @@ export function CreateBookingDialog({ onClose }: { readonly onClose: () => void 
       onSubmit={() => (last ? mutation.mutate() : setStep(step + 1))}
       submitLabel={last ? t('create.submit') : t('create.next')}
       submitting={mutation.isPending}
-      error={mutation.error ? queryErrorText(mutation.error, t) : null}
+      error={
+        mutation.error instanceof IncompleteBookingError
+          ? t('create.incomplete')
+          : mutation.error
+            ? queryErrorText(mutation.error, t)
+            : null
+      }
       disabled={!canGo[step]}
       wide
     >
@@ -186,6 +204,7 @@ export function CreateBookingDialog({ onClose }: { readonly onClose: () => void 
               setCustomer(match);
               setProfileId(null);
               setServiceId(null);
+              setModelId(null);
             }}
             noOptionsText={search.isError ? queryErrorText(search.error, t) : t('create.noCustomer')}
             renderInput={(params) => <TextField {...params} label={t('create.customer')} autoFocus />}
@@ -206,6 +225,7 @@ export function CreateBookingDialog({ onClose }: { readonly onClose: () => void 
               onChange={(event) => {
                 setProfileId(event.target.value);
                 setServiceId(null);
+                setModelId(null);
               }}
             >
               {profiles.map((profile) => (
@@ -229,7 +249,10 @@ export function CreateBookingDialog({ onClose }: { readonly onClose: () => void 
               select
               label={t('create.service')}
               value={serviceId ?? ''}
-              onChange={(event) => setServiceId(event.target.value)}
+              onChange={(event) => {
+                setServiceId(event.target.value);
+                setModelId(null);
+              }}
             >
               {services.map((candidate) => (
                 <MenuItem key={candidate.id} value={candidate.id}>

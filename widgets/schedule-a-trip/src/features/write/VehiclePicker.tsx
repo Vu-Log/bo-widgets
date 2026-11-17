@@ -31,7 +31,7 @@ import type { BookingContext } from '../extensions';
 import { useSection } from '../section-context';
 import { WriteDialogFrame, OperationError } from './dialogs';
 import { allocate, preallocate, type OperationResult } from './operations';
-import { failureText, useAfterWrite, useWriteDeps } from './use-write';
+import { failureText, useAfterWrite, useReportFailure, useWriteDeps } from './use-write';
 
 /** Allocate a vehicle at once, or pre-allocate it (out of service until the start). */
 export type PickMode = 'allocate' | 'preallocate';
@@ -136,6 +136,7 @@ export function VehiclePickerDialog({
   const { fleetId, mapboxToken, vehicleSearchRadius } = useSection();
   const deps = useWriteDeps();
   const after = useAfterWrite();
+  const report = useReportFailure();
   const { booking } = ctx;
   const [tab, setTab] = useState<'in' | 'out'>('in');
   const [hovered, setHovered] = useState<string | null>(null);
@@ -183,11 +184,15 @@ export function VehiclePickerDialog({
       after(message, booking.id, result.state, result.warnings, t);
       onClose();
     },
+    onError: (error) => {
+      if (error instanceof OperationError) report(error.result.failure, booking.id);
+    },
   });
 
   const shown = found ? (tab === 'in' ? found.inRange : found.closestOutOfRange) : [];
   const loadError = catalog.error ?? live.error;
-  const blocked = mode === 'allocate' && busy.data === true;
+  // Unknown is not "free": wait for the answer, and say when there is none.
+  const blocked = mode === 'allocate' && booking.userId !== null && busy.data !== false;
   const pickLabel = mode === 'allocate' ? t('picker.allocate') : t('picker.preallocate');
   return (
     <WriteDialogFrame
@@ -206,7 +211,10 @@ export function VehiclePickerDialog({
       {mutation.error instanceof OperationError && (
         <OperationFailureAlert error={mutation.error} />
       )}
-      {blocked && <Alert severity="warning">{t('picker.customerBusy')}</Alert>}
+      {mode === 'allocate' && busy.data === true && <Alert severity="warning">{t('picker.customerBusy')}</Alert>}
+      {mode === 'allocate' && busy.isError && (
+        <Alert severity="error">{t('picker.customerCheckFailed', { reason: queryErrorText(busy.error, t) })}</Alert>
+      )}
       {mode === 'preallocate' && <Alert severity="info">{t('picker.preallocateHint')}</Alert>}
       {center === null || booking.serviceId === null ? (
         <Alert severity="warning">{t('picker.noPickup')}</Alert>

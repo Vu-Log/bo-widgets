@@ -1,7 +1,7 @@
 import { useQueryClient } from '@tanstack/react-query';
 import { useAuthFetch, useBoClient, useCurrentUser } from '@vulog/bo-widget-react';
 import { useCallback, useMemo } from 'react';
-import { apiErrorText } from '../../api/http';
+import { ApiRequestError, apiErrorText } from '../../api/http';
 import type { MessageKey, MessageParams } from '../../i18n';
 import { queryKeys } from '../../query/keys';
 import { liveVehiclesQueryOptions } from '../../query/queries';
@@ -33,7 +33,20 @@ export function failureText(failure: OperationFailure, t: Translate): string {
       return t('write.alreadyProcessed');
     case 'rollback-failed':
       return t('write.rollbackFailed', { vehicle: failure.vehicleId });
+    case 'vehicle-unavailable':
+      return t('write.vehicleUnavailable', { vehicle: failure.vehicleId });
+    case 'allocation-unknown':
+      return t('write.allocationUnknown', { vehicle: failure.vehicleId });
   }
+}
+
+/** What a log keeps of a failure or a warning: its kind, its vehicle, the kind of its error. */
+export function describeOutcome(outcome: OperationFailure | OperationWarning): Record<string, string> {
+  const details: Record<string, string> = { kind: outcome.kind };
+  if ('vehicleId' in outcome) details.vehicleId = outcome.vehicleId;
+  if ('error' in outcome) details.error = outcome.error.kind;
+  if ('cause' in outcome) details.cause = outcome.cause.kind;
+  return details;
 }
 
 /**
@@ -49,6 +62,8 @@ export function warningText(warning: OperationWarning, t: Translate): string {
       return t('write.vehicleNotEnabled', { vehicle: warning.vehicleId });
     case 'vehicle-held-elsewhere':
       return t('write.vehicleHeldElsewhere', { vehicle: warning.vehicleId });
+    case 'vehicle-not-checked':
+      return t('write.vehicleNotChecked', { vehicle: warning.vehicleId });
     case 'state-not-updated':
       return t('write.stateNotUpdated');
   }
@@ -74,11 +89,20 @@ export function useWriteDeps(): WriteDeps {
       userId: user.id,
       now: () => new Date(),
       reasonOf: async (vehicleId: string) => {
-        const vehicles = await queryClient.fetchQuery({
-          ...liveVehiclesQueryOptions(authFetch, fleetId),
-          staleTime: 0,
-        });
-        return vehicles.find((vehicle) => vehicle.id === vehicleId)?.outOfServiceReason ?? null;
+        try {
+          const vehicles = await queryClient.fetchQuery({
+            ...liveVehiclesQueryOptions(authFetch, fleetId),
+            staleTime: 0,
+          });
+          const vehicle = vehicles.find((candidate) => candidate.id === vehicleId);
+          return {
+            ok: true,
+            data: vehicle ? { found: true, reason: vehicle.outOfServiceReason } : { found: false },
+          } as const;
+        } catch (error) {
+          if (error instanceof ApiRequestError) return { ok: false, error: error.error } as const;
+          throw error;
+        }
       },
     }),
     [authFetch, bo, user.id, queryClient, fleetId],
@@ -116,9 +140,26 @@ export function useAfterWrite(): (
       notify(message, 'success');
       for (const warning of warnings) {
         notify(warningText(warning, t), 'warning');
-        bo.log.warn('A write left something to check', { warning: warning.kind, bookingId });
+        bo.log.warn('A write left something to check', { bookingId, ...describeOutcome(warning) });
       }
     },
     [queryClient, bo, fleetId],
+  );
+}
+
+/**
+ * Logs a failed write, with what an administrator needs to fix it (the operator only sees the
+ * dialog, which closes).
+ *
+ * @returns `report(failure, bookingId)`.
+ */
+export function useReportFailure(): (failure: OperationFailure, bookingId: string) => void {
+  const bo = useBoClient();
+  return useCallback(
+    (failure, bookingId) => {
+      const log = failure.kind === 'rollback-failed' || failure.kind === 'allocation-unknown' ? bo.log.error : bo.log.warn;
+      log('A write failed', { bookingId, ...describeOutcome(failure) });
+    },
+    [bo],
   );
 }

@@ -198,5 +198,11 @@
   "write.storageFailed": "A widget adatai nem írhatók ({reason}).",
   "write.updated": "Foglalás frissítve.",
   "write.vehicleHeldElsewhere": "A(z) {vehicle} jármű most más okból van üzemen kívül: változatlanul maradt.",
-  "write.vehicleNotEnabled": "A(z) {vehicle} jármű nem helyezhető vissza üzembe: tegye meg a back office-ban."
+  "write.vehicleNotEnabled": "A(z) {vehicle} jármű nem helyezhető vissza üzembe: tegye meg a back office-ban.",
+  "write.vehicleUnavailable": "A(z) {vehicle} jármű már nem elérhető: válasszon másikat.",
+  "write.allocationUnknown": "A kiosztás nem kapott választ, és lehet, hogy megtörtént: ellenőrizze a foglalást és a(z) {vehicle} járművet a back office-ban.",
+  "write.vehicleNotChecked": "A(z) {vehicle} jármű állapota nem olvasható: változatlanul maradt, ellenőrizze a back office-ban.",
+  "picker.customerCheckFailed": "Nem ellenőrizhető, hogy az ügyfélnek van-e folyamatban lévő útja: {reason}",
+  "create.incomplete": "A foglalás már nem érvényes (elmúlt az indulás?): ellenőrizze az Út lépést.",
+  "list.sourceFailed": "Ennek a szűrőnek {count} foglalása nem olvasható: a lista hiányos lehet."
 }

@@ -6,6 +6,7 @@ import {
   fromZonedInput,
   isValidRadius,
   MAX_RADIUS,
+  toPickup,
   toZonedInput,
 } from './booking-dates';
 
@@ -48,6 +49,21 @@ describe('datesProblems', () => {
   it('refuses a missing or past start and a return not after it', () => {
     expect(datesProblems({ start: null, plannedReturn: null, now })).toEqual(['start-missing']);
     expect(datesProblems({ start: now, plannedReturn: now, now })).toEqual(['start-past', 'return-before-start']);
+  });
+});
+
+describe('toPickup', () => {
+  it('gives a complete pickup point', () => {
+    expect(toPickup({ latitude: 48.85, longitude: 2.35, radius: 500 })).toEqual({ latitude: 48.85, longitude: 2.35, radius: 500 });
+    expect(toPickup({ latitude: -90, longitude: 180, radius: 1 })).not.toBeNull();
+  });
+
+  it('refuses a missing or out of range coordinate, or a wrong radius', () => {
+    expect(toPickup({ latitude: null, longitude: 2, radius: 500 })).toBeNull();
+    expect(toPickup({ latitude: 1, longitude: null, radius: 500 })).toBeNull();
+    expect(toPickup({ latitude: 200, longitude: 2, radius: 500 })).toBeNull();
+    expect(toPickup({ latitude: 1, longitude: -500, radius: 500 })).toBeNull();
+    expect(toPickup({ latitude: 1, longitude: 2, radius: 0 })).toBeNull();
   });
 });
 

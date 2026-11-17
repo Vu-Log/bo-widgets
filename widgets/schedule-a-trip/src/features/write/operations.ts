@@ -1,5 +1,5 @@
 import type { AuthFetch } from '@vulog/bo-widget-sdk';
-import type { ApiError } from '../../api/http';
+import { isPermanentApiError, type ApiError, type ApiResult } from '../../api/http';
 import {
   allocateVehicle,
   cancelBookingRequest,
@@ -24,25 +24,53 @@ export interface WriteDeps {
   /** `getCurrentUser().id`, for the journal; never an email. */
   readonly userId: string | null;
   readonly now: () => Date;
-  /** The out of service reason of a vehicle, read again now (`null` when in service). */
-  readonly reasonOf: (vehicleId: string) => Promise<string | null>;
+  /** Reads again the state of a vehicle now: its out of service reason, `null` when in service. */
+  readonly reasonOf: (vehicleId: string) => Promise<ApiResult<VehicleReason>>;
 }
 
+/** What {@link WriteDeps.reasonOf} found: the vehicle may be missing from the fleet manager. */
+export type VehicleReason =
+  | { readonly found: false }
+  | { readonly found: true; readonly reason: string | null };
+
 /**
- * Why an operation failed. Nothing was changed, except for `rollback-failed`: a vehicle was put
- * out of service and could not be put back, the operator must do it in the back office.
+ * Why an operation failed. Nothing was changed, except for `rollback-failed` (a vehicle could not
+ * be put back as it was) and `allocation-unknown` (the allocation may have been done): the
+ * operator must check in the back office.
  */
 export type OperationFailure =
   | { readonly kind: 'api'; readonly error: ApiError }
   | { readonly kind: 'storage'; readonly error: StorageFailure }
   /** The scheduler already handled the booking: its pre-allocation must not change. */
   | { readonly kind: 'already-processed' }
-  | { readonly kind: 'rollback-failed'; readonly vehicleId: string; readonly error: ApiError };
+  /**
+   * The allocation got no answer and may have been done: the pre-allocated vehicle chosen was left
+   * in service. Check the booking and the vehicle.
+   */
+  | { readonly kind: 'allocation-unknown'; readonly vehicleId: string }
+  /** The vehicle chosen is out of service (or missing) now: someone else took it. */
+  | { readonly kind: 'vehicle-unavailable'; readonly vehicleId: string }
+  /**
+   * A vehicle changed (put out of service, or back in service) could not be put back as it was.
+   * `cause` is why the operation failed, `error` why the undo failed.
+   */
+  | {
+      readonly kind: 'rollback-failed';
+      readonly vehicleId: string;
+      readonly error: ApiError;
+      readonly cause: ApiError | StorageFailure;
+    };
 
 /** Something left to check after an operation that succeeded. */
 export type OperationWarning =
-  /** The previous vehicle could not be put back in service: do it in the back office. */
+  /**
+   * The previous vehicle could not be put back in service: do it in the back office. The stored
+   * state still names it, so that the operator can try again.
+   */
   | { readonly kind: 'vehicle-not-enabled'; readonly vehicleId: string }
+  /** The state of the previous vehicle could not be read: it was left as it is. */
+  | { readonly kind: 'vehicle-not-checked'; readonly vehicleId: string }
+
   /** The previous vehicle is out of service for another reason now: left as it is. */
   | { readonly kind: 'vehicle-held-elsewhere'; readonly vehicleId: string }
   /** The stored state could not be updated: it still names the pre-allocated vehicle. */
@@ -66,15 +94,18 @@ export interface PickedVehicle {
   readonly plate: string | null;
 }
 
-/** Puts back in service a vehicle held for the booking; leaves one held for something else. */
+/**
+ * Puts back in service a vehicle held for the booking; leaves one held for something else, or
+ * whose state cannot be read. Never throws: what went wrong is a warning.
+ */
 async function freeVehicle(
   deps: WriteDeps,
   bookingId: string,
   vehicleId: string,
 ): Promise<OperationWarning | null> {
-  if (!isHeldFor(await deps.reasonOf(vehicleId), bookingId)) {
-    return { kind: 'vehicle-held-elsewhere', vehicleId };
-  }
+  const read = await deps.reasonOf(vehicleId);
+  if (!read.ok || !read.data.found) return { kind: 'vehicle-not-checked', vehicleId };
+  if (!isHeldFor(read.data.reason, bookingId)) return { kind: 'vehicle-held-elsewhere', vehicleId };
   const enabled = await enableVehicle(deps.authFetch, deps.fleetId, vehicleId);
   return enabled.ok ? null : { kind: 'vehicle-not-enabled', vehicleId };
 }
@@ -104,6 +135,13 @@ export async function preallocate(
   const previousId = current?.value.preallocatedVehicleId ?? null;
   if (previousId === vehicle.id) return { ok: true, state: current, warnings: [] };
 
+  // The list may be some seconds old: never take a vehicle someone put out of service meanwhile.
+  const chosen = await deps.reasonOf(vehicle.id);
+  if (!chosen.ok) return failed({ kind: 'api', error: chosen.error });
+  if (!chosen.data.found || chosen.data.reason !== null) {
+    return failed({ kind: 'vehicle-unavailable', vehicleId: vehicle.id });
+  }
+
   const disabled = await disableVehicle(
     deps.authFetch,
     deps.fleetId,
@@ -129,7 +167,12 @@ export async function preallocate(
   if (!written.ok) {
     const rollback = await enableVehicle(deps.authFetch, deps.fleetId, vehicle.id);
     if (!rollback.ok) {
-      return failed({ kind: 'rollback-failed', vehicleId: vehicle.id, error: rollback.error });
+      return failed({
+        kind: 'rollback-failed',
+        vehicleId: vehicle.id,
+        error: rollback.error,
+        cause: written.error,
+      });
     }
     return failed({ kind: 'storage', error: written.error });
   }
@@ -150,6 +193,8 @@ async function release(
   if (!vehicleId) return { state: current, warnings: [] };
   const warning = keepVehicle ? null : await freeVehicle(deps, bookingId, vehicleId);
   const warnings: OperationWarning[] = warning ? [warning] : [];
+  // Still out of service for the booking: keep it in the state, so that it can be freed later.
+  if (warning?.kind === 'vehicle-not-enabled') return { state: current, warnings };
   const written = await updateBookingState(deps.collection, current, {
     preallocatedVehicleId: null,
     preallocatedPlate: null,
@@ -217,9 +262,14 @@ export async function allocate(
   vehicleId: string,
 ): Promise<OperationResult> {
   const read = await readBookingState(deps.collection, booking.id);
-  const preallocated = read.ok ? (read.value?.value.preallocatedVehicleId ?? null) : null;
-  const heldVehicle =
-    preallocated === vehicleId && isHeldFor(await deps.reasonOf(vehicleId), booking.id);
+  if (!read.ok) return failed({ kind: 'storage', error: read.error });
+  const preallocated = read.value?.value.preallocatedVehicleId ?? null;
+  let heldVehicle = false;
+  if (preallocated === vehicleId) {
+    const reason = await deps.reasonOf(vehicleId);
+    if (!reason.ok) return failed({ kind: 'api', error: reason.error });
+    heldVehicle = reason.data.found && isHeldFor(reason.data.reason, booking.id);
+  }
   if (heldVehicle) {
     const enabled = await enableVehicle(deps.authFetch, deps.fleetId, vehicleId);
     if (!enabled.ok) return failed({ kind: 'api', error: enabled.error });
@@ -227,8 +277,14 @@ export async function allocate(
   const allocated = await allocateVehicle(deps.authFetch, deps.fleetId, booking.id, vehicleId, booking.serviceId);
   if (!allocated.ok) {
     if (heldVehicle) {
+      // Without an answer, the allocation may have been done: never take that vehicle out of service.
+      if (!isPermanentApiError(allocated.error)) {
+        return failed({ kind: 'allocation-unknown', vehicleId });
+      }
       const back = await disableVehicle(deps.authFetch, deps.fleetId, vehicleId, preallocationReason(booking.id));
-      if (!back.ok) return failed({ kind: 'rollback-failed', vehicleId, error: back.error });
+      if (!back.ok) {
+        return failed({ kind: 'rollback-failed', vehicleId, error: back.error, cause: allocated.error });
+      }
     }
     return failed({ kind: 'api', error: allocated.error });
   }

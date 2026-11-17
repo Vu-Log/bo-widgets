@@ -1,5 +1,6 @@
 import type { AuthFetch } from '@vulog/bo-widget-sdk';
 import { z } from 'zod';
+import type { Pickup } from '../domain/booking-dates';
 import type { AimaListStatus } from '../domain/statuses';
 import { requestJson, requestNoContent, segment, type ApiResult } from './http';
 
@@ -225,14 +226,16 @@ export async function createBookingRequest(
   return result.ok ? { ok: true, data: result.data.body.id } : result;
 }
 
-/** The fields of a booking the widget changes; the others are left as they are. */
+/**
+ * The fields of a booking the widget changes; the others are left as they are. `plannedReturn:
+ * null` removes the planned return. The pickup point is sent whole: both coordinates and the
+ * radius.
+ */
 export interface BookingRequestChanges {
   readonly start?: Date;
   readonly plannedReturn?: Date | null;
   readonly notes?: string;
-  readonly latitude?: number;
-  readonly longitude?: number;
-  readonly radius?: number;
+  readonly pickup?: Pickup;
 }
 
 /**
@@ -260,9 +263,11 @@ export function updateBookingRequest(
     body.plannedReturnDate = changes.plannedReturn === null ? null : toApiDate(changes.plannedReturn);
   }
   if (changes.notes !== undefined) body.notes = changes.notes;
-  if (changes.latitude !== undefined) body.latitude = changes.latitude;
-  if (changes.longitude !== undefined) body.longitude = changes.longitude;
-  if (changes.radius !== undefined) body.radius = changes.radius;
+  if (changes.pickup !== undefined) {
+    body.latitude = changes.pickup.latitude;
+    body.longitude = changes.pickup.longitude;
+    body.radius = changes.pickup.radius;
+  }
   return requestNoContent(authFetch, `${bookingRequestsPath(fleetId)}/${segment(bookingId)}`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },

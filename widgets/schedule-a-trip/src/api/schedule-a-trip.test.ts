@@ -216,7 +216,6 @@ describe('the writes', () => {
     await updateBookingRequest(authFetch, 'FLEET-1', 'booking-1', 7, {
       start: new Date('2026-03-10T08:00:00Z'),
       plannedReturn: null,
-      radius: 300,
     });
     expect(call(authFetch).path).toBe('user/scheduleATrip/fleets/FLEET-1/bookingrequests/booking-1');
     expect(call(authFetch).body).toEqual({
@@ -224,13 +223,11 @@ describe('the writes', () => {
       modelId: 7,
       startDate: '2026-03-10T08:00:00Z',
       plannedReturnDate: null,
-      radius: 300,
     });
     const other = ok();
     await updateBookingRequest(other, 'FLEET-1', 'booking-1', null, {
       notes: 'n',
-      latitude: 1,
-      longitude: 2,
+      pickup: { latitude: 1, longitude: 2, radius: 300 },
       plannedReturn: new Date('2026-03-11T08:00:00Z'),
     });
     expect(call(other).body).toEqual({
@@ -240,6 +237,7 @@ describe('the writes', () => {
       notes: 'n',
       latitude: 1,
       longitude: 2,
+      radius: 300,
     });
   });
 

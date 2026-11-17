@@ -198,5 +198,11 @@
   "write.storageFailed": "Les données du widget n’ont pas pu être écrites ({reason}).",
   "write.updated": "Réservation mise à jour.",
   "write.vehicleHeldElsewhere": "Le véhicule {vehicle} est hors service pour une autre raison : il a été laissé tel quel.",
-  "write.vehicleNotEnabled": "Le véhicule {vehicle} n’a pas pu être remis en service : faites-le dans le back office."
+  "write.vehicleNotEnabled": "Le véhicule {vehicle} n’a pas pu être remis en service : faites-le dans le back office.",
+  "write.vehicleUnavailable": "Le véhicule {vehicle} n’est plus disponible : choisissez-en un autre.",
+  "write.allocationUnknown": "L’allocation n’a pas reçu de réponse et a peut-être été faite : vérifiez la réservation et le véhicule {vehicle} dans le back office.",
+  "write.vehicleNotChecked": "L’état du véhicule {vehicle} n’a pas pu être lu : il a été laissé tel quel, vérifiez-le dans le back office.",
+  "picker.customerCheckFailed": "Impossible de vérifier si le client a un trajet en cours : {reason}",
+  "create.incomplete": "La réservation n’est plus valide (le départ est-il passé ?) : vérifiez l’étape Trajet.",
+  "list.sourceFailed": "{count} réservations de ce filtre n’ont pas pu être lues : la liste peut être incomplète."
 }
