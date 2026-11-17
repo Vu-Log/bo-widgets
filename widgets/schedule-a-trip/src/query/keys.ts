@@ -16,7 +16,7 @@ export const PERSISTED_QUERY_ROOTS = [
 
 /**
  * Roots of the query keys kept in memory only: personal data (customers), payment statuses, the
- * booking lists and states, and the installation settings.
+ * booking lists and states, the pending regularizations, and the installation settings.
  */
 export const MEMORY_QUERY_ROOTS = [
   'settings',
@@ -24,6 +24,7 @@ export const MEMORY_QUERY_ROOTS = [
   'customers',
   'invoices',
   'booking-states',
+  'regularizations',
 ] as const;
 
 /** A root of a query key whose data may be persisted. */
@@ -51,6 +52,7 @@ export const queryKeys = {
   invoice: (fleetId: string, invoiceId: string) => ['invoices', fleetId, invoiceId] as const,
   bookingState: (fleetId: string, bookingId: string) =>
     ['booking-states', fleetId, bookingId] as const,
+  pendingRegularizations: (fleetId: string) => ['regularizations', fleetId] as const,
 } satisfies Record<
   string,
   (...args: never[]) => readonly [PersistedQueryRoot | MemoryQueryRoot, ...unknown[]]

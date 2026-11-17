@@ -3,6 +3,7 @@ import {
   type BoStorage,
   type BoStorageCollection,
   type BoStorageDocument,
+  type BoStorageWhereValue,
 } from '@vulog/bo-widget-sdk';
 import { z } from 'zod';
 
@@ -568,6 +569,21 @@ export interface ClaimChargeInput {
   readonly now: Date;
 }
 
+/** The fields {@link claimCharge} may write with the claim: what the charge is about to bill. */
+export type ClaimPatch = Pick<
+  BookingStatePatch,
+  'chargeAmount' | 'computedAmount' | 'amountWarnings' | 'entityId' | 'isB2B'
+>;
+
+/** A charge claim, with what the charge is about to bill (written in the same call). */
+export interface ClaimChargeWithInput extends ClaimChargeInput {
+  /**
+   * Amounts and entity of the charge, written with the claim: after a lost answer, the search of
+   * the invoice needs the amount that was billed.
+   */
+  readonly patch?: ClaimPatch;
+}
+
 /** Tries of {@link claimCharge} when the document changes between its read and its write. */
 const CLAIM_ATTEMPTS = 3;
 
@@ -588,7 +604,8 @@ const existingClaim = (current: BookingStateDoc | null): ClaimFailure | null => 
 /**
  * Claims the charge of a booking before creating its invoice, against a double charge (the API
  * creates one invoice per call). Writes `chargeStartedAt` and `chargeStartedBy`, and a
- * `charge-started` entry of the journal, over the version read (`ifVersion`), or only if the
+ * `charge-started` entry of the journal (and the amounts of `input.patch`), over the version read
+ * (`ifVersion`), or only if the
  * document does not exist (`ifVersion: 0`). When the document changed meanwhile (a note, the
  * scheduler), it reads it again and checks again, {@link CLAIM_ATTEMPTS} times at most.
  *
@@ -601,7 +618,7 @@ const existingClaim = (current: BookingStateDoc | null): ClaimFailure | null => 
 export async function claimCharge(
   collection: BookingStateCollection,
   bookingId: string,
-  input: ClaimChargeInput,
+  input: ClaimChargeWithInput,
 ): Promise<StorageResult<BookingStateDoc, ClaimFailure>> {
   const at = input.now.toISOString();
   let failure: ClaimFailure = { kind: 'conflict' };
@@ -613,6 +630,7 @@ export async function claimCharge(
     if (claimed) return { ok: false, error: claimed };
 
     const patch: BookingStatePatch = {
+      ...input.patch,
       chargeStartedAt: at,
       chargeStartedBy: input.userId,
       events: withEvent(current?.value.events, { at, by: input.userId, type: 'charge-started' }),
@@ -630,6 +648,7 @@ export async function claimCharge(
 /**
  * Releases the charge claim of a booking, when the API refused to create its invoice (nothing was
  * charged) or once an operator checked that no invoice exists. Refused once an invoice is known.
+ * The amounts written with the claim are cleared with it.
  *
  * @param collection - {@link bookingsCollection}.
  * @param current - The document as read, holding the claim.
@@ -648,6 +667,9 @@ export async function releaseCharge(
   return updateBookingState(collection, current, {
     chargeStartedAt: null,
     chargeStartedBy: null,
+    chargeAmount: null,
+    computedAmount: null,
+    amountWarnings: [],
     events: withEvent(current.value.events, { at, by: input.userId, type: 'charge-released' }),
   });
 }
@@ -682,20 +704,11 @@ export interface FleetDocs {
   readonly invalid: readonly { readonly id: string; readonly issues: readonly string[] }[];
 }
 
-/**
- * Reads every booking state of a fleet: `query({ where: { fleetId } })`, by pages of
- * {@link FLEET_PAGE_SIZE}, until the cursor is `null` (a page may be empty while the cursor is not).
- * A failure of any page fails the whole listing: no partial result.
- *
- * @param collection - {@link bookingsCollection}.
- * @param fleetId - The fleet.
- * @returns The valid documents and the invalid ones, or the failure of a page (`too-many-pages`
- *   past {@link MAX_FLEET_PAGES} pages).
- */
-export async function listFleetDocs(
+/** Reads every document whose fields equal `where`, page by page, until the cursor is `null`. */
+const queryAllDocs = async (
   collection: BookingStateCollection,
-  fleetId: string,
-): Promise<StorageResult<FleetDocs>> {
+  where: Record<string, BoStorageWhereValue>,
+): Promise<StorageResult<FleetDocs>> => {
   const docs: BookingStateDoc[] = [];
   const invalid: FleetDocs['invalid'][number][] = [];
   let cursor: string | null = null;
@@ -703,7 +716,7 @@ export async function listFleetDocs(
     let result: Awaited<ReturnType<BookingStateCollection['query']>>;
     try {
       result = await collection.query({
-        where: { fleetId },
+        where,
         limit: FLEET_PAGE_SIZE,
         ...(cursor === null ? {} : { cursor }),
       });
@@ -719,4 +732,35 @@ export async function listFleetDocs(
     if (cursor === null) return { ok: true, value: { docs, invalid } };
   }
   return { ok: false, error: { kind: 'too-many-pages' } };
-}
+};
+
+/**
+ * Reads every booking state of a fleet: `query({ where: { fleetId } })`, by pages of
+ * {@link FLEET_PAGE_SIZE}, until the cursor is `null` (a page may be empty while the cursor is not).
+ * A failure of any page fails the whole listing: no partial result.
+ *
+ * @param collection - {@link bookingsCollection}.
+ * @param fleetId - The fleet.
+ * @returns The valid documents and the invalid ones, or the failure of a page (`too-many-pages`
+ *   past {@link MAX_FLEET_PAGES} pages).
+ */
+export const listFleetDocs = (
+  collection: BookingStateCollection,
+  fleetId: string,
+): Promise<StorageResult<FleetDocs>> => queryAllDocs(collection, { fleetId });
+
+/**
+ * The ids of the bookings of a fleet with a regularization to do:
+ * `query({ where: { fleetId, regularizationPending: true } })`, by pages of {@link FLEET_PAGE_SIZE},
+ * without reading every document of the fleet.
+ *
+ * @param collection - {@link bookingsCollection}.
+ * @param fleetId - The fleet.
+ * @returns The documents found (valid ones only, with the invalid ids apart), or the failure of a
+ *   page.
+ */
+export const listPendingRegularizations = (
+  collection: BookingStateCollection,
+  fleetId: string,
+): Promise<StorageResult<FleetDocs>> =>
+  queryAllDocs(collection, { fleetId, regularizationPending: true });

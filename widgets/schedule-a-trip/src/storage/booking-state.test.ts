@@ -9,6 +9,7 @@ import {
   createBookingState,
   END_OF_CYCLE_TTL_SECONDS,
   listFleetDocs,
+  listPendingRegularizations,
   mapStorageError,
   MAX_EVENTS,
   MAX_FLEET_PAGES,
@@ -385,6 +386,23 @@ describe('claimCharge', () => {
     expect(result.ok && result.value.value.internalNotes).toBe('Call before');
   });
 
+  it('writes the amounts and the entity of the charge with the claim, in one write', async () => {
+    const result = await claimCharge(collection, BOOKING, {
+      ...input,
+      patch: { chargeAmount: 42, computedAmount: 40, amountWarnings: ['above-computed'], entityId: 'entity-1', isB2B: false },
+    });
+
+    expect(result.ok && result.value.value).toMatchObject({
+      chargeStartedAt: now.toISOString(),
+      chargeAmount: 42,
+      computedAmount: 40,
+      amountWarnings: ['above-computed'],
+      entityId: 'entity-1',
+      isB2B: false,
+    });
+    expect(bo.storage.api.set).toHaveBeenCalledOnce();
+  });
+
   it('keeps a null operator id', async () => {
     const result = await claimCharge(collection, BOOKING, { ...input, userId: null });
     expect(result.ok && result.value.value.chargeStartedBy).toBeNull();
@@ -474,6 +492,23 @@ describe('releaseCharge', () => {
       'charge-started',
       'charge-released',
     ]);
+  });
+
+  it('clears the amounts written with the claim', async () => {
+    await claimCharge(collection, BOOKING, {
+      ...input,
+      fleetId: 'FLEET-1',
+      patch: { chargeAmount: 42, computedAmount: null, amountWarnings: ['below-minimum'], entityId: 'entity-1' },
+    });
+
+    const result = await releaseCharge(collection, await current(), input);
+
+    expect(result.ok && result.value.value).toMatchObject({
+      chargeAmount: null,
+      computedAmount: null,
+      amountWarnings: [],
+      entityId: 'entity-1',
+    });
   });
 
   it('refuses once an invoice is known', async () => {
@@ -658,5 +693,26 @@ describe('StorageRequestError', () => {
     expect(
       new StorageRequestError({ kind: 'invalid-write', issues: ['x: bad'] }).message,
     ).toContain('x: bad');
+  });
+});
+
+describe('listPendingRegularizations', () => {
+  const pending = { toRegularize: { missingAmount: 5, at: now.toISOString() }, regularizationPending: true };
+
+  it('queries the documents of the fleet with a regularization to do only', async () => {
+    await seed(pending, 'booking-a');
+    await seed({ ...pending, regularizationPending: false }, 'booking-b');
+    await seed({}, 'booking-c');
+    await bo.storage.api.set(BOOKINGS_COLLECTION, 'booking-d', { schemaVersion: 1, fleetId: 'FLEET-2', allocationProcessed: false, ...pending });
+
+    const result = await listPendingRegularizations(collection, 'FLEET-1');
+
+    expect(result.ok && result.value.docs.map((doc) => doc.id)).toEqual(['booking-a']);
+    expect(bo.storage.api.query.mock.calls[0]?.[1]).toMatchObject({ where: { fleetId: 'FLEET-1', regularizationPending: true } });
+  });
+
+  it('gives the failure of a page', async () => {
+    bo.storage.api.query.mockRejectedValueOnce(hostError('rate-limited', 429));
+    expect(await listPendingRegularizations(collection, 'FLEET-1')).toEqual({ ok: false, error: { kind: 'rate-limited' } });
   });
 });

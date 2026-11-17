@@ -39,8 +39,8 @@ describe('listUsersByIds', () => {
           lastName: 'Doe',
           userName: 'jane.doe',
           profiles: [
-            { type: 'Business', entityId: 'entity-1' },
-            { type: 'Single', entityId: null },
+            { id: 'profile-1', type: 'Business', entityId: 'entity-1' },
+            { id: 'profile-2', type: 'Single', entityId: null },
           ],
         },
       ],
