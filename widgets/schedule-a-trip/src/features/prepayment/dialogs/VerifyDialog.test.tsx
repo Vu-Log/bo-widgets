@@ -76,7 +76,7 @@ describe('VerifyDialog', () => {
   });
 
   it('never offers the unlock when the API accepted the invoice', async () => {
-    const accepted = { ...claim(30), events: [{ at: claimedAt(30), by: 'user-1', type: 'charge-started' }, { at: claimedAt(29), by: 'user-1', type: 'charge-accepted' }] };
+    const accepted = { ...claim(30), chargeAcceptedAt: claimedAt(29), events: [{ at: claimedAt(30), by: 'user-1', type: 'charge-started' }, { at: claimedAt(29), by: 'user-1', type: 'charge-accepted' }] };
     await open(accepted);
     await vi.waitFor(() => expect(bodyText()).toContain('it exists and the prepayment cannot be unlocked'));
     expect(button('No invoice found, unlock')?.disabled).toBe(true);

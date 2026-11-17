@@ -76,7 +76,14 @@ describe('RefundDialog', () => {
   });
 
   it('lets the operator answer about fees in doubt for long enough', async () => {
-    const stored = { ...prepaid, refundedAt: '2026-03-01T09:00:00.000Z', events: [{ at: '2026-03-01T09:00:00.000Z', by: 'user-1', type: 'cancellation-fee-started', details: { amount: 15 } }] };
+    const stored = {
+      ...prepaid,
+      refundedAt: '2026-03-01T09:00:00.000Z',
+      feeStartedAt: '2026-03-01T09:00:00.000Z',
+      feeAmount: 15,
+      feeOutcome: 'in-doubt' as const,
+      events: [{ at: '2026-03-01T09:00:00.000Z', by: 'user-1', type: 'cancellation-fee-started', details: { amount: 15 } }],
+    };
     const rendered = await renderWithBilling(
       <RefundDialog ctx={row({ tab: 'cancelled', booking: cancelledBefore(10), state: doc(stored) })} onClose={() => undefined} />,
       { stored, aima: { invoices: [fakeInvoice({ status: 'REFUNDED', refundable: 0 })], productPrice: 15 } },

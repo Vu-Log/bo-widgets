@@ -192,33 +192,33 @@ describe('refundProgress', () => {
     });
   });
 
-  it('follows the marks written before and after each call', () => {
-    const value = doc({
-      refundedAt: NOW.toISOString(),
-      events: [
-        ev(EVENTS.refundStarted),
-        ev(EVENTS.refunded),
-        ev(EVENTS.feeStarted, { amount: 15 }),
-      ],
-    }).value;
-    expect(refundProgress(value)).toMatchObject({ refunded: true, fee: 'in-doubt', feeAmount: 15, complete: false });
+  it('follows the fields written before and after each call', () => {
+    const at = NOW.toISOString();
+    const value = doc({ refundedAt: at, refundOutcome: 'confirmed', feeStartedAt: at, feeAmount: 15, feeOutcome: 'in-doubt' }).value;
+    expect(refundProgress(value)).toMatchObject({ refunded: true, fee: 'in-doubt', feeAmount: 15, feeStartedAt: at, complete: false });
 
-    const charged = { ...value, events: [...(value.events ?? []), ev(EVENTS.feeCharged, { amount: 15 }), ev(EVENTS.creditsStarted, { balance: 4 })] };
-    expect(refundProgress(charged)).toMatchObject({ fee: 'done', credits: 'started', recordedBalance: 4 });
+    const charged = { ...value, feeOutcome: 'charged' as const, creditsRevocationStartedAt: at, creditsRevocationBalance: 4 };
+    expect(refundProgress(charged)).toMatchObject({ fee: 'done', feeAmount: 15, credits: 'started', recordedBalance: 4 });
 
-    const released = { ...value, events: [...(value.events ?? []), ev(EVENTS.feeReleased)] };
+    const released = { ...value, feeOutcome: 'released' as const, feeAmount: null };
     expect(refundProgress(released)).toMatchObject({ fee: 'todo', feeAmount: null });
+    expect(refundProgress({ ...value, feeOutcome: 'skipped' as const })).toMatchObject({ fee: 'done', feeAmount: null });
   });
 
-  it('is complete with the completed entry or a regularization', () => {
-    expect(refundProgress(doc({ refundedAt: NOW.toISOString(), events: [ev(EVENTS.refundCompleted)] }).value).complete).toBe(true);
+  it('never reads the journal: it is an audit trail', () => {
+    const journalOnly = doc({ events: [ev(EVENTS.refundStarted), ev(EVENTS.feeStarted, { amount: 15 }), ev(EVENTS.creditsStarted, { balance: 4 })] }).value;
+    expect(refundProgress(journalOnly)).toMatchObject({ refund: 'todo', fee: 'todo', credits: 'todo' });
+  });
+
+  it('is complete with the completed date or a regularization', () => {
+    expect(refundProgress(doc({ refundedAt: NOW.toISOString(), refundCompletedAt: NOW.toISOString() }).value).complete).toBe(true);
     expect(refundProgress(doc({ refundedAt: NOW.toISOString(), toRegularize: { missingAmount: 1, at: NOW.toISOString() } }).value).complete).toBe(true);
-    expect(refundProgress(doc({ events: [ev(EVENTS.refundCompleted)] }).value).complete).toBe(false);
+    expect(refundProgress(doc({ refundCompletedAt: NOW.toISOString() }).value).complete).toBe(false);
   });
 
-  it('reads the credits as done from the flag', () => {
+  it('reads the credits as done from the flag or the skip', () => {
     expect(refundProgress(doc({ creditsRevoked: true }).value).credits).toBe('done');
-    expect(refundProgress(doc({ events: [ev(EVENTS.creditsSkipped)] }).value).credits).toBe('done');
+    expect(refundProgress(doc({ creditsRevocationSkippedAt: NOW.toISOString() }).value).credits).toBe('done');
   });
 });
 
@@ -290,28 +290,28 @@ describe('prepaymentDisplay', () => {
 
 describe('refund steps', () => {
   it('reads a refund started and not recorded as in doubt, then done or released', () => {
-    const started = doc({ events: [ev(EVENTS.refundStarted)] }).value;
+    const started = doc({ refundStartedAt: NOW.toISOString(), refundOutcome: 'in-doubt' }).value;
     expect(refundProgress(started)).toMatchObject({ refund: 'in-doubt', refundStartedAt: NOW.toISOString() });
-    expect(refundProgress({ ...started, events: [...(started.events ?? []), ev(EVENTS.refundReleased)] }).refund).toBe('todo');
-    expect(refundProgress({ ...started, events: [...(started.events ?? []), ev(EVENTS.refundConfirmed)] }).refund).toBe('done');
+    expect(refundProgress({ ...started, refundOutcome: 'released' }).refund).toBe('todo');
+    expect(refundProgress({ ...started, refundOutcome: 'confirmed' }).refund).toBe('done');
     expect(refundProgress({ ...started, refundedAt: NOW.toISOString() }).refund).toBe('done');
   });
 
   it('keeps the balance read before the fees', () => {
-    expect(refundProgress(doc({ events: [ev(EVENTS.feeStarted, { amount: 15, balance: 4 })] }).value)).toMatchObject({ balanceBeforeFee: 4, feeStartedAt: NOW.toISOString() });
+    expect(refundProgress(doc({ feeStartedAt: NOW.toISOString(), feeAmount: 15, walletBalanceBeforeFee: 4, feeOutcome: 'in-doubt' }).value)).toMatchObject({ balanceBeforeFee: 4, feeStartedAt: NOW.toISOString() });
   });
 
   it('offers to resume a refund in doubt', () => {
-    const state = doc({ chargeStartedAt: NOW.toISOString(), invoiceId: 'i-1', events: [ev(EVENTS.refundStarted)] });
+    const state = doc({ chargeStartedAt: NOW.toISOString(), invoiceId: 'i-1', refundStartedAt: NOW.toISOString(), refundOutcome: 'in-doubt' });
     expect(rowActions(row({ tab: 'cancelled', state }), NOW).primary).toBe('resume-refund');
   });
 });
 
 describe('chargeAcceptedSinceClaim', () => {
-  it('is true only for an acceptance after the last claim', () => {
-    expect(chargeAcceptedSinceClaim(doc({ events: [ev('charge-started'), ev(EVENTS.chargeAccepted)] }).value)).toBe(true);
-    expect(chargeAcceptedSinceClaim(doc({ events: [ev('charge-started'), ev(EVENTS.chargeAccepted), ev('charge-released'), ev('charge-started')] }).value)).toBe(false);
-    expect(chargeAcceptedSinceClaim(doc().value)).toBe(false);
+  it('reads chargeAcceptedAt, never the journal', () => {
+    expect(chargeAcceptedSinceClaim(doc({ chargeAcceptedAt: NOW.toISOString() }).value)).toBe(true);
+    expect(chargeAcceptedSinceClaim(doc({ chargeAcceptedAt: null }).value)).toBe(false);
+    expect(chargeAcceptedSinceClaim(doc({ events: [ev('charge-started'), ev(EVENTS.chargeAccepted)] }).value)).toBe(false);
   });
 });
 

@@ -63,7 +63,36 @@ One document per booking, in the collection `bookings` of `bo.storage`, under th
 - **Created** at the first write of the widget (charge, pre-allocation, note), with `allocationProcessed: false`, so that the scheduler finds it by query.
 - **No expiry while the booking is being handled.** The expiry (365 days, the most the storage takes) starts at the end of its cycle: refund with nothing to regularize, regularization, or the end written by the scheduler. Undoing a regularization removes it.
 - **Charge claim**: before creating an invoice, the widget writes `chargeStartedAt` and `chargeStartedBy` over the version it read (`ifVersion`): two operators cannot charge the same booking twice.
-- **Fields**: fleet, business profile flag, entity billed, charge claim, invoice and amounts (charged, computed, accepted warnings), invoice status cache, pre-allocated vehicle and plate, internal notes (500 characters), scheduler flags (allocation done, credits added, wallet, errors), credits revoked, refund date, regularization (amount left, pending flag, date, user id, note) and a journal of the 50 newest events.
+- **Fields**: fleet, business profile flag, entity billed, charge claim, invoice and amounts (charged, computed, accepted warnings), invoice status cache, pre-allocated vehicle and plate, internal notes (500 characters), scheduler flags (allocation done, credits added, wallet, errors), credits revoked, refund date, regularization (amount left, pending flag, date, user id, note), the money steps below, and a journal of the 50 newest events.
+- **The journal (`events`) is an audit trail only.** Every money step is a first-level field, written in the same write as its journal entry (`src/storage/money-steps.ts`); every guard, resume and decision reads the fields, never the journal.
+
+### Money steps
+
+| Field | Type | Set when |
+| --- | --- | --- |
+| `chargeAcceptedAt` | ISO date \| null | The API accepted the invoice of the current claim without giving its id: the claim is never unlocked. Cleared by a new claim and by a release. |
+| `refundStartedAt`, `refundStartedBy` | ISO date, user id | The refund call is about to be sent. |
+| `refundAmount` | number \| null | Amount of the refund call. |
+| `refundOutcome` | `in-doubt` \| `confirmed` \| `released` | `in-doubt` from the start until the refund is recorded (`confirmed`), refused or said not done (`released`). |
+| `refundDecidedAt`, `refundDecidedBy` | ISO date, user id | An operator decided a refund in doubt. |
+| `feeStartedAt` | ISO date | The cancellation fee invoice is about to be created. |
+| `feeAmount` | number \| null | Fees started, charged or confirmed. |
+| `walletBalanceBeforeFee` | number \| null | Wallet balance read before the fees. |
+| `feeInvoiceId`, `feeChargedAt` | string, ISO date | The fee invoice the API created. |
+| `feeOutcome` | `in-doubt` \| `charged` \| `confirmed` \| `skipped` \| `released` | `in-doubt` from the start; `confirmed` and `released` may be an operator's decision. |
+| `feeDecidedAt`, `feeDecidedBy` | ISO date, user id | An operator decided fees in doubt. |
+| `creditsRevocationStartedAt`, `creditsRevocationBalance` | ISO date, number | The wallet is about to be emptied; the balance recorded before. |
+| `creditsRevocationSkippedAt` | ISO date | No wallet to empty. |
+| `creditsRevoked` | boolean | The wallet was emptied. |
+| `refundCompletedAt` | ISO date | Refund, fees and revocation are done. |
+
+A step `in-doubt` (a lost answer) is never done again until an operator decides it, at least 10 minutes after it started. A refund or fees `in-doubt` must have their start date: the contract refuses a write that breaks it.
+
+### Rules for the server scheduler
+
+- It writes only its own fields (`allocationProcessed`, `creditsAdded`, `walletId`, `schedulerErrors`) with `update` over the version it read, and documents with `schemaVersion: 1`.
+- **Credits are granted only once `invoiceId` is set and the invoice is `PAID`**: `chargeAmount` is written with the claim, before the invoice exists, and a claim may be released.
+- It never writes the money steps (the refund, fees and credits revocation fields above), the charge claim nor the regularization.
 - Every user of the host can read this storage: it holds user ids, never names, emails or secrets.
 
 The browser keeps a cache of the reference data (models, services, cities, plates, geocoding) in `localStorage` for 24 hours. Names of customers, payment statuses and the addresses of the pickup points stay in memory only.

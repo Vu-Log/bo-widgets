@@ -288,7 +288,33 @@ describe('updateBookingState', () => {
       { invoiceId: 'invoice-1' },
       { regularizationPending: true },
       { regularizedAt: now.toISOString() },
+      { refundOutcome: 'in-doubt' as const },
+      { feeOutcome: 'in-doubt' as const },
+      { feeOutcome: 'unknown' },
+      { refundAmount: -1 },
     ]) {
+      const result = await updateBookingState(collection, doc, patch as never);
+      expect(result.ok === false && result.error.kind).toBe('invalid-write');
+    }
+    expect(bo.storage.api.update).not.toHaveBeenCalled();
+  });
+
+  it('writes the fields of a money step with their start', async () => {
+    await seed({});
+    const doc = await current();
+    const written = await updateBookingState(collection, doc, {
+      refundStartedAt: now.toISOString(),
+      refundStartedBy: 'user-1',
+      refundAmount: 50,
+      refundOutcome: 'in-doubt',
+    });
+    expect(written.ok && written.value.value).toMatchObject({ refundOutcome: 'in-doubt', refundAmount: 50 });
+  });
+
+  it('keeps refusing a merged rule break', async () => {
+    await seed({});
+    const doc = await current();
+    for (const patch of [{ invoiceId: 'invoice-1' }]) {
       const result = await updateBookingState(collection, doc, patch);
       expect(result.ok === false && result.error.kind).toBe('invalid-write');
     }
@@ -364,6 +390,7 @@ describe('claimCharge', () => {
       allocationProcessed: false,
       chargeStartedAt: now.toISOString(),
       chargeStartedBy: 'user-1',
+      chargeAcceptedAt: null,
       events: [{ at: now.toISOString(), by: 'user-1', type: 'charge-started' }],
     });
     expect(bo.storage.api.set.mock.calls[0]?.[3]).toEqual({ ifVersion: 0 });
@@ -380,6 +407,7 @@ describe('claimCharge', () => {
       {
         chargeStartedAt: now.toISOString(),
         chargeStartedBy: 'user-1',
+        chargeAcceptedAt: null,
         events: [event(0), { at: now.toISOString(), by: 'user-1', type: 'charge-started' }],
       },
       { ifVersion: 1 },

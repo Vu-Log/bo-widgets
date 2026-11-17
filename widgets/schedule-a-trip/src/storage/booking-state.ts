@@ -6,6 +6,7 @@ import {
   type BoStorageWhereValue,
 } from '@vulog/bo-widget-sdk';
 import { z } from 'zod';
+import { FEE_OUTCOMES, REFUND_CALL_OUTCOMES } from './money-steps';
 
 /*
  * The state of a Schedule a trip booking the widget keeps, in the collection `bookings` of
@@ -116,9 +117,52 @@ const fields = {
   regularizationNote: note.nullable(),
   /** Written by the scheduler. */
   schedulerErrors: schedulerErrorsSchema,
-  /** Journal of the booking, the {@link MAX_EVENTS} newest entries. */
+  /** Journal of the booking, the {@link MAX_EVENTS} newest entries: an audit trail only. */
   events: z.array(bookingEventSchema).max(MAX_EVENTS),
+  // The money steps (storage/money-steps.ts): what the guards of the money actions read.
+  chargeAcceptedAt: isoDate.nullable(),
+  refundStartedAt: isoDate.nullable(),
+  refundStartedBy: z.string().nullable(),
+  refundAmount: z.number().nonnegative().nullable(),
+  refundOutcome: z.enum(REFUND_CALL_OUTCOMES).nullable(),
+  refundDecidedAt: isoDate.nullable(),
+  refundDecidedBy: z.string().nullable(),
+  feeStartedAt: isoDate.nullable(),
+  feeAmount: z.number().nonnegative().nullable(),
+  walletBalanceBeforeFee: z.number().nullable(),
+  feeInvoiceId: z.string().min(1).nullable(),
+  feeChargedAt: isoDate.nullable(),
+  feeOutcome: z.enum(FEE_OUTCOMES).nullable(),
+  feeDecidedAt: isoDate.nullable(),
+  feeDecidedBy: z.string().nullable(),
+  creditsRevocationStartedAt: isoDate.nullable(),
+  creditsRevocationBalance: z.number().nullable(),
+  creditsRevocationSkippedAt: isoDate.nullable(),
+  refundCompletedAt: isoDate.nullable(),
 };
+
+/** The fields of the money steps, in the order of the contract. */
+export const MONEY_STEP_FIELDS = [
+  'chargeAcceptedAt',
+  'refundStartedAt',
+  'refundStartedBy',
+  'refundAmount',
+  'refundOutcome',
+  'refundDecidedAt',
+  'refundDecidedBy',
+  'feeStartedAt',
+  'feeAmount',
+  'walletBalanceBeforeFee',
+  'feeInvoiceId',
+  'feeChargedAt',
+  'feeOutcome',
+  'feeDecidedAt',
+  'feeDecidedBy',
+  'creditsRevocationStartedAt',
+  'creditsRevocationBalance',
+  'creditsRevocationSkippedAt',
+  'refundCompletedAt',
+] as const;
 
 const stateShape = {
   schemaVersion: z.literal(SCHEMA_VERSION),
@@ -148,6 +192,9 @@ const stateShape = {
   regularizationNote: fields.regularizationNote.optional(),
   schedulerErrors: fields.schedulerErrors.optional(),
   events: fields.events.optional(),
+  ...(Object.fromEntries(MONEY_STEP_FIELDS.map((key) => [key, fields[key].optional()])) as {
+    [K in (typeof MONEY_STEP_FIELDS)[number]]: z.ZodOptional<(typeof fields)[K]>;
+  }),
 };
 
 /** The known fields of a document, without the unknown ones a newer scheduler may add. */
@@ -165,8 +212,9 @@ export const SCHEDULER_FIELDS = [
 ] as const;
 
 /**
- * The rules between fields that protect money: an invoice only after a charge claim, a pending
- * regularization only with its amount, a regularization only with its author.
+ * The rules between fields that protect money: an invoice only after a charge claim, a refund or
+ * fees in doubt only with their start, a pending regularization only with its amount, a
+ * regularization only with its author.
  */
 const checkCrossFields = (state: Partial<BookingState>, context: z.RefinementCtx): void => {
   if (state.invoiceId && !state.chargeStartedAt) {
@@ -181,6 +229,20 @@ const checkCrossFields = (state: Partial<BookingState>, context: z.RefinementCtx
       code: 'custom',
       path: ['regularizationPending'],
       message: 'A pending regularization needs its amount (toRegularize)',
+    });
+  }
+  if (state.refundOutcome === 'in-doubt' && !state.refundStartedAt) {
+    context.addIssue({
+      code: 'custom',
+      path: ['refundOutcome'],
+      message: 'A refund in doubt needs its start (refundStartedAt)',
+    });
+  }
+  if (state.feeOutcome === 'in-doubt' && !state.feeStartedAt) {
+    context.addIssue({
+      code: 'custom',
+      path: ['feeOutcome'],
+      message: 'Fees in doubt need their start (feeStartedAt)',
     });
   }
   if (state.regularizedAt && state.regularizedBy === undefined) {
@@ -684,6 +746,8 @@ export async function claimCharge(
         : {}),
       chargeStartedAt: at,
       chargeStartedBy: input.userId,
+      // A new claim: the acceptance of a previous one no longer applies.
+      chargeAcceptedAt: null,
       events: withEvent(current?.value.events, { at, by: input.userId, type: 'charge-started' }),
     };
     const written =
@@ -721,6 +785,7 @@ export async function releaseCharge(
     chargeAmount: null,
     computedAmount: null,
     amountWarnings: [],
+    chargeAcceptedAt: null,
     events: withEvent(current.value.events, { at, by: input.userId, type: 'charge-released' }),
   });
 }

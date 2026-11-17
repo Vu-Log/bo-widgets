@@ -206,7 +206,21 @@ describe('executeRefund', () => {
       creditsRevoked: true,
       regularizationPending: true,
       toRegularize: { missingAmount: 10 },
+      // Each money step in its own fields, the journal as audit.
+      refundStartedAt: NOW.toISOString(),
+      refundStartedBy: 'operator-1',
+      refundAmount: 50,
+      refundOutcome: 'confirmed',
+      feeStartedAt: NOW.toISOString(),
+      feeAmount: 15,
+      walletBalanceBeforeFee: 5,
+      feeOutcome: 'charged',
+      feeChargedAt: NOW.toISOString(),
+      creditsRevocationStartedAt: NOW.toISOString(),
+      creditsRevocationBalance: 5,
+      refundCompletedAt: NOW.toISOString(),
     });
+    expect(setup.stored()?.value.feeInvoiceId).toMatch(/^invoice-new-/);
     expect(setup.stored()?.expiresAt).toBeUndefined();
   });
 
@@ -273,6 +287,11 @@ describe('executeRefund', () => {
     expect(await executeRefund(setup.deps, old, { refund: 'refunded' })).toMatchObject({ kind: 'done' });
     expect(setup.aima.callsTo('POST', '/refund')).toHaveLength(1);
     expect(eventTypes()).toContain('refund-confirmed');
+    expect(setup.stored()?.value).toMatchObject({
+      refundOutcome: 'confirmed',
+      refundDecidedAt: new Date(NOW.getTime() + 11 * 60_000).toISOString(),
+      refundDecidedBy: 'operator-1',
+    });
   });
 
   it('records a confirmed refund whose record failed, without refunding again', async () => {
@@ -310,6 +329,40 @@ describe('executeRefund', () => {
     expect(await executeRefund(setup.deps, await plan(48), { refund: 'not-refunded' })).toMatchObject({ kind: 'done' });
     expect(setup.aima.callsTo('POST', '/refund')).toHaveLength(2);
     expect(eventTypes()).toContain('refund-released');
+    // The new call started after the decision: the step is a new one, the decision stays in the journal.
+    expect(setup.stored()?.value).toMatchObject({ refundOutcome: 'confirmed', refundDecidedAt: null });
+  });
+
+  it('refunds once when two operators run the same refund at the same time', async () => {
+    await start();
+    const first = await plan(48);
+    const second = await plan(48);
+
+    const outcomes = await Promise.all([executeRefund(setup.deps, first), executeRefund(setup.deps, second)]);
+
+    expect(setup.aima.callsTo('POST', '/refund')).toHaveLength(1);
+    expect(outcomes.map((outcome) => outcome.kind).sort()).toEqual(['done', 'write-failed']);
+    expect(setup.stored()?.value).toMatchObject({ refundOutcome: 'confirmed', refundCompletedAt: NOW.toISOString() });
+  });
+
+  it('charges the fees once when two operators resume the same refund at the same time', async () => {
+    await start({ balance: 40 });
+    const first = await plan(0.5);
+    const second = await plan(0.5);
+
+    await Promise.all([executeRefund(setup.deps, first), executeRefund(setup.deps, second)]);
+
+    expect(feeCharges()).toHaveLength(1);
+    expect(setup.aima.callsTo('POST', '/refund')).toHaveLength(1);
+    expect(setup.stored()?.value.feeOutcome).toBe('charged');
+  });
+
+  it('decides from the fields, whatever the journal says', async () => {
+    // The journal says a refund was started; the fields say nothing was: the fields win.
+    await start({ state: { events: [{ at: NOW.toISOString(), by: 'operator-1', type: 'refund-started' }] } });
+
+    expect(await executeRefund(setup.deps, await plan(48))).toMatchObject({ kind: 'done' });
+    expect(setup.aima.callsTo('POST', '/refund')).toHaveLength(1);
   });
 
   it('refuses a second refund while another one is started and not recorded', async () => {
@@ -367,6 +420,12 @@ describe('executeRefund', () => {
     expect(await executeRefund(setup.deps, resumed, { fee: 'charged' })).toMatchObject({ kind: 'done', feeAmount: 15 });
     expect(feeCharges()).toHaveLength(1);
     expect(eventTypes()).toContain('cancellation-fee-confirmed');
+    expect(setup.stored()?.value).toMatchObject({
+      feeOutcome: 'confirmed',
+      feeAmount: 15,
+      feeDecidedAt: new Date(NOW.getTime() + 11 * 60_000).toISOString(),
+      feeDecidedBy: 'operator-1',
+    });
   });
 
   it('charges the fees again when the operator says the lost one was not charged', async () => {

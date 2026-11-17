@@ -105,8 +105,24 @@ describe('chargePrepayment', () => {
 
     expect(await chargePrepayment(setup.deps, request())).toEqual({ kind: 'charged-id-unknown', markFailure: null });
     expect(setup.stored()?.value.chargeStartedAt).toBe(NOW.toISOString());
+    expect(setup.stored()?.value.chargeAcceptedAt).toBe(NOW.toISOString());
     setup.setNow(new Date(NOW.getTime() + 60 * 60_000));
     expect(await unlockClaim(setup.deps, BOOKING_ID, NOW.toISOString())).toEqual({ ok: false, error: { kind: 'charge-accepted' } });
+  });
+
+  it('unlocks a claim the fields do not mark accepted, whatever the journal says', async () => {
+    setup = await moneySetup();
+    await setup.seed({
+      chargeStartedAt: NOW.toISOString(),
+      chargeStartedBy: 'operator-1',
+      chargeAcceptedAt: null,
+      events: [{ at: NOW.toISOString(), by: 'operator-1', type: 'charge-accepted' }],
+    });
+    setup.setNow(new Date(NOW.getTime() + 60 * 60_000));
+
+    const unlocked = await unlockClaim(setup.deps, BOOKING_ID, NOW.toISOString());
+
+    expect(unlocked.ok && unlocked.value.value).toMatchObject({ chargeStartedAt: null, chargeAcceptedAt: null });
   });
 
   it('records the invoice with a new claim when the claim was unlocked meanwhile', async () => {

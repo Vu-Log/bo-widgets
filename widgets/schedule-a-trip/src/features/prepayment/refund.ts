@@ -21,7 +21,7 @@ import {
   refundNote,
   refundProgress,
 } from './rules';
-import { refuse, withEvents, writeOver, type RefusedWrite, type WriteFailure } from './writes';
+import { refuse, withMoneyEvents, writeOver, type RefusedWrite, type WriteFailure } from './writes';
 
 /** The settings a refund reads. */
 export interface RefundPlanSettings extends RefundSettings {
@@ -383,7 +383,7 @@ const mark = (
     if (refused) return refused;
     return {
       mode: 'update',
-      patch: { ...extra, events: withEvents(current.value.events, entries()) },
+      patch: { ...withMoneyEvents(current.value, entries()), ...extra },
     };
   });
 
@@ -434,6 +434,7 @@ export async function executeRefund(
           ? null
           : refuse('refund-not-in-doubt');
       },
+      { refundDecidedAt: deps.now().toISOString(), refundDecidedBy: deps.userId },
     );
     if (!decided.ok) return { kind: 'write-failed', step: 'decision', failure: decided.error };
     if (answer === 'refunded') recordRefund = true;
@@ -460,6 +461,7 @@ export async function executeRefund(
           ? null
           : refuse('fee-not-in-doubt');
       },
+      { feeDecidedAt: deps.now().toISOString(), feeDecidedBy: deps.userId },
     );
     if (!decided.ok) return { kind: 'write-failed', step: 'decision', failure: decided.error };
     if (answer === 'not-charged') feeCharge = step.charge;
@@ -587,8 +589,8 @@ export async function executeRefund(
       entry(deps, EVENTS.refundCompleted, { missingAmount: missing }),
     ];
     const patch: BookingStatePatch = {
+      ...withMoneyEvents(current.value, closing),
       ...(plan.credits.kind === 'revoke' ? { creditsRevoked: true } : {}),
-      events: withEvents(current.value.events, closing),
     };
     if (missing > 0) {
       return {

@@ -319,88 +319,46 @@ export interface RefundProgress {
   readonly complete: boolean;
 }
 
-const numberDetail = (details: Record<string, unknown> | undefined, key: string): number | null => {
-  const value = details?.[key];
-  return typeof value === 'number' && Number.isFinite(value) ? value : null;
-};
-
 /**
- * Reads the steps of a refund back from the document: `refundedAt`, `creditsRevoked`,
- * `toRegularize`, and the journal entries this feature writes before and after each money call.
+ * Reads the steps of a refund from the fields of the document (contract v2): `refundedAt`,
+ * `refundOutcome`, `feeOutcome`, the credits revocation fields, `creditsRevoked`, `toRegularize`.
+ * The journal is never read: it is an audit trail.
  *
  * @param value - The stored state of the booking.
  * @returns The steps done, in doubt or to do.
  */
 export function refundProgress(value: BookingState): RefundProgress {
-  let refund: RefundStep = 'todo';
-  let refundStartedAt: string | null = null;
-  let feeStartedAt: string | null = null;
-  let balanceBeforeFee: number | null = null;
-  let fee: FeeStep = 'todo';
-  let feeAmount: number | null = null;
-  let credits: CreditsStep = 'todo';
-  let recordedBalance: number | null = null;
-  let completed = false;
-  for (const event of value.events ?? []) {
-    switch (event.type) {
-      case EVENTS.refundStarted:
-        completed = false;
-        refund = 'in-doubt';
-        refundStartedAt = event.at;
-        break;
-      case EVENTS.refundReleased:
-        refund = 'todo';
-        break;
-      case EVENTS.refunded:
-      case EVENTS.refundConfirmed:
-        refund = 'done';
-        break;
-      case EVENTS.feeStarted:
-        fee = 'in-doubt';
-        feeStartedAt = event.at;
-        feeAmount = numberDetail(event.details, 'amount');
-        balanceBeforeFee = numberDetail(event.details, 'balance');
-        break;
-      case EVENTS.feeCharged:
-      case EVENTS.feeConfirmed:
-        fee = 'done';
-        feeAmount = numberDetail(event.details, 'amount') ?? feeAmount;
-        break;
-      case EVENTS.feeSkipped:
-        fee = 'done';
-        feeAmount = null;
-        break;
-      case EVENTS.feeReleased:
-        fee = 'todo';
-        feeAmount = null;
-        break;
-      case EVENTS.creditsStarted:
-        credits = 'started';
-        recordedBalance = numberDetail(event.details, 'balance');
-        break;
-      case EVENTS.creditsSkipped:
-        credits = 'done';
-        break;
-      case EVENTS.refundCompleted:
-        completed = true;
-        break;
-      default:
-        break;
-    }
-  }
-  if (value.creditsRevoked === true) credits = 'done';
   const refunded = Boolean(value.refundedAt);
+  const refund: RefundStep =
+    refunded || value.refundOutcome === 'confirmed'
+      ? 'done'
+      : value.refundOutcome === 'in-doubt'
+        ? 'in-doubt'
+        : 'todo';
+  const feeOutcome = value.feeOutcome ?? null;
+  const fee: FeeStep =
+    feeOutcome === 'in-doubt'
+      ? 'in-doubt'
+      : feeOutcome === 'charged' || feeOutcome === 'confirmed' || feeOutcome === 'skipped'
+        ? 'done'
+        : 'todo';
+  const credits: CreditsStep =
+    value.creditsRevoked === true || value.creditsRevocationSkippedAt
+      ? 'done'
+      : value.creditsRevocationStartedAt
+        ? 'started'
+        : 'todo';
   return {
     refunded,
-    refund: refunded ? 'done' : refund,
-    refundStartedAt,
-    feeStartedAt,
-    balanceBeforeFee,
+    refund,
+    refundStartedAt: value.refundStartedAt ?? null,
+    feeStartedAt: value.feeStartedAt ?? null,
+    balanceBeforeFee: value.walletBalanceBeforeFee ?? null,
     fee,
-    feeAmount,
+    feeAmount: fee === 'todo' || feeOutcome === 'skipped' ? null : (value.feeAmount ?? null),
     credits,
-    recordedBalance,
-    complete: refunded && (completed || Boolean(value.toRegularize)),
+    recordedBalance: value.creditsRevocationBalance ?? null,
+    complete: refunded && (Boolean(value.refundCompletedAt) || Boolean(value.toRegularize)),
   };
 }
 
@@ -580,13 +538,12 @@ export function schedulerErrorNames(value: BookingState | null | undefined): str
 
 /**
  * Whether the API accepted the invoice of the current claim (a 2xx whose answer gave no id): the
- * invoice exists, so the claim must never be unlocked.
+ * invoice exists, so the claim must never be unlocked. `chargeAcceptedAt` is cleared by every new
+ * claim and every release.
  *
  * @param value - The stored state.
- * @returns `true` when a `charge-accepted` entry follows the last `charge-started` one.
+ * @returns `true` when `chargeAcceptedAt` is set.
  */
 export function chargeAcceptedSinceClaim(value: BookingState): boolean {
-  const events = value.events ?? [];
-  const lastClaim = events.map((event) => event.type).lastIndexOf('charge-started');
-  return events.slice(lastClaim + 1).some((event) => event.type === EVENTS.chargeAccepted);
+  return Boolean(value.chargeAcceptedAt);
 }

@@ -5,6 +5,7 @@ import {
   updateBookingState,
   withEvent,
   type BookingEvent,
+  type BookingState,
   type BookingStateCollection,
   type BookingStateDoc,
   type BookingStatePatch,
@@ -13,6 +14,7 @@ import {
   type StorageFailure,
   type StorageResult,
 } from '../../storage/booking-state';
+import { applyMoneyEvents } from '../../storage/money-steps';
 
 /** Tries of {@link writeOver} when the document changes between its read and its write. */
 const WRITE_ATTEMPTS = 3;
@@ -132,6 +134,19 @@ export const withEvents = (
 ): BookingEvent[] => added.reduce<BookingEvent[]>((all, event) => withEvent(all, event), [
   ...(events ?? []),
 ]);
+
+/**
+ * The entries of steps added to the journal, with the fields they set (contract v2): a money step
+ * and its audit entry are always written together, and only the fields are read back.
+ *
+ * @param current - The stored state the patch is written over.
+ * @param added - The entries to add.
+ * @returns The fields of the steps and the new journal, to spread in a patch.
+ */
+export const withMoneyEvents = (current: BookingState, added: readonly BookingEvent[]): BookingStatePatch => ({
+  ...applyMoneyEvents(current, added),
+  events: withEvents(current.events, added),
+});
 
 /**
  * A refusal of a builder.

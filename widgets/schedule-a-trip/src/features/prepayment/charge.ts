@@ -24,7 +24,7 @@ import {
   matchPrepaymentInvoices,
   prepaymentNotes,
 } from './rules';
-import { refuse, withEvents, writeOver, type WriteDeps, type WriteFailure } from './writes';
+import { refuse, withEvents, withMoneyEvents, writeOver, type WriteDeps, type WriteFailure } from './writes';
 
 /** What the money workflows need: the API, the storage, the fleet, the operator and the clock. */
 export interface MoneyDeps extends WriteDeps {
@@ -181,11 +181,9 @@ export async function chargePrepayment(
   if (invoiceId === null) {
     const marked = await writeOver(deps, bookingId, (current) => ({
       mode: 'update',
-      patch: {
-        events: withEvents(current.value.events, [
-          { at: deps.now().toISOString(), by: deps.userId, type: EVENTS.chargeAccepted, details: { amount: request.amount } },
-        ]),
-      },
+      patch: withMoneyEvents(current.value, [
+        { at: deps.now().toISOString(), by: deps.userId, type: EVENTS.chargeAccepted, details: { amount: request.amount } },
+      ]),
     }));
     return { kind: 'charged-id-unknown', markFailure: marked.ok ? null : marked.error };
   }
