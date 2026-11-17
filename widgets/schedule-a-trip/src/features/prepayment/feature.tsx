@@ -1,9 +1,10 @@
 import { queryOptions, useQuery } from '@tanstack/react-query';
-import { useBoClient, useBoContext } from '@vulog/bo-widget-react';
-import { useMemo } from 'react';
+import { useBoClient, useBoContext, useCurrentUser } from '@vulog/bo-widget-react';
+import { useMemo, useState, type ReactNode } from 'react';
 import type { ListTab } from '../../domain/statuses';
 import { createI18n, useI18n, type MessageKey, type MessageParams } from '../../i18n';
 import { queryKeys } from '../../query/keys';
+import { useWidgetSettings } from '../../settings';
 import {
   bookingsCollection,
   listPendingRegularizations,
@@ -28,13 +29,16 @@ import {
   SchedulerErrorsCell,
 } from './cells';
 import { PrepaymentHost } from './Host';
+import { moneyBlockerReason } from './messages';
 import {
   prepaymentDisplay,
   rowActions,
   schedulerErrorNames,
+  unavailableActions,
   type PrepaymentActionId,
+  type UnavailableReason,
 } from './rules';
-import { prepaymentDialogs, type DialogStore } from './store';
+import { createDialogStore, prepaymentDialogs, type DialogStore } from './store';
 
 /** Translates a key of the catalogues. */
 export type Translate = (key: MessageKey, params?: MessageParams) => string;
@@ -47,7 +51,31 @@ export interface PrepaymentFeatureOptions {
   readonly now?: () => Date;
   /** Where the actions open their dialogs; {@link prepaymentDialogs} by default. */
   readonly dialogs?: DialogStore;
+  /**
+   * The host of the dialogs of {@link dialogs}, built once per store: a new component on each new
+   * feature (a change of language) would remount the dialog open. Built here by default.
+   */
+  readonly Host?: () => ReactNode;
+  /**
+   * Why the money actions (charge, verify, retry, refund) cannot run, as a final text: invalid
+   * settings, or no operator id ({@link moneyBlockerReason}). They are shown disabled with it.
+   */
+  readonly moneyBlocker?: string | null;
 }
+
+/** The actions that call the billing API: disabled while the settings are invalid. */
+const MONEY_ACTIONS: ReadonlySet<PrepaymentActionId> = new Set([
+  'charge',
+  'verify',
+  'retry',
+  'refund',
+  'resume-refund',
+]);
+
+const UNAVAILABLE_REASONS: Readonly<Record<UnavailableReason, MessageKey>> = {
+  archived: 'prepayment.tooltip.archived',
+  'no-data': 'prepayment.status.noneFromWidget',
+};
 
 const ACTION_LABELS: Readonly<Record<PrepaymentActionId, MessageKey>> = {
   charge: 'prepayment.action.charge',
@@ -100,14 +128,20 @@ export function createPrepaymentFeature(options: PrepaymentFeatureOptions): Book
   const { t } = options;
   const now = options.now ?? (() => new Date());
   const dialogs = options.dialogs ?? prepaymentDialogs;
+  const moneyBlocker = options.moneyBlocker ?? null;
+  const Host = options.Host ?? (() => <PrepaymentHost store={dialogs} />);
 
-  const action = (id: PrepaymentActionId, disabled = false): BookingAction => ({
-    id: `prepayment.${id}`,
-    label: t(ACTION_LABELS[id]),
-    tone: ACTION_TONES[id],
-    disabled,
-    run: (ctx) => dialogs.open({ action: id, ctx }),
-  });
+  /** An action; `reason` disables it, and so does {@link moneyBlocker} for a money action. */
+  const action = (id: PrepaymentActionId, reason: string | null = null): BookingAction => {
+    const disabledReason = reason ?? (MONEY_ACTIONS.has(id) ? moneyBlocker : null);
+    return {
+      id: `prepayment.${id}`,
+      label: t(ACTION_LABELS[id]),
+      tone: ACTION_TONES[id],
+      ...(disabledReason ? { disabled: true, disabledReason } : {}),
+      run: (ctx) => dialogs.open({ action: id, ctx }),
+    };
+  };
 
   const column = (
     id: string,
@@ -199,17 +233,25 @@ export function createPrepaymentFeature(options: PrepaymentFeatureOptions): Book
     },
     primaryAction: (ctx) => {
       const actions = rowActions(ctx, now());
-      return actions.primary ? action(actions.primary, actions.primaryDisabled) : null;
+      if (!actions.primary) return null;
+      return action(actions.primary, actions.primaryDisabled ? t('common.loading') : null);
     },
-    menuActions: (ctx) => rowActions(ctx, now()).menu.map((id) => action(id)),
+    menuActions: (ctx) => {
+      const at = now();
+      return [
+        ...rowActions(ctx, at).menu.map((id) => action(id)),
+        ...unavailableActions(ctx, at).map(({ id, reason }) => action(id, t(UNAVAILABLE_REASONS[reason]))),
+      ];
+    },
     filters,
     kpis,
+    // After the cards of the booking section (Actions 5, Trip 10, Vehicle 20, Customer 30).
     detailCards: [
-      { id: 'prepayment.payment', order: 30, render: (ctx) => <PaymentCard ctx={ctx} /> },
-      { id: 'prepayment.notes', order: 40, render: (ctx) => <InternalNotesCard ctx={ctx} /> },
+      { id: 'prepayment.payment', order: 40, render: (ctx) => <PaymentCard ctx={ctx} dialogs={dialogs} /> },
+      { id: 'prepayment.notes', order: 50, render: (ctx) => <InternalNotesCard ctx={ctx} dialogs={dialogs} /> },
       { id: 'prepayment.journal', order: 90, render: (ctx) => <JournalCard ctx={ctx} /> },
     ],
-    Host: () => <PrepaymentHost store={dialogs} />,
+    Host,
   };
 }
 
@@ -217,14 +259,32 @@ export function createPrepaymentFeature(options: PrepaymentFeatureOptions): Book
 export const prepaymentFeature: BookingFeature = createPrepaymentFeature({ t: createI18n(null).t });
 
 /**
- * The prepayment feature in the language of the back office, built again when it changes.
+ * The prepayment feature in the language of the back office, built again when it or the settings
+ * change: its money actions are disabled, with the reason, while the settings are invalid. Its
+ * dialogs have a store of their own, and a host that keeps its identity.
  *
+ * @param options - The clock of the section; `new Date()` by default.
  * @returns The feature.
  */
-export function usePrepaymentFeature(): BookingFeature {
+export function usePrepaymentFeature(options: { readonly now?: () => Date } = {}): BookingFeature {
+  const { now } = options;
   // `t` changes with the locale of the back office only.
   const { t } = useI18n();
-  return useMemo(() => createPrepaymentFeature({ t }), [t]);
+  const settings = useWidgetSettings();
+  const user = useCurrentUser();
+  const moneyBlocker = moneyBlockerReason(settings.isError ? null : settings.data, user.id, t);
+  const [dialogs] = useState(createDialogStore);
+  const Host = useMemo(
+    () =>
+      function PrepaymentDialogs() {
+        return <PrepaymentHost store={dialogs} />;
+      },
+    [dialogs],
+  );
+  return useMemo(
+    () => createPrepaymentFeature({ t, now, dialogs, Host, moneyBlocker }),
+    [t, now, dialogs, Host, moneyBlocker],
+  );
 }
 
 /**

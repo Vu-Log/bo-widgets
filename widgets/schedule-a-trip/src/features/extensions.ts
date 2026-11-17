@@ -14,7 +14,12 @@ export interface BookingContext {
   /** undefined while loading. */
   customer: Customer | undefined;
 }
-export interface BookingAction { id: string; label: string; run: (ctx: BookingContext) => void; disabled?: boolean; tone?: 'primary' | 'default' | 'danger' }
+/**
+ * An action of a row or of the drawer. `disabledReason`, a final text, says why it cannot run: the
+ * list and the drawer show it next to the disabled action (a tooltip, or the second line of a menu
+ * item). A reason implies `disabled`.
+ */
+export interface BookingAction { id: string; label: string; run: (ctx: BookingContext) => void; disabled?: boolean; disabledReason?: string; tone?: 'primary' | 'default' | 'danger' }
 export interface BookingFilter { id: string; label: string; tabs: ListTab[]; test: (ctx: BookingContext) => boolean; needsAllPages: boolean }
 export interface BookingKpi { id: string; label: string; tab: ListTab; filterId: string; tone: 'warn' | 'err' | 'info' }
 export interface DetailCard { id: string; order: number; render: (ctx: BookingContext) => ReactNode }

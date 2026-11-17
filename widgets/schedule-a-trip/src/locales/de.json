@@ -409,5 +409,7 @@
   "prepayment.refund.confirmNotRefunded": "Die Vorauszahlung wird jetzt erstattet. Nur wenn Sie geprüft haben, dass keine Erstattung erfolgt ist.",
   "prepayment.event.chargeAccepted": "Rechnung akzeptiert, ID unbekannt",
   "prepayment.event.refundReleased": "Erstattung nicht durchgeführt",
-  "prepayment.event.refundConfirmed": "Erstattung bestätigt"
+  "prepayment.event.refundConfirmed": "Erstattung bestätigt",
+  "write.preallocateNeedsPayment": "Eine Vorabzuweisung erfordert eine bezahlte Vorauszahlung oder eine Geschäftsbuchung.",
+  "list.sourceError": "Die Buchungen dieses Filters konnten nicht gefunden werden: Die Liste ist möglicherweise unvollständig."
 }

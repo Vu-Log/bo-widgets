@@ -409,5 +409,7 @@
   "prepayment.refund.confirmNotRefunded": "El prepago se reembolsará ahora. Solo si ha comprobado que no se hizo ningún reembolso.",
   "prepayment.event.chargeAccepted": "Factura aceptada, identificador desconocido",
   "prepayment.event.refundReleased": "Reembolso no realizado",
-  "prepayment.event.refundConfirmed": "Reembolso confirmado"
+  "prepayment.event.refundConfirmed": "Reembolso confirmado",
+  "write.preallocateNeedsPayment": "La preasignación requiere un prepago pagado o una reserva de empresa.",
+  "list.sourceError": "No se pudieron encontrar las reservas de este filtro: la lista puede estar incompleta."
 }

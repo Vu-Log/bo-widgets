@@ -409,5 +409,7 @@
   "prepayment.refund.confirmNotRefunded": "Az előrefizetést most visszatérítjük. Csak akkor, ha ellenőrizte, hogy nem történt visszatérítés.",
   "prepayment.event.chargeAccepted": "Számla elfogadva, azonosító ismeretlen",
   "prepayment.event.refundReleased": "Visszatérítés nem történt meg",
-  "prepayment.event.refundConfirmed": "Visszatérítés megerősítve"
+  "prepayment.event.refundConfirmed": "Visszatérítés megerősítve",
+  "write.preallocateNeedsPayment": "Az előzetes hozzárendeléshez kifizetett előleg vagy céges foglalás szükséges.",
+  "list.sourceError": "A szűrő foglalásai nem találhatók: a lista hiányos lehet."
 }

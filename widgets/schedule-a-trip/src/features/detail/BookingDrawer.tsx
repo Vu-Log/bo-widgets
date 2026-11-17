@@ -17,6 +17,7 @@ import { useI18n } from '../../i18n';
 import { SkeletonCell } from '../../ui/SkeletonCell';
 import { queryErrorText } from '../core/cards';
 import type { BookingContext, BookingFeature } from '../extensions';
+import { isActionDisabled, WithDisabledReason } from '../list/ActionReason';
 import { primaryActionOf } from '../list/RowActions';
 import { SectionProvider, useSection } from '../section-context';
 import { Timeline } from './Timeline';
@@ -94,15 +95,17 @@ function DrawerHeader({
         </Typography>
         <Box sx={{ flex: 1 }} />
         {primary && stored !== 'archived' && (
-          <Button
-            size="small"
-            variant="contained"
-            color={primary.tone === 'danger' ? 'error' : 'primary'}
-            disabled={primary.disabled}
-            onClick={() => primary.run(ctx)}
-          >
-            {primary.label}
-          </Button>
+          <WithDisabledReason action={primary}>
+            <Button
+              size="small"
+              variant="contained"
+              color={primary.tone === 'danger' ? 'error' : 'primary'}
+              disabled={isActionDisabled(primary)}
+              onClick={() => primary.run(ctx)}
+            >
+              {primary.label}
+            </Button>
+          </WithDisabledReason>
         )}
       </Box>
       <Timeline steps={steps} />

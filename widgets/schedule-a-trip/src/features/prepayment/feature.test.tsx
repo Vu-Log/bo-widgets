@@ -2,7 +2,7 @@ import { QueryClient } from '@tanstack/react-query';
 import { connect } from '@vulog/bo-widget-sdk';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { bodyText } from '../../test/dom';
-import { fakeBo, hostError } from '../../test/fake-bo';
+import { fakeBo, hostError, VALID_SETTINGS } from '../../test/fake-bo';
 import { customer, doc, NOW, renderWithBilling, row } from '../../test/prepayment-fixtures';
 import { createI18n } from '../../i18n';
 import { bookingsCollection, BOOKINGS_COLLECTION, StorageRequestError } from '../../storage/booking-state';
@@ -43,12 +43,45 @@ describe('createPrepaymentFeature', () => {
     const feature = createPrepaymentFeature({ t, dialogs, now: () => NOW });
     const ctx = row();
     const primary = feature.primaryAction?.(ctx);
-    expect(primary).toMatchObject({ id: 'prepayment.charge', label: 'Prepay', tone: 'primary', disabled: false });
+    expect(primary).toMatchObject({ id: 'prepayment.charge', label: 'Prepay', tone: 'primary' });
+    expect(primary?.disabled).toBeUndefined();
     primary?.run(ctx);
     expect(dialogs.getSnapshot()).toEqual({ action: 'charge', ctx });
     expect(feature.menuActions?.(ctx).map((action) => action.label)).toEqual(['Internal notes']);
-    expect(feature.primaryAction?.(row({ customer: undefined }))?.disabled).toBe(true);
+    expect(feature.primaryAction?.(row({ customer: undefined }))).toMatchObject({ disabled: true, disabledReason: 'Loading…' });
     expect(feature.primaryAction?.(row({ state: undefined }))).toBeNull();
+  });
+
+  it('disables the money actions with the reason it is given, never the others', () => {
+    const feature = createPrepaymentFeature({ t, now: () => NOW, moneyBlocker: 'Settings to fix' });
+    expect(feature.primaryAction?.(row())).toMatchObject({ id: 'prepayment.charge', disabled: true, disabledReason: 'Settings to fix' });
+    const cancelled = row({
+      tab: 'cancelled',
+      state: doc({ chargeStartedAt: NOW.toISOString(), invoiceId: 'i-1', invoiceStatus: 'PAID', regularizedAt: NOW.toISOString() }),
+    });
+    expect(feature.primaryAction?.(cancelled)).toMatchObject({ id: 'prepayment.refund', disabledReason: 'Settings to fix' });
+    for (const action of feature.menuActions?.(cancelled) ?? []) {
+      expect(action.id).toMatch(/notes|undo-regularization/);
+      expect(action.disabled).toBeUndefined();
+    }
+  });
+
+  it('shows the refund and the notes disabled without stored data, with why', () => {
+    const feature = createPrepaymentFeature({ t, now: () => NOW });
+    const reasons = (ctx: ReturnType<typeof row>) =>
+      (feature.menuActions?.(ctx) ?? []).map((action) => [action.label, action.disabledReason ?? null]);
+    expect(reasons(row({ tab: 'cancelled', state: null }))).toEqual([
+      ['Internal notes', null],
+      ['Refund', 'No prepayment from the widget'],
+    ]);
+    const old = { startDate: '2024-01-01T08:00:00.000Z', endDate: null, plannedReturnDate: null, cancellationDate: '2024-01-01T07:00:00.000Z' };
+    const archived = 'Prepayment, notes and journal are not kept beyond 365 days.';
+    expect(reasons(row({ tab: 'cancelled', state: null, booking: { ...row().booking, ...old } }))).toEqual([
+      ['Refund', archived],
+      ['Internal notes', archived],
+    ]);
+    expect(reasons(row({ tab: 'completed', state: null, booking: { ...row().booking, ...old } }))).toEqual([['Internal notes', archived]]);
+    expect(feature.primaryAction?.(row({ tab: 'cancelled', state: null }))).toBeNull();
   });
 
   it('filters the rows to prepay, failed, to refund, to regularize and with scheduler errors', () => {
@@ -90,8 +123,8 @@ describe('createPrepaymentFeature', () => {
 
   it('orders its detail cards and renders them', async () => {
     expect(prepaymentFeature.detailCards?.map((card) => [card.id, card.order])).toEqual([
-      ['prepayment.payment', 30],
-      ['prepayment.notes', 40],
+      ['prepayment.payment', 40],
+      ['prepayment.notes', 50],
       ['prepayment.journal', 90],
     ]);
     const rendered = await renderWithBilling(<>{prepaymentFeature.detailCards?.map((card) => <div key={card.id}>{card.render(row({ state: null }))}</div>)}</>);
@@ -106,6 +139,42 @@ describe('usePrepaymentFeature', () => {
     const feature = usePrepaymentFeature();
     return <span>{feature.kpis?.map((kpi) => kpi.label).join('|')}</span>;
   }
+
+  function Reason() {
+    const feature = usePrepaymentFeature({ now: () => NOW });
+    return <span>{feature.primaryAction?.(row())?.disabledReason ?? 'none'}</span>;
+  }
+
+  it('disables the money actions with the settings to fix and their problem', async () => {
+    const rendered = await renderWithBilling(<Reason />, {
+      bo: { getSettings: async () => ({ ...VALID_SETTINGS, dayRate: -1, prepaymentProductId: undefined }) },
+    });
+    unmount = rendered.view.unmount;
+    await vi.waitFor(() => expect(bodyText()).toContain('settings of the widget are incomplete'));
+    expect(bodyText()).toContain('prepaymentProductId (missing)');
+    expect(bodyText()).toContain('dayRate (invalid value)');
+  });
+
+  it('enables them with valid settings', async () => {
+    const rendered = await renderWithBilling(<Reason />);
+    unmount = rendered.view.unmount;
+    await vi.waitFor(() => expect(bodyText()).toBe('none'));
+  });
+
+  it('keeps the host of its dialogs while the language changes', async () => {
+    const hosts = new Set<unknown>();
+    function Hosts() {
+      const feature = usePrepaymentFeature();
+      hosts.add(feature.Host);
+      return null;
+    }
+    const rendered = await renderWithBilling(<Hosts />);
+    unmount = rendered.view.unmount;
+    await vi.waitFor(() => expect(hosts.size).toBeGreaterThan(0));
+    rendered.bo.emit('localeChanged', { locale: 'fr_FR' });
+    await new Promise((resolve) => setTimeout(resolve, 20));
+    expect(hosts.size).toBe(1);
+  });
 
   it('speaks the language of the back office', async () => {
     const rendered = await renderWithBilling(<Labels />, {

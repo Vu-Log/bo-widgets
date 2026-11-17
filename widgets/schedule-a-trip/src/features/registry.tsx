@@ -4,6 +4,7 @@ import { useEffect, useMemo, useState, type ReactNode } from 'react';
 import { LIST_TABS } from '../domain/statuses';
 import { createCoreFeature, type CoreFeatureDeps } from './core';
 import type { BookingFeature } from './extensions';
+import { PREPAYMENT_FILTER_IDS, usePendingRegularizations, usePrepaymentFeature } from './prepayment';
 import { createWriteFeature, hostOf } from './write';
 import { createDialogStore } from './write/store';
 
@@ -59,8 +60,12 @@ export function validateFeatures(features: readonly SectionFeature[]): string[] 
 export interface FilterSource {
   /** The filter (of the same feature) these bookings are for. */
   readonly filterId: string;
-  /** Their ids; `undefined` while they load. */
+  /** Their ids; `undefined` while they load or when they could not be found. */
   readonly bookingIds: readonly string[] | undefined;
+  /** Why they could not be found: the section says the list may be incomplete. */
+  readonly error?: Error | null;
+  /** Looks for them again, after an error. */
+  readonly retry?: () => void;
 }
 
 /**
@@ -81,8 +86,10 @@ export type FeatureDeps = CoreFeatureDeps;
  *
  * Register a feature here, once:
  * 1. `core`: the booking data, its filters and cards;
- * 2. the prepayment feature (`features/prepayment`), when it is merged: before the write actions, so
- *    that "Prepay" stays the primary action of a booking to prepay;
+ * 2. `prepayment` (`features/prepayment`): before the write actions, so that "Prepay", "Retry
+ *    payment", "Verify", "Refund" or "Regularize" stays the primary action of its booking (a
+ *    pre-allocation waits for a paid prepayment anyway). Its "To regularize" filter brings its own
+ *    bookings, read from the storage (`filterSources`);
  * 3. `write`: create, edit, cancel, allocate and pre-allocate.
  *
  * @param deps - Translation, navigation and sort of the section.
@@ -98,15 +105,37 @@ export function useBookingFeatures(
   const bo = useBoClient();
   const [store] = useState(createDialogStore);
   const Host = useMemo(() => hostOf(store), [store]);
-  // A feature built by a hook goes here, before the write feature:
-  // const prepayment = usePrepaymentFeature();
+  const prepayment = usePrepaymentFeature({ now });
+  const pending = usePendingRegularizations();
+  const regularizationIds = useMemo(() => pending.data?.docs.map((doc) => doc.id), [pending.data]);
+  const retryRegularizations = pending.refetch;
+  useEffect(() => {
+    if (pending.error) {
+      bo.log.warn('The bookings to regularize could not be listed', { error: pending.error.message });
+    }
+  }, [bo, pending.error]);
+  const prepaymentSection = useMemo<SectionFeature>(
+    () => ({
+      ...prepayment,
+      filterSources: [
+        {
+          filterId: PREPAYMENT_FILTER_IDS.toRegularize,
+          bookingIds: regularizationIds,
+          error: pending.error,
+          retry: () => void retryRegularizations(),
+        },
+      ],
+    }),
+    [prepayment, regularizationIds, pending.error, retryRegularizations],
+  );
   const features = useMemo<readonly SectionFeature[]>(
     () => [
       createCoreFeature({ t, openDetail, copyId, sortHeader, now }),
+      prepaymentSection,
       createWriteFeature({ t, store, now, Host }),
       ...extra,
     ],
-    [t, openDetail, copyId, sortHeader, now, extra, store, Host],
+    [t, openDetail, copyId, sortHeader, now, extra, store, Host, prepaymentSection],
   );
   const problems = useMemo(() => validateFeatures(features), [features]);
   useEffect(() => {

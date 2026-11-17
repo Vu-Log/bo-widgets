@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { BoError } from '@vulog/bo-widget-sdk';
-import { actionErrorText, moneyBlocker, storageErrorText } from './messages';
+import { createI18n } from '../../i18n';
+import { actionErrorText, moneyBlocker, moneyBlockerReason, storageErrorText } from './messages';
 
 describe('actionErrorText', () => {
   it('names the action on a 403', () => {
@@ -47,5 +48,36 @@ describe('moneyBlocker', () => {
 
   it('lets the actions run with valid settings and an operator', () => {
     expect(moneyBlocker({ ok: true, settings: {} as never }, 'u')).toBeNull();
+  });
+});
+
+describe('moneyBlockerReason', () => {
+  const t = createI18n('en_GB').t;
+
+  it('is null when the money actions can run', () => {
+    expect(moneyBlockerReason({ ok: true, settings: {} as never }, 'user-1', t)).toBeNull();
+  });
+
+  it('names each setting to fix once, with its problem', () => {
+    const reason = moneyBlockerReason(
+      {
+        ok: false,
+        issues: [
+          { key: 'dayRate', problem: 'invalid' },
+          { key: 'prepaymentProductId', problem: 'missing' },
+          { key: 'dayRate', problem: 'invalid' },
+        ],
+      } as never,
+      'user-1',
+      t,
+    );
+    expect(reason).toContain('dayRate (invalid value), prepaymentProductId (missing)');
+    expect(reason).toContain('Configuration > Widgets');
+  });
+
+  it('says why otherwise: loading, unreadable settings, no operator id', () => {
+    expect(moneyBlockerReason(undefined, 'user-1', t)).toBe('Loading…');
+    expect(moneyBlockerReason(null, 'user-1', t)).toBe('The settings of the widget could not be loaded.');
+    expect(moneyBlockerReason({ ok: true, settings: {} as never }, null, t)).toBe('Your user id is unknown: reload the back office.');
   });
 });

@@ -126,6 +126,9 @@ describe('the booking section', () => {
       'Trip',
       'Vehicle',
       'Customer',
+      'Payment',
+      'Internal notes',
+      'Journal',
     ]);
     expect(drawer.querySelector('[data-step="prepaid"]')?.getAttribute('data-state')).toBe('current');
     expect(drawer.querySelector('svg[role="img"]')?.getAttribute('aria-label')).toContain('500 m');
@@ -335,6 +338,10 @@ describe('the booking section', () => {
 
     await vi.waitFor(() => expect(view.row('booking-2')?.textContent).toContain('col-booking-2-upcoming'));
     expect(view.container.querySelector('[data-test-host]')).not.toBeNull();
+    // booking-2 is a business booking (no prepayment): the action of the feature is its primary one.
+    await vi.waitFor(() => expect(gridObserver()?.targets.size).toBeGreaterThan(0));
+    gridObserver()?.report([view.row('booking-1')!, view.row('booking-2')!], true);
+    await vi.waitFor(() => expect(view.button('Do it', view.row('booking-2')!)).toBeDefined());
     view.button('Do it', view.row('booking-2')!)?.click();
     expect(ran).toEqual(['booking-2']);
     expect(view.button('Do it', view.row('booking-1')!)).toBeUndefined();
@@ -361,6 +368,9 @@ describe('the booking section', () => {
       'test',
       'Vehicle',
       'Customer',
+      'Payment',
+      'Internal notes',
+      'Journal',
     ]);
   });
 
@@ -393,17 +403,47 @@ describe('the booking section', () => {
     const bo = routedBo();
     const view = await render(bo.api);
     await vi.waitFor(() => expect(view.row('booking-1')).not.toBeNull());
-    await vi.waitFor(() => expect(bo.storage.api.query).toHaveBeenCalledTimes(1));
+    // The listing of the stored states, and the bookings to regularize.
+    await vi.waitFor(() => expect(bo.storage.api.query).toHaveBeenCalledTimes(2));
     const before = calledPaths(fetch).length;
 
     view.button('Refresh', view.container)?.click();
 
-    await vi.waitFor(() => expect(bo.storage.api.query).toHaveBeenCalledTimes(2));
+    await vi.waitFor(() => expect(bo.storage.api.query).toHaveBeenCalledTimes(4));
     await vi.waitFor(() => {
       const after = calledPaths(fetch).slice(before);
       expect(after.some((path) => path.includes('status/PENDING?page=0&size=50'))).toBe(true);
       expect(after.some((path) => path.includes('status/ALERT?page=0&size=1'))).toBe(true);
     });
+  });
+
+  it('counts the bookings to regularize from the storage, and says when they cannot be found', async () => {
+    const cancelledBooking = apiBooking({ id: 'booking-9', status: 'CANCELLED', cancellationDate: '2026-03-09T08:00:00Z' });
+    stubVulogApi(fleetApi({ bookings: { CANCELLED: [cancelledBooking] } }));
+    const bo = routedBo();
+    await bo.storage.api.set('bookings', 'booking-9', {
+      schemaVersion: 1,
+      fleetId: 'FLEET-1',
+      allocationProcessed: false,
+      toRegularize: { missingAmount: 10, at: '2026-03-09T09:00:00Z' },
+      regularizationPending: true,
+    });
+    const view = await render(bo.api);
+    await vi.waitFor(() => expect(view.tab('Cancelled')).toBeDefined());
+    view.tab('Cancelled')?.click();
+    // Counted from the storage, though the pages of Cancelled are not all read.
+    await vi.waitFor(() => expect(view.button('1To regularize')).toBeDefined());
+
+    bo.storage.api.query.mockImplementation(async (_name: string, options: { where: Record<string, unknown> }) => {
+      if (options.where.regularizationPending) throw hostError('unavailable', 503);
+      return { items: [], nextCursor: null };
+    });
+    view.button('Refresh', view.container)?.click();
+    view.button('1To regularize')?.click();
+    await vi.waitFor(
+      () => expect(view.container.textContent).toContain('The bookings of this filter could not be found'),
+      { timeout: 5000 },
+    );
   });
 
   it('shows no KPI count while the stored states cannot be read', async () => {

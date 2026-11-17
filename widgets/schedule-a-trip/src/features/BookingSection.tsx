@@ -167,6 +167,13 @@ function FleetSection({
     [features, activeIds],
   );
   const sourced = useSourceBookings(fleetId, tab, sourceIds);
+  // A source of an active filter that failed: its bookings are missing from the list.
+  const failedSources = useMemo(() => {
+    const active = new Set(activeIds.split('\n'));
+    return features.flatMap((feature) =>
+      (feature.filterSources ?? []).filter((source) => active.has(source.filterId) && source.error),
+    );
+  }, [features, activeIds]);
   const bookings = useMemo(() => {
     if (sourced.bookings.length === 0) return tabBookings.bookings;
     const known = new Set(tabBookings.bookings.map((booking) => booking.id));
@@ -221,12 +228,20 @@ function FleetSection({
   const kpis = useMemo(() => features.flatMap((feature) => feature.kpis ?? []), [features]);
   const kpiCounts = useMemo(() => {
     const counts = new Map<string, number>();
+    // A filter that brings its own bookings counts them, whether the pages of the tab are read or not.
+    const sources = features.flatMap((feature) => feature.filterSources ?? []);
+    for (const kpi of kpis) {
+      const ids = sources.find((source) => source.filterId === kpi.filterId)?.bookingIds;
+      if (kpi.tab === tab && ids) counts.set(kpi.id, new Set(ids).size);
+    }
     // Without every row, or without their stored states, a count would be wrong: none is shown.
     if (!tabBookings.complete || enrichment.statesError) return counts;
     const allFilters = features.flatMap((feature) => feature.filters ?? []);
     for (const kpi of kpis) {
       const filter = allFilters.find((candidate) => candidate.id === kpi.filterId);
-      if (kpi.tab === tab && filter) counts.set(kpi.id, enrichment.contexts.filter(filter.test).length);
+      if (kpi.tab === tab && filter && !counts.has(kpi.id)) {
+        counts.set(kpi.id, enrichment.contexts.filter(filter.test).length);
+      }
     }
     return counts;
   }, [kpis, features, tab, tabBookings.complete, enrichment.statesError, enrichment.contexts]);
@@ -253,6 +268,9 @@ function FleetSection({
       queryKey: queryKeys.fleetBookingStates(fleetId),
       exact: true,
     });
+    // A payment settles in the billing API, a regularization may be marked from another browser.
+    void queryClient.invalidateQueries({ queryKey: queryKeys.invoices(fleetId) });
+    void queryClient.invalidateQueries({ queryKey: queryKeys.pendingRegularizations(fleetId) });
   };
 
   // `/` focuses the search, wherever the focus is but in a text field.
@@ -389,6 +407,19 @@ function FleetSection({
             }
           />
         </Box>
+      )}
+      {failedSources.length > 0 && (
+        <Alert
+          severity="warning"
+          sx={{ flex: 'none', borderRadius: 0 }}
+          action={
+            <Button color="inherit" size="small" onClick={() => failedSources.forEach((source) => source.retry?.())}>
+              {t('grid.retry')}
+            </Button>
+          }
+        >
+          {t('list.sourceError')}
+        </Alert>
       )}
       {sourced.failed > 0 && (
         <Alert severity="warning" sx={{ flex: 'none', borderRadius: 0 }}>

@@ -47,7 +47,14 @@ export function FeatureHost({ feature, booking, tab, customer }: FeatureHostProp
       </div>
       <div data-testid="actions">
         {actions.map((action) => (
-          <button key={action.id} type="button" disabled={action.disabled} data-action={action.id} onClick={() => action.run(ctx)}>
+          <button
+            key={action.id}
+            type="button"
+            disabled={action.disabled === true || Boolean(action.disabledReason)}
+            title={action.disabledReason}
+            data-action={action.id}
+            onClick={() => action.run(ctx)}
+          >
             {action.label}
           </button>
         ))}

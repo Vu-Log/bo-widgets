@@ -108,3 +108,29 @@ export function moneyBlocker(
   if (!userId) return { key: 'prepayment.blocked.noUser' };
   return null;
 }
+
+/**
+ * {@link moneyBlocker} as a final text, for the reason of a disabled action: the settings to fix
+ * are named with their problem ("dayRate (invalid value)").
+ *
+ * @param settings - The settings query: `undefined` while loading, `null` when it failed.
+ * @param userId - `getCurrentUser().id`.
+ * @param t - Translation.
+ * @returns The reason, `null` when the money actions can run.
+ */
+export function moneyBlockerReason(
+  settings: SettingsResult | null | undefined,
+  userId: string | null,
+  t: (key: MessageKey, params?: MessageParams) => string,
+): string | null {
+  const blocker = moneyBlocker(settings, userId);
+  if (blocker === null) return null;
+  if (settings && !settings.ok && blocker.key === 'prepayment.blocked.settings') {
+    const named = new Map<string, string>();
+    for (const issue of settings.issues) {
+      if (!named.has(issue.key)) named.set(issue.key, `${issue.key} (${t(`settings.issue.${issue.problem}`)})`);
+    }
+    return t(blocker.key, { keys: [...named.values()].join(', ') });
+  }
+  return t(blocker.key, blocker.params);
+}

@@ -409,5 +409,7 @@
   "prepayment.refund.confirmNotRefunded": "De vooruitbetaling wordt nu terugbetaald. Alleen als u hebt gecontroleerd dat er geen terugbetaling is gedaan.",
   "prepayment.event.chargeAccepted": "Factuur geaccepteerd, id onbekend",
   "prepayment.event.refundReleased": "Terugbetaling niet uitgevoerd",
-  "prepayment.event.refundConfirmed": "Terugbetaling bevestigd"
+  "prepayment.event.refundConfirmed": "Terugbetaling bevestigd",
+  "write.preallocateNeedsPayment": "Voor een voortoewijzing is een betaalde vooruitbetaling of een zakelijke boeking nodig.",
+  "list.sourceError": "De boekingen van dit filter konden niet worden gevonden: de lijst is mogelijk onvolledig."
 }

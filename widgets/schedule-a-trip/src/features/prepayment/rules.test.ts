@@ -18,6 +18,7 @@ import {
   prepaymentEligibility,
   prepaymentNotes,
   refundNote,
+  unavailableActions,
   refundProgress,
   rowActions,
   schedulerErrorNames,
@@ -328,5 +329,27 @@ describe('schedulerErrorNames', () => {
     expect(schedulerErrorNames(doc({ schedulerErrors: { vehicleMissing: NOW.toISOString(), allocationFailed: NOW.toISOString() } }).value)).toEqual(['allocationFailed', 'vehicleMissing']);
     expect(schedulerErrorNames(null)).toEqual([]);
     expect(schedulerErrorNames(doc().value)).toEqual([]);
+  });
+});
+
+describe('unavailableActions', () => {
+  const old = booking({ startDate: '2024-01-01T08:00:00.000Z', endDate: null, plannedReturnDate: null, cancellationDate: '2024-01-01T07:00:00.000Z' });
+
+  it('shows the refund disabled on a cancelled booking the widget never wrote', () => {
+    expect(unavailableActions(row({ tab: 'cancelled', state: null }), NOW)).toEqual([{ id: 'refund', reason: 'no-data' }]);
+  });
+
+  it('shows the refund and the notes disabled on archived data', () => {
+    expect(unavailableActions(row({ tab: 'cancelled', state: null, booking: old }), NOW)).toEqual([
+      { id: 'refund', reason: 'archived' },
+      { id: 'notes', reason: 'archived' },
+    ]);
+    expect(unavailableActions(row({ tab: 'completed', state: null, booking: old }), NOW)).toEqual([{ id: 'notes', reason: 'archived' }]);
+  });
+
+  it('shows nothing with a document, while it loads, or on a recent booking to come', () => {
+    expect(unavailableActions(row({ tab: 'cancelled', state: doc() }), NOW)).toEqual([]);
+    expect(unavailableActions(row({ tab: 'cancelled', state: undefined }), NOW)).toEqual([]);
+    expect(unavailableActions(row({ state: null }), NOW)).toEqual([]);
   });
 });

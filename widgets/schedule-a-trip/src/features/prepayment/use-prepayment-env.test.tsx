@@ -1,7 +1,7 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { bodyText } from '../../test/dom';
-import { VALID_SETTINGS } from '../../test/fake-bo';
-import { renderWithBilling } from '../../test/prepayment-fixtures';
+import { hostError, VALID_SETTINGS } from '../../test/fake-bo';
+import { BOOKING_ID, renderWithBilling } from '../../test/prepayment-fixtures';
 import { usePrepaymentEnv } from './use-prepayment-env';
 
 let unmount: (() => void) | undefined;
@@ -90,5 +90,52 @@ describe('guard and logOutcome', () => {
         invoiceId: 'i-9',
       }),
     );
+  });
+});
+
+describe('refresh', () => {
+  let captured: ReturnType<typeof usePrepaymentEnv> | undefined;
+  function Capture() {
+    captured = usePrepaymentEnv();
+    return null;
+  }
+  const stateKey = ['booking-states', 'FLEET-1', BOOKING_ID];
+
+  it('puts a written document in the cache of the row', async () => {
+    captured = undefined;
+    const rendered = await renderWithBilling(<Capture />);
+    unmount = rendered.view.unmount;
+    await vi.waitFor(() => expect(captured?.fleetId).toBe('FLEET-1'));
+    const written = { id: BOOKING_ID, version: 3, expiresAt: null, value: { schemaVersion: 1, fleetId: 'FLEET-1', allocationProcessed: false } };
+
+    await captured!.refresh(BOOKING_ID, written as never);
+
+    expect(captured!.queryClient.getQueryData(stateKey)).toBe(written);
+  });
+
+  it('reads the document again without one: the row never fetches it by itself', async () => {
+    captured = undefined;
+    const rendered = await renderWithBilling(<Capture />, { stored: { internalNotes: 'kept' } });
+    unmount = rendered.view.unmount;
+    await vi.waitFor(() => expect(captured?.fleetId).toBe('FLEET-1'));
+
+    await captured!.refresh(BOOKING_ID, null);
+
+    expect(captured!.queryClient.getQueryData<{ value: { internalNotes: string } }>(stateKey)?.value.internalNotes).toBe('kept');
+  });
+
+  it('logs a document it cannot read again', async () => {
+    captured = undefined;
+    const rendered = await renderWithBilling(<Capture />);
+    rendered.bo.storage.api.get.mockRejectedValue(hostError('quota-exceeded', 507));
+    unmount = rendered.view.unmount;
+    await vi.waitFor(() => expect(captured?.fleetId).toBe('FLEET-1'));
+
+    await captured!.refresh(BOOKING_ID);
+
+    expect(rendered.bo.api.log.warn).toHaveBeenCalledWith('Prepayment: the booking state could not be read again', {
+      bookingId: BOOKING_ID,
+      failure: 'quota-exceeded',
+    });
   });
 });

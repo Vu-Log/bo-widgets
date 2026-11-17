@@ -7,6 +7,7 @@ import type { MessageKey } from '../../i18n';
 import { invoiceQueryOptions } from '../../query/queries';
 import { SkeletonCell } from '../../ui/SkeletonCell';
 import type { BookingContext } from '../extensions';
+import { useInvoiceStatusSync } from './invoice-status';
 import { prepaymentDisplay, schedulerErrorNames, type PrepaymentDisplay } from './rules';
 import { usePrepaymentEnv } from './use-prepayment-env';
 
@@ -46,7 +47,8 @@ export const CREDITS_CHIPS: Readonly<Record<CreditsStatus, { key: MessageKey; co
 
 /**
  * The live invoice of a row, when its document names one: its own query, so that a status that
- * arrives only renders its cell.
+ * arrives only renders its cell. A status that changed is written back to the stored state
+ * ({@link useInvoiceStatusSync}).
  *
  * @param ctx - The row.
  * @returns The invoice query (disabled without an invoice).
@@ -55,10 +57,12 @@ export function useRowInvoice(ctx: BookingContext) {
   const authFetch = useAuthFetch();
   const { fleetId } = usePrepaymentEnv();
   const invoiceId = ctx.state?.value.invoiceId ?? null;
-  return useQuery({
+  const invoice = useQuery({
     ...invoiceQueryOptions(authFetch, fleetId ?? '', invoiceId ?? ''),
     enabled: Boolean(fleetId && invoiceId),
   });
+  useInvoiceStatusSync(ctx, invoice.data);
+  return invoice;
 }
 
 const liveStatus = (invoice: Invoice | undefined): string | null => invoice?.status ?? null;

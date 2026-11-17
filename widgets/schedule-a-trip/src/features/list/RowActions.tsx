@@ -1,7 +1,8 @@
-import { Box, Button, IconButton, Menu, MenuItem } from '@mui/material';
+import { Box, Button, IconButton, ListItemText, Menu, MenuItem } from '@mui/material';
 import { useState } from 'react';
 import { useI18n } from '../../i18n';
 import type { BookingAction, BookingContext, BookingFeature } from '../extensions';
+import { isActionDisabled, WithDisabledReason } from './ActionReason';
 
 /**
  * The primary action of a booking: the first non-null `primaryAction` of the features, in the
@@ -64,16 +65,18 @@ export function RowActions({
   return (
     <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5, justifyContent: 'flex-end' }}>
       {primary && (
-        <Button
-          size="small"
-          variant={primary.tone === 'default' ? 'outlined' : 'contained'}
-          color={buttonColor(primary.tone)}
-          disabled={primary.disabled}
-          onClick={() => primary.run(ctx)}
-          sx={{ textTransform: 'none' }}
-        >
-          {primary.label}
-        </Button>
+        <WithDisabledReason action={primary}>
+          <Button
+            size="small"
+            variant={primary.tone === 'default' ? 'outlined' : 'contained'}
+            color={buttonColor(primary.tone)}
+            disabled={isActionDisabled(primary)}
+            onClick={() => primary.run(ctx)}
+            sx={{ textTransform: 'none' }}
+          >
+            {primary.label}
+          </Button>
+        </WithDisabledReason>
       )}
       <IconButton
         size="small"
@@ -87,14 +90,19 @@ export function RowActions({
         {others.map((action) => (
           <MenuItem
             key={action.id}
-            disabled={action.disabled}
+            disabled={isActionDisabled(action)}
             sx={action.tone === 'danger' ? { color: 'error.main' } : undefined}
             onClick={() => {
               setAnchor(null);
               action.run(ctx);
             }}
           >
-            {action.label}
+            {action.disabledReason ? (
+              // A disabled item gets no pointer event: the reason is its second line, not a tooltip.
+              <ListItemText primary={action.label} secondary={action.disabledReason} />
+            ) : (
+              action.label
+            )}
           </MenuItem>
         ))}
       </Menu>

@@ -409,5 +409,7 @@
   "prepayment.refund.confirmNotRefunded": "The prepayment will be refunded now. Only if you checked that no refund was made.",
   "prepayment.event.chargeAccepted": "Invoice accepted, id unknown",
   "prepayment.event.refundReleased": "Refund not done",
-  "prepayment.event.refundConfirmed": "Refund confirmed"
+  "prepayment.event.refundConfirmed": "Refund confirmed",
+  "write.preallocateNeedsPayment": "Pre-allocation needs a paid prepayment, or a business booking.",
+  "list.sourceError": "The bookings of this filter could not be found: the list may be incomplete."
 }

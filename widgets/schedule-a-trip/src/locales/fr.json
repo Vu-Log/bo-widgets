@@ -409,5 +409,7 @@
   "prepayment.refund.confirmNotRefunded": "Le prépaiement va être remboursé maintenant. Uniquement si vous avez vérifié qu’aucun remboursement n’a été effectué.",
   "prepayment.event.chargeAccepted": "Facture acceptée, identifiant inconnu",
   "prepayment.event.refundReleased": "Remboursement non effectué",
-  "prepayment.event.refundConfirmed": "Remboursement confirmé"
+  "prepayment.event.refundConfirmed": "Remboursement confirmé",
+  "write.preallocateNeedsPayment": "La pré-allocation demande un prépaiement payé, ou une réservation professionnelle.",
+  "list.sourceError": "Les réservations de ce filtre n’ont pas pu être trouvées : la liste peut être incomplète."
 }

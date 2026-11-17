@@ -1,8 +1,10 @@
 import { Box, Button } from '@mui/material';
 import type { ReactNode } from 'react';
 import { storedDataStatus } from '../../domain/archive';
+import { preallocationPrepayment } from '../../domain/preallocation';
 import type { MessageKey, MessageParams } from '../../i18n';
 import { DetailCardFrame } from '../core/cards';
+import { isActionDisabled, WithDisabledReason } from '../list/ActionReason';
 import type { BookingAction, BookingContext, BookingFeature } from '../extensions';
 import { CreateBookingDialog } from './CreateBooking';
 import { ConfirmDialog, EditModelDialog, EditTripDialog } from './dialogs';
@@ -56,9 +58,32 @@ export function canPreallocate(ctx: BookingContext, now: Date): boolean {
 }
 
 /**
+ * Why a vehicle cannot be pre-allocated yet for its prepayment ({@link preallocationPrepayment}):
+ * setting or changing a pre-allocation needs a paid prepayment or a business booking. Removing one
+ * never does, so that a vehicle is always given back.
+ *
+ * @param ctx - The booking.
+ * @param t - Translation.
+ * @returns The fields of a disabled action, none when allowed.
+ */
+function preallocationBlock(ctx: BookingContext, t: WriteFeatureDeps['t']): Partial<BookingAction> {
+  const verdict = preallocationPrepayment({
+    state: ctx.state === undefined ? undefined : (ctx.state?.value ?? null),
+    customer: ctx.customer,
+    profileId: ctx.booking.profileId,
+  });
+  if (verdict === 'allowed') return {};
+  return {
+    disabled: true,
+    disabledReason: verdict === 'loading' ? t('common.loading') : t('write.preallocateNeedsPayment'),
+  };
+}
+
+/**
  * The write actions a booking allows, in the order of the menu, as the back office allows them:
  * edit the trip and the model while it is to come (the model without a vehicle), allocate without a
  * vehicle, take the vehicle back, pre-allocate or remove the pre-allocation, cancel before the start.
+ * Pre-allocating waits for a paid prepayment or a business booking (disabled, with the reason).
  *
  * @param ctx - The booking.
  * @param deps - Translation, dialogs and clock.
@@ -81,6 +106,7 @@ export function writeActions(ctx: BookingContext, deps: WriteFeatureDeps): Booki
       id: 'preallocate',
       label: preallocated ? t('write.changePreallocation') : t('write.preallocate'),
       run: open('preallocate'),
+      ...preallocationBlock(ctx, t),
     },
     canPreallocate(ctx, now) &&
       preallocated && { id: 'remove-preallocation', label: t('write.removePreallocation'), run: open('remove-preallocation') },
@@ -102,16 +128,17 @@ function ActionsCard({ ctx, actions, title }: { readonly ctx: BookingContext; re
     <DetailCardFrame title={title}>
       <Box sx={{ display: 'flex', gap: 1, flexWrap: 'wrap' }}>
         {actions.map((action) => (
-          <Button
-            key={action.id}
-            size="small"
-            variant="outlined"
-            color={action.tone === 'danger' ? 'error' : 'primary'}
-            disabled={action.disabled}
-            onClick={() => action.run(ctx)}
-          >
-            {action.label}
-          </Button>
+          <WithDisabledReason key={action.id} action={action}>
+            <Button
+              size="small"
+              variant="outlined"
+              color={action.tone === 'danger' ? 'error' : 'primary'}
+              disabled={isActionDisabled(action)}
+              onClick={() => action.run(ctx)}
+            >
+              {action.label}
+            </Button>
+          </WithDisabledReason>
         ))}
       </Box>
     </DetailCardFrame>
@@ -162,7 +189,8 @@ export function createWriteFeature(deps: WriteFeatureDeps): BookingFeature {
       const actions = writeActions(ctx, deps);
       const id = ctx.tab === 'alert' ? 'allocate' : 'preallocate';
       const action = actions.find((candidate) => candidate.id === id);
-      return action ? { ...action, tone: 'primary' } : null;
+      // A pre-allocation waiting for its prepayment stays in the menu, with its reason.
+      return action && !isActionDisabled(action) ? { ...action, tone: 'primary' } : null;
     },
     menuActions: (ctx) => writeActions(ctx, deps),
     detailCards: [

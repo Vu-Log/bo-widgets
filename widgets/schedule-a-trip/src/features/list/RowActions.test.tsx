@@ -69,4 +69,28 @@ describe('RowActions', () => {
     unmount = plain.unmount;
     await vi.waitFor(() => expect(plain.container.querySelectorAll('button')).toHaveLength(1));
   });
+
+  it('gives the reason of a disabled action: a tooltip on the button, a second line in the menu', async () => {
+    const view = await renderInWidget(
+      <RowActions
+        ctx={context()}
+        features={[
+          {
+            id: 'x',
+            primaryAction: () => ({ id: 'p', label: 'Pay', run, disabledReason: 'Settings to fix' }),
+            menuActions: () => [{ id: 'm', label: 'Refund', run, disabledReason: 'No data' }],
+          },
+        ]}
+      />,
+    );
+    unmount = view.unmount;
+    await vi.waitFor(() => expect(view.container.textContent).toContain('Pay'));
+    const wrapper = view.container.querySelector('[data-disabled-reason="p"]');
+    expect(wrapper?.getAttribute('aria-label')).toBe('Settings to fix');
+    expect(wrapper?.querySelector('button')?.disabled).toBe(true);
+
+    view.container.querySelector<HTMLButtonElement>('button[aria-label="More actions"]')?.click();
+    await vi.waitFor(() => expect(document.body.querySelector('[role="menuitem"]')?.textContent).toBe('RefundNo data'));
+    expect(document.body.querySelector('[role="menuitem"]')?.getAttribute('aria-disabled')).toBe('true');
+  });
 });

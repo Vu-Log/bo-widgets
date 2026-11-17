@@ -15,7 +15,10 @@ import {
 } from './query/queries';
 import { WidgetQueryProvider } from './query/WidgetQueryProvider';
 import { bookingsCollection, BOOKINGS_COLLECTION, claimCharge } from './storage/booking-state';
-import { API_BASE_URL, fakeBo, jsonResponse } from './test/fake-bo';
+import App from './App';
+import { fakeAima } from './test/fake-aima';
+import { API_BASE_URL, fakeBo, jsonResponse, VALID_SETTINGS } from './test/fake-bo';
+import { apiBooking, fleetApi, stubVulogApi } from './test/vulog-api';
 import { activeObservers, installFakeIntersectionObserver } from './test/intersection-observer';
 import { renderInWidget } from './test/render';
 import { ListGrid, type ListGridColumn } from './ui/ListGrid';
@@ -254,4 +257,154 @@ describe('the booking list foundation', () => {
     await vi.waitFor(() => expect(row()?.textContent).toContain('error'));
     expect(row()?.textContent).toContain('City car');
   });
+});
+
+describe('the widget, from the list to the regularization', () => {
+  const sectionGridObserver = () =>
+    activeObservers().find(
+      (observer) => observer.options.rootMargin?.endsWith('px 0px') && !observer.options.rootMargin.startsWith('0px'),
+    );
+  const rowOf = (root: HTMLElement, id: string) =>
+    root.querySelector<HTMLElement>(`[role="row"][data-row-id="${id}"]`);
+  const buttonIn = (within: ParentNode, name: string) =>
+    [...within.querySelectorAll<HTMLButtonElement>('button')].find(
+      (candidate) => candidate.textContent?.trim() === name || candidate.getAttribute('aria-label') === name,
+    );
+  const dialogButton = (name: string) => buttonIn(document.body.querySelector('[role="dialog"]') ?? document.body, name);
+  const showRow = async (root: HTMLElement, id: string) => {
+    await vi.waitFor(() => expect(rowOf(root, id)).not.toBeNull());
+    await vi.waitFor(() => expect(sectionGridObserver()?.targets.size).toBeGreaterThan(0));
+    sectionGridObserver()?.report([rowOf(root, id)!], true);
+  };
+
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  it('prepays, pre-allocates once paid, refunds after the cancellation, then regularizes', async () => {
+    vi.useFakeTimers({ toFake: ['Date'] });
+    vi.setSystemTime(new Date('2026-03-10T08:00:00.000Z'));
+    const bookings: Record<string, unknown[]> = {
+      PENDING: [
+        apiBooking({
+          id: 'booking-1',
+          userId: 'customer-1',
+          startDate: '2026-03-12T08:00:00.000Z',
+          plannedReturnDate: '2026-03-12T20:00:00.000Z',
+        }),
+      ],
+      CANCELLED: [],
+    };
+    const aima = fakeAima({ productPrice: 15, wallets: [{ id: 'wallet-1', availableAmount: 5 }] });
+    stubVulogApi(
+      fleetApi(
+        {
+          bookings,
+          catalog: [{ id: 'near', plate: 'AA-001-AA', model: { id: 7, name: 'City car' }, serviceIds: ['service-1'] }],
+          vehicles: [{ id: 'near', vehicle_status: 0, location: { latitude: 48.857, longitude: 2.353 } }],
+        },
+        async ({ path, query, init }) => {
+          if (path === 'user/fleets/FLEET-1/users/list') {
+            return jsonResponse([
+              {
+                id: 'customer-1',
+                firstName: 'Jane',
+                lastName: 'Doe',
+                userName: 'jane.doe',
+                profiles: [{ id: 'profile-1', type: 'Single', entity: { id: 'entity-1' } }],
+              },
+            ]);
+          }
+          if (path.includes('/billing/') || path.startsWith('user/fleets/FLEET-1/products/')) {
+            const search = query.toString();
+            return aima.authFetch(search ? `${path}?${search}` : path, init);
+          }
+          if (path.endsWith('/vehicles/near/disable')) return new Response(null, { status: 200 });
+          return undefined;
+        },
+      ),
+    );
+    const bo = fakeBo({ getSettings: async () => ({ ...VALID_SETTINGS, currency: 'EUR' }) });
+    window.history.replaceState(null, '', '/');
+    const view = await renderInWidget(<App />, bo.api);
+    unmount = view.unmount;
+    const root = view.container;
+    const row = () => rowOf(root, 'booking-1');
+
+    // Upcoming: "Prepay" wins over the pre-allocation, which waits for the payment.
+    await showRow(root, 'booking-1');
+    await vi.waitFor(() => expect(buttonIn(row()!, 'Prepay')?.disabled).toBe(false));
+    buttonIn(row()!, 'Prepay')?.click();
+    await vi.waitFor(() => expect(dialogButton('Prepay')?.disabled).toBe(false));
+    dialogButton('Prepay')?.click();
+    await vi.waitFor(() => expect(buttonIn(document.body, 'Charge €50.00')).toBeDefined());
+    buttonIn(document.body, 'Charge €50.00')?.click();
+    await vi.waitFor(() => expect(document.body.textContent).toContain('The prepayment is charged.'));
+    buttonIn(document.body, 'Close')?.click();
+    await vi.waitFor(() => expect(row()?.textContent).toContain('Payment in progress'));
+    expect(buttonIn(row()!, 'Pre-allocate a vehicle')).toBeUndefined();
+
+    // The payment settles in the billing API: the refresh reads it and writes it back.
+    aima.invoices.get('invoice-new-1')!.status = 'PAID';
+    aima.invoices.get('invoice-new-1')!.refundable = 50;
+    buttonIn(root, 'Refresh')?.click();
+    await vi.waitFor(() => expect(row()?.textContent).toContain('Paid'));
+    await vi.waitFor(() =>
+      expect(bo.storage.docs(BOOKINGS_COLLECTION).get('booking-1')?.value.invoiceStatus).toBe('PAID'),
+    );
+
+    // Paid: the pre-allocation is the primary action now.
+    await vi.waitFor(() => expect(buttonIn(row()!, 'Pre-allocate a vehicle')).toBeDefined());
+    buttonIn(row()!, 'Pre-allocate a vehicle')?.click();
+    await vi.waitFor(() => expect(dialogButton('Pre-allocate')).toBeDefined());
+    dialogButton('Pre-allocate')?.click();
+    await vi.waitFor(() => expect(row()?.textContent).toContain('AA-001-AA'));
+    expect(bo.storage.docs(BOOKINGS_COLLECTION).get('booking-1')?.value).toMatchObject({
+      preallocatedVehicleId: 'near',
+      invoiceStatus: 'PAID',
+    });
+
+    // The booking is cancelled in the back office; the scheduler had granted the credits.
+    vi.setSystemTime(new Date('2026-03-12T07:45:00.000Z'));
+    bookings.CANCELLED = [
+      { ...(bookings.PENDING?.[0] as object), status: 'CANCELLED', cancellationDate: '2026-03-12T07:30:00.000Z' },
+    ];
+    bookings.PENDING = [];
+    const stored = bo.storage.docs(BOOKINGS_COLLECTION).get('booking-1')!;
+    await bo.storage.api.set(BOOKINGS_COLLECTION, 'booking-1', { ...stored.value, creditsAdded: true, walletId: 'wallet-1' });
+    buttonIn(root, 'Refresh')?.click();
+    await vi.waitFor(() => expect(root.querySelector('[role="tab"][aria-selected="true"]')).not.toBeNull());
+    [...root.querySelectorAll<HTMLElement>('[role="tab"]')].find((tab) => tab.textContent?.startsWith('Cancelled'))?.click();
+
+    // Cancelled: refund, with fees the credits left do not cover.
+    await showRow(root, 'booking-1');
+    await vi.waitFor(() => expect(buttonIn(row()!, 'Refund')).toBeDefined());
+    buttonIn(row()!, 'Refund')?.click();
+    await vi.waitFor(() => expect(document.body.textContent).toContain('Fees not covered by the credits left: €10.00'));
+    dialogButton('Refund')?.click();
+    await vi.waitFor(() => expect(buttonIn(document.body, 'Confirm the refund')).toBeDefined());
+    buttonIn(document.body, 'Confirm the refund')?.click();
+    await vi.waitFor(() => expect(document.body.textContent).toContain('€10.00 to regularize'));
+    buttonIn(document.body, 'Close')?.click();
+    expect(aima.callsTo('POST', '/refund')).toHaveLength(1);
+
+    // "To regularize" comes from the storage: its KPI counts the booking, its filter lists it.
+    await vi.waitFor(() => expect(buttonIn(root, '1To regularize')).toBeDefined());
+    buttonIn(root, '1To regularize')?.click();
+    await vi.waitFor(() => expect(row()?.textContent).toContain('To regularize (€10.00)'));
+
+    await vi.waitFor(() => expect(buttonIn(row()!, 'Mark as regularized')).toBeDefined());
+    buttonIn(row()!, 'Mark as regularized')?.click();
+    await vi.waitFor(() => expect(dialogButton('Mark as regularized')).toBeDefined());
+    dialogButton('Mark as regularized')?.click();
+    await vi.waitFor(() => expect(document.body.textContent).toContain('Marked as regularized.'));
+    buttonIn(document.body, 'Close')?.click();
+
+    await vi.waitFor(() => expect(row()).toBeNull());
+    await vi.waitFor(() => expect(buttonIn(root, '0To regularize')).toBeDefined());
+    expect(bo.storage.docs(BOOKINGS_COLLECTION).get('booking-1')?.value).toMatchObject({
+      regularizationPending: false,
+      regularizedBy: 'user-1',
+    });
+  }, 30_000);
 });

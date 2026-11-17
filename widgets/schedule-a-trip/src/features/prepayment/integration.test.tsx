@@ -106,12 +106,13 @@ describe('the prepayment feature in a host', () => {
     expect(rendered.stored()?.value.invoiceId).toBe('invoice-new-1');
   });
 
-  it('offers no money action on a cancelled booking the widget never wrote', async () => {
+  it('offers no money action on a cancelled booking the widget never wrote, and says why', async () => {
     const rendered = await renderWithBilling(
       <FeatureHost feature={prepaymentFeature} booking={booking({ status: 'CANCELLED' })} tab="cancelled" customer={customer()} />,
     );
     unmount = rendered.view.unmount;
     await vi.waitFor(() => expect(cell('status')).toBe('No prepayment from the widget'));
-    expect([...document.body.querySelectorAll('[data-testid="actions"] button')].map((item) => item.textContent)).toEqual(['Internal notes']);
+    expect([...document.body.querySelectorAll('[data-testid="actions"] button')].map((item) => item.textContent)).toEqual(['Internal notes', 'Refund']);
+    expect(actionButton('Refund')).toMatchObject({ disabled: true, title: 'No prepayment from the widget' });
   });
 });

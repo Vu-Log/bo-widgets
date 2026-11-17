@@ -1,24 +1,17 @@
-import { Box, Button, Card, CardContent, Stack, Typography } from '@mui/material';
+import { Box, Button, Stack, Typography } from '@mui/material';
 import type { ReactNode } from 'react';
 import type { MessageKey } from '../../i18n';
 import type { BookingEvent } from '../../storage/booking-state';
+import { DetailCardFrame } from '../core/cards';
 import type { BookingContext } from '../extensions';
 import { CreditsCell, PrepaymentStatusCell, RegularizationCell } from './cells';
 import { EVENTS, isArchived } from './rules';
-import { prepaymentDialogs } from './store';
+import { prepaymentDialogs, type DialogStore } from './store';
 import { usePrepaymentEnv } from './use-prepayment-env';
 
+/** The frame of a card: the one of the cards of the section, a `section` named by its title. */
 function CardFrame({ title, children }: { readonly title: string; readonly children: ReactNode }) {
-  return (
-    <Card variant="outlined">
-      <CardContent>
-        <Typography variant="subtitle2" component="h3" gutterBottom>
-          {title}
-        </Typography>
-        {children}
-      </CardContent>
-    </Card>
-  );
+  return <DetailCardFrame title={title}>{children}</DetailCardFrame>;
 }
 
 function Field({ label, children }: { readonly label: string; readonly children: ReactNode }) {
@@ -47,10 +40,17 @@ function EmptyState({ ctx }: { readonly ctx: BookingContext }) {
  * The payment card of the detail: prepayment, invoice, amounts (charged, computed, warnings
  * accepted), credits, wallet, refund and regularization.
  *
- * @param props - The booking.
+ * @param props - The booking, and the dialog store of the feature.
  * @returns The card.
  */
-export function PaymentCard({ ctx }: { readonly ctx: BookingContext }) {
+export function PaymentCard({
+  ctx,
+  dialogs = prepaymentDialogs,
+}: {
+  readonly ctx: BookingContext;
+  /** Where its buttons open their dialogs: the store of the feature. */
+  readonly dialogs?: DialogStore;
+}) {
   const { i18n, formatAmount } = usePrepaymentEnv();
   const value = ctx.state?.value;
   const title = i18n.t('prepayment.card.payment');
@@ -95,14 +95,14 @@ export function PaymentCard({ ctx }: { readonly ctx: BookingContext }) {
         )}
         {value.regularizationPending === true && (
           <Box>
-            <Button size="small" variant="outlined" onClick={() => prepaymentDialogs.open({ action: 'regularize', ctx })}>
+            <Button size="small" variant="outlined" onClick={() => dialogs.open({ action: 'regularize', ctx })}>
               {i18n.t('prepayment.action.regularize')}
             </Button>
           </Box>
         )}
         {value.regularizedAt && (
           <Box>
-            <Button size="small" onClick={() => prepaymentDialogs.open({ action: 'undo-regularization', ctx })}>
+            <Button size="small" onClick={() => dialogs.open({ action: 'undo-regularization', ctx })}>
               {i18n.t('prepayment.action.undoRegularization')}
             </Button>
           </Box>
@@ -115,10 +115,17 @@ export function PaymentCard({ ctx }: { readonly ctx: BookingContext }) {
 /**
  * The internal notes card of the detail, with its edit button (not on archived data).
  *
- * @param props - The booking.
+ * @param props - The booking, and the dialog store of the feature.
  * @returns The card.
  */
-export function InternalNotesCard({ ctx }: { readonly ctx: BookingContext }) {
+export function InternalNotesCard({
+  ctx,
+  dialogs = prepaymentDialogs,
+}: {
+  readonly ctx: BookingContext;
+  /** Where its button opens the dialog: the store of the feature. */
+  readonly dialogs?: DialogStore;
+}) {
   const { i18n } = usePrepaymentEnv();
   const title = i18n.t('prepayment.notes.title');
   if (ctx.state === undefined) {
@@ -141,7 +148,7 @@ export function InternalNotesCard({ ctx }: { readonly ctx: BookingContext }) {
           </Typography>
         )}
         {!archived && (
-          <Button size="small" onClick={() => prepaymentDialogs.open({ action: 'notes', ctx })}>
+          <Button size="small" onClick={() => dialogs.open({ action: 'notes', ctx })}>
             {i18n.t('prepayment.action.notes')}
           </Button>
         )}

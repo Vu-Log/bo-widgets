@@ -409,5 +409,7 @@
   "prepayment.refund.confirmNotRefunded": "Il prepagamento verrà rimborsato ora. Solo se hai verificato che non è stato effettuato alcun rimborso.",
   "prepayment.event.chargeAccepted": "Fattura accettata, ID sconosciuto",
   "prepayment.event.refundReleased": "Rimborso non effettuato",
-  "prepayment.event.refundConfirmed": "Rimborso confermato"
+  "prepayment.event.refundConfirmed": "Rimborso confermato",
+  "write.preallocateNeedsPayment": "La pre-assegnazione richiede un prepagamento pagato o una prenotazione aziendale.",
+  "list.sourceError": "Non è stato possibile trovare le prenotazioni di questo filtro: l’elenco potrebbe essere incompleto."
 }

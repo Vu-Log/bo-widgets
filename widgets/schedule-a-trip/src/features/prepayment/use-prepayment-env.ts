@@ -9,7 +9,11 @@ import { useCallback, useMemo } from 'react';
 import { useI18n, type I18n } from '../../i18n';
 import { queryKeys } from '../../query/keys';
 import { useWidgetSettings, type WidgetSettings } from '../../settings';
-import { bookingsCollection, type BookingStateDoc } from '../../storage/booking-state';
+import {
+  bookingsCollection,
+  readBookingState,
+  type BookingStateDoc,
+} from '../../storage/booking-state';
 import type { MoneyDeps } from './charge';
 import { moneyBlocker, type MoneyBlocker } from './messages';
 
@@ -26,7 +30,10 @@ export interface PrepaymentEnv {
   /** Why the money actions are disabled, `null` when they can run. */
   readonly blocker: MoneyBlocker;
   readonly queryClient: QueryClient;
-  /** Puts a written document in the cache (or reads it again), and refreshes the derived data. */
+  /**
+   * Puts a written document in the cache (or reads it again from the storage), and refreshes the
+   * derived data.
+   */
   readonly refresh: (bookingId: string, doc?: BookingStateDoc | null) => Promise<void>;
   /** Formats an amount in {@link currency}, or as a plain number without one. */
   readonly formatAmount: (amount: number) => string;
@@ -95,13 +102,24 @@ export function usePrepaymentEnv(): PrepaymentEnv {
       if (!fleetId) return;
       const key = queryKeys.bookingState(fleetId, bookingId);
       if (doc) queryClient.setQueryData(key, doc);
-      else await queryClient.invalidateQueries({ queryKey: key });
+      else {
+        // The state of a row is a query the list never fetches by itself (it is seeded by the
+        // listing and set by the writes): an invalidation would not read it again.
+        const read = await readBookingState(bookingsCollection(bo.storage), bookingId);
+        if (read.ok) queryClient.setQueryData(key, read.value);
+        else {
+          bo.log.warn('Prepayment: the booking state could not be read again', {
+            bookingId,
+            failure: read.error.kind,
+          });
+        }
+      }
       await Promise.all([
         queryClient.invalidateQueries({ queryKey: queryKeys.invoices(fleetId) }),
         queryClient.invalidateQueries({ queryKey: queryKeys.pendingRegularizations(fleetId) }),
       ]);
     },
-    [fleetId, queryClient],
+    [bo, fleetId, queryClient],
   );
 
   const formatAmount = useCallback(

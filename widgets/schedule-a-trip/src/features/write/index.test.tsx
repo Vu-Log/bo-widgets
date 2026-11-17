@@ -64,10 +64,42 @@ describe('canPreallocate', () => {
   });
 });
 
+describe('the pre-allocation and the prepayment', () => {
+  const paid = stateDoc({ invoiceId: 'invoice-1', invoiceStatus: 'PAID' });
+  const preallocate = (ctx: Parameters<typeof writeActions>[0]) =>
+    writeActions(ctx, deps()).find((action) => action.id === 'preallocate');
+
+  it('waits for a paid prepayment, with why', () => {
+    expect(preallocate(context())).toMatchObject({
+      disabled: true,
+      disabledReason: 'Pre-allocation needs a paid prepayment, or a business booking.',
+    });
+    expect(preallocate(context({ state: stateDoc({ invoiceId: 'invoice-1', invoiceStatus: 'PENDING' }) }))?.disabled).toBe(true);
+    expect(preallocate(context({ state: paid }))?.disabled).toBeUndefined();
+  });
+
+  it('allows a business booking, and waits for its customer', () => {
+    const business = { ...context().customer!, profiles: [{ id: 'profile-1', type: 'Business', entityId: 'entity-1' }] };
+    expect(preallocate(context({ customer: business }))?.disabled).toBeUndefined();
+    expect(preallocate(context({ customer: undefined }))).toMatchObject({ disabled: true, disabledReason: 'Loading…' });
+  });
+
+  it('always allows removing a pre-allocation', () => {
+    const ctx = context({ state: stateDoc({ preallocatedVehicleId: 'v-1', invoiceId: 'invoice-1', invoiceStatus: 'REFUNDED' }) });
+    expect(writeActions(ctx, deps()).find((action) => action.id === 'remove-preallocation')?.disabled).toBeUndefined();
+    expect(preallocate(ctx)?.disabled).toBe(true);
+  });
+
+  it('gives no primary action to a pre-allocation that waits', () => {
+    expect(createWriteFeature(deps()).primaryAction?.(context())).toBeNull();
+  });
+});
+
 describe('createWriteFeature', () => {
   it('gives "Pre-allocate" to a booking to come and "Allocate" to one in alert, nothing once it has a vehicle', () => {
     const feature = createWriteFeature(deps());
-    expect(feature.primaryAction?.(context())?.id).toBe('preallocate');
+    const paid = stateDoc({ invoiceId: 'invoice-1', invoiceStatus: 'PAID' });
+    expect(feature.primaryAction?.(context({ state: paid }))?.id).toBe('preallocate');
     expect(feature.primaryAction?.(context({ tab: 'alert' }))?.id).toBe('allocate');
     expect(feature.primaryAction?.(context({ state: stateDoc({ preallocatedVehicleId: 'v' }) }))).toBeNull();
     expect(feature.primaryAction?.(context({ booking: booking({ vehicleId: 'v' }) }))).toBeNull();
@@ -147,6 +179,15 @@ describe('the write flows in the section', () => {
       ),
     );
     const bo = routed();
+    // A paid prepayment: the pre-allocation is allowed.
+    await bo.storage.api.set(BOOKINGS_COLLECTION, 'booking-1', {
+      schemaVersion: 1,
+      fleetId: 'FLEET-1',
+      allocationProcessed: false,
+      chargeStartedAt: '2026-03-01T08:00:00Z',
+      invoiceId: 'invoice-1',
+      invoiceStatus: 'PAID',
+    });
     const view = await renderInWidget(<BookingSection />, bo.api);
     unmount = view.unmount;
     const row = () => view.container.querySelector<HTMLElement>('[data-row-id="booking-1"]');

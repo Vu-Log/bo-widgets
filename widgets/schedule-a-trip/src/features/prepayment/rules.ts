@@ -487,6 +487,39 @@ export function rowActions(row: RowInput, now: Date): RowActions {
   return { primary, menu, primaryDisabled };
 }
 
+/** Why an action of the feature is shown but cannot run (plan of the stored state). */
+export type UnavailableReason = 'archived' | 'no-data';
+
+/** An action shown disabled, with why. */
+export interface UnavailableAction {
+  readonly id: PrepaymentActionId;
+  readonly reason: UnavailableReason;
+}
+
+/**
+ * The actions a row shows disabled because its stored data is missing, so that an operator knows
+ * why they are not offered (they never run, and never appear as the primary action):
+ *
+ * - `archived` (no document, last activity more than {@link ARCHIVE_AFTER_DAYS} days ago): the
+ *   internal notes, and the refund on the Cancelled tab;
+ * - `no-data` (no document on the Cancelled tab: no prepayment was made from the widget): the
+ *   refund.
+ *
+ * @param row - Booking, tab, document and customer.
+ * @param now - The current date.
+ * @returns The disabled actions, none when the document exists or is loading.
+ */
+export function unavailableActions(row: RowInput, now: Date): UnavailableAction[] {
+  if (row.state !== null) return [];
+  if (isArchived(row.booking, row.state, now)) {
+    return [
+      ...(row.tab === 'cancelled' ? [{ id: 'refund', reason: 'archived' } as const] : []),
+      { id: 'notes', reason: 'archived' },
+    ];
+  }
+  return row.tab === 'cancelled' ? [{ id: 'refund', reason: 'no-data' }] : [];
+}
+
 /** What the prepayment column shows. */
 export type PrepaymentDisplay =
   | PrepaymentStatus
