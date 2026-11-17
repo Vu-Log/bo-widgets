@@ -116,5 +116,10 @@
   "vehicle.preallocated": "Veicolo preassegnato",
   "vehicle.preallocatedHint": "Fuori servizio fino alla partenza, con l’ID della prenotazione nel motivo.",
   "vehicle.preallocatedShort": "preassegnato",
-  "vehicle.title": "Veicolo"
+  "vehicle.title": "Veicolo",
+  "list.noFleet": "Il back office non indica alcuna flotta: scegli una flotta per vederne le prenotazioni.",
+  "list.truncated": "La flotta ha più prenotazioni confermate di quante se ne possano leggere in una volta: alcune prenotazioni in corso potrebbero mancare.",
+  "detail.stateFailed": "Impossibile leggere i dati che il widget conserva su questa prenotazione.",
+  "vehicle.catalogFailed": "Impossibile caricare i veicoli della flotta: la targa è sconosciuta.",
+  "vehicle.unknown": "Questo veicolo non è tra i veicoli della flotta."
 }

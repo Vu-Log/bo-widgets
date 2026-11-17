@@ -116,5 +116,10 @@
   "vehicle.preallocated": "Vooraf toegewezen voertuig",
   "vehicle.preallocatedHint": "Buiten dienst tot vertrek, met het boekings-id in de reden.",
   "vehicle.preallocatedShort": "vooraf toegewezen",
-  "vehicle.title": "Voertuig"
+  "vehicle.title": "Voertuig",
+  "list.noFleet": "Het backoffice geeft geen vloot: kies een vloot om de boekingen te zien.",
+  "list.truncated": "De vloot heeft meer bevestigde boekingen dan in één keer gelezen kunnen worden: sommige lopende boekingen kunnen ontbreken.",
+  "detail.stateFailed": "De gegevens die de widget over deze boeking bewaart, konden niet worden gelezen.",
+  "vehicle.catalogFailed": "De voertuigen van de vloot konden niet worden geladen: het kenteken is onbekend.",
+  "vehicle.unknown": "Dit voertuig hoort niet bij de voertuigen van de vloot."
 }

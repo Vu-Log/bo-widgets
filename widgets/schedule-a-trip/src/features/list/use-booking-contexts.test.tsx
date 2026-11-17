@@ -101,3 +101,41 @@ describe('useBookingContexts', () => {
     await vi.waitFor(() => expect(latest().contexts[0]?.state).toBeNull());
   });
 });
+
+describe('useBookingContexts, over time', () => {
+  it('keeps the stored state of a row once its own query was collected', async () => {
+    stubVulogApi(fleetApi({}));
+    const bo = fakeBo();
+    const seeding = await connect({ vulogBo: bo.api });
+    await createBookingState(bookingsCollection(seeding.storage), 'b-2', { fleetId: 'FLEET-1' });
+    seeding.disconnect();
+    let latest: BookingContexts | undefined;
+    function Probe() {
+      latest = useBookingContexts({ fleetId: 'FLEET-1', tab: 'upcoming', bookings, visibleIds: new Set(), allCustomers: false });
+      return null;
+    }
+    const view = await renderInWidget(<Probe />, bo.api);
+    unmount = view.unmount;
+    await vi.waitFor(() => expect(latest?.contexts[1]?.state?.id).toBe('b-2'));
+
+    view.queryClient.removeQueries({ queryKey: ['booking-states', 'FLEET-1', 'b-2'], exact: true });
+    view.rerender(<Probe />);
+
+    await vi.waitFor(() => expect(latest?.contexts[1]?.state?.id).toBe('b-2'));
+  });
+
+  it('logs the documents that break the contract', async () => {
+    stubVulogApi(fleetApi({}));
+    const bo = fakeBo();
+    await bo.storage.api.set('bookings', 'b-1', { schemaVersion: 99, fleetId: 'FLEET-1', allocationProcessed: false });
+    let latest: BookingContexts | undefined;
+    function Probe() {
+      latest = useBookingContexts({ fleetId: 'FLEET-1', tab: 'upcoming', bookings, visibleIds: new Set(), allCustomers: false });
+      return null;
+    }
+    const view = await renderInWidget(<Probe />, bo.api);
+    unmount = view.unmount;
+    await vi.waitFor(() => expect(bo.api.log.warn).toHaveBeenCalled());
+    expect(latest?.contexts[0]?.state).toBeNull();
+  });
+});

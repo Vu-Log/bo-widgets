@@ -101,4 +101,23 @@ describe('BookingDrawer', () => {
     await new Promise((resolve) => setTimeout(resolve, 30));
     expect(document.body.querySelector('[role="dialog"]')).toBeNull();
   });
+
+  it('shows a dash instead of a skeleton for a booking without customer', async () => {
+    const { drawer } = await render({ fromList: context({ booking: booking({ userId: null }), customer: undefined }) });
+    await vi.waitFor(() => expect(drawer()?.querySelector('h2')?.textContent).toBe('–'));
+  });
+
+  it('warns when the stored state cannot be read, with a retry', async () => {
+    stubVulogApi(fleetApi({}));
+    const bo = fakeBo();
+    bo.storage.api.get.mockRejectedValueOnce(Object.assign(new Error('rate'), { code: 'rate-limited', status: 429 }));
+    const view = await renderInSection(
+      <BookingDrawer bookingId="booking-1" fromList={context({ state: undefined })} features={features} onClose={vi.fn()} onPrevious={undefined} onNext={undefined} />,
+      { api: bo.api },
+    );
+    unmount = view.unmount;
+    await vi.waitFor(() => expect(document.body.textContent).toContain('could not be read'));
+    [...document.body.querySelectorAll('button')].find((b) => b.textContent === 'Retry')?.click();
+    await vi.waitFor(() => expect(document.body.textContent).not.toContain('could not be read'));
+  });
 });

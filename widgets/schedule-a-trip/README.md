@@ -51,7 +51,7 @@ One document per booking, in the collection `bookings` of `bo.storage`, under th
 - **Fields**: fleet, business profile flag, entity billed, charge claim, invoice and amounts (charged, computed, accepted warnings), invoice status cache, pre-allocated vehicle and plate, internal notes (500 characters), scheduler flags (allocation done, credits added, wallet, errors), credits revoked, refund date, regularization (amount left, pending flag, date, user id, note) and a journal of the 50 newest events.
 - Every user of the host can read this storage: it holds user ids, never names, emails or secrets.
 
-The browser keeps a cache of the reference data (models, services, cities, plates, geocoding) in `localStorage` for 24 hours. Names of customers and payment statuses stay in memory only.
+The browser keeps a cache of the reference data (models, services, cities, plates, geocoding) in `localStorage` for 24 hours. Names of customers, payment statuses and the addresses of the pickup points stay in memory only.
 
 ## Scripts
 

@@ -11,7 +11,7 @@ import {
 } from '../storage/booking-state';
 import { fakeBo, hostError, jsonResponse } from '../test/fake-bo';
 import { PERSIST_MAX_AGE_MS } from './client';
-import { queryKeys } from './keys';
+import { isPersistedQueryKey, queryKeys } from './keys';
 import {
   BOOKING_PAGE_SIZE,
   bookingCountQueryOptions,
@@ -25,7 +25,7 @@ import {
   invoiceStaleTime,
   liveVehiclesQueryOptions,
   modelsQueryOptions,
-  reverseGeocodingQueryOptions,
+  bookingAddressQueryOptions,
   seedBookingStates,
   tripsInProgressQueryOptions,
   vehicleCatalogQueryOptions,
@@ -285,22 +285,23 @@ describe('vehicle queries', () => {
   });
 });
 
-describe('reverseGeocodingQueryOptions', () => {
-  it('reads an address once, persisted', async () => {
+describe('bookingAddressQueryOptions', () => {
+  it('reads an address once, in memory only', async () => {
     const fetcher = vi.fn(async () =>
       jsonResponse({ features: [{ place_name: '1 Example Street', center: [2.35, 48.85] }] }),
     );
-    const options = reverseGeocodingQueryOptions('pk.t', { latitude: 48.85, longitude: 2.35 }, 'en', fetcher);
+    const options = bookingAddressQueryOptions('pk.t', { latitude: 48.85, longitude: 2.35 }, 'en', fetcher);
     const client = newClient();
     expect(await client.fetchQuery(options)).toBe('1 Example Street');
     expect(await client.fetchQuery(options)).toBe('1 Example Street');
     expect(fetcher).toHaveBeenCalledTimes(1);
-    expect(options.gcTime).toBeGreaterThanOrEqual(PERSIST_MAX_AGE_MS);
+    expect(options.gcTime).toBeUndefined();
+    expect(isPersistedQueryKey(options.queryKey)).toBe(false);
   });
 
   it('fails with an ApiRequestError', async () => {
     const fetcher = vi.fn(async () => new Response('', { status: 401 }));
-    const options = reverseGeocodingQueryOptions('pk.t', { latitude: 1, longitude: 2 }, 'en', fetcher);
+    const options = bookingAddressQueryOptions('pk.t', { latitude: 1, longitude: 2 }, 'en', fetcher);
     await expect(newClient().fetchQuery(options)).rejects.toBeInstanceOf(ApiRequestError);
   });
 });

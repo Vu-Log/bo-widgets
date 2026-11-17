@@ -9,7 +9,7 @@ import {
   customersQueryOptions,
   fleetBookingStatesQueryOptions,
 } from '../../query/queries';
-import { bookingsCollection, type BookingStateDoc } from '../../storage/booking-state';
+import { bookingsCollection, type BookingStateDoc, type FleetDocs } from '../../storage/booking-state';
 import type { BookingContext } from '../extensions';
 
 /** Where the customer of a row stands. */
@@ -26,6 +26,8 @@ export interface BookingContexts {
   readonly statesError: Error | null;
   readonly retryStates: () => void;
 }
+
+const NO_INVALID: FleetDocs['invalid'] = [];
 
 /** Splits ids into chunks the users route takes. */
 export const chunk = <T>(items: readonly T[], size: number): T[][] => {
@@ -89,8 +91,9 @@ function useCustomerBatches(fleetId: string, wanted: readonly string[]): Custome
 
 /**
  * The stored state of each booking: the query of each booking state (the source a write of the
- * widget updates), seeded by one listing of the fleet. `undefined` until the listing is done,
- * `null` for a booking without a document.
+ * widget updates), seeded by one listing of the fleet, else the listing itself (a booking state
+ * nobody watched may have been collected since). `undefined` until the listing is done, `null`
+ * for a booking without a document.
  */
 function useStates(fleetId: string, bookingIds: readonly string[]) {
   const bo = useBoClient();
@@ -98,10 +101,18 @@ function useStates(fleetId: string, bookingIds: readonly string[]) {
   const collection = useMemo(() => bookingsCollection(bo.storage), [bo]);
   const fleet = useQuery(fleetBookingStatesQueryOptions(queryClient, collection, fleetId));
   const listed = fleet.isSuccess;
+  const docsById = useMemo(
+    () => new Map((fleet.data?.docs ?? []).map((doc) => [doc.id, doc])),
+    [fleet.data],
+  );
   const combine = useCallback(
     (results: UseQueryResult<BookingStateDoc | null>[]) =>
-      results.map((result) => (result.data !== undefined ? result.data : listed ? null : undefined)),
-    [listed],
+      results.map((result, index) => {
+        if (result.data !== undefined) return result.data;
+        if (!listed) return undefined;
+        return docsById.get(bookingIds[index] ?? '') ?? null;
+      }),
+    [listed, docsById, bookingIds],
   );
   const states = useQueries({
     queries: bookingIds.map((bookingId) => ({
@@ -111,7 +122,20 @@ function useStates(fleetId: string, bookingIds: readonly string[]) {
     })),
     combine,
   });
-  return { states, error: fleet.error, retry: () => void fleet.refetch() };
+  const invalid = fleet.data?.invalid ?? NO_INVALID;
+  // A document that breaks the contract is shown as none: say which, never drop it silently.
+  useEffect(() => {
+    if (invalid.length > 0) {
+      bo.log.warn('Booking states left out: they break the contract', {
+        documents: invalid.map((doc) => ({ id: doc.id, issues: doc.issues })),
+      });
+    }
+  }, [bo, invalid]);
+  return {
+    states,
+    error: fleet.error,
+    retry: () => void fleet.refetch(),
+  };
 }
 
 /**

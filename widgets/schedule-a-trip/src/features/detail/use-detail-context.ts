@@ -13,14 +13,21 @@ import { bookingsCollection } from '../../storage/booking-state';
 import type { BookingContext } from '../extensions';
 import type { CustomerStatus } from '../list/use-booking-contexts';
 
-/** The booking of the detail drawer, with its own reads. */
-export interface DetailContext {
-  /** `null` while the booking of a deep link loads, or when it failed. */
-  readonly ctx: BookingContext | null;
-  readonly isLoading: boolean;
-  readonly error: Error | null;
-  readonly customerStatus: CustomerStatus;
-}
+/**
+ * The booking of the detail drawer, with its own reads: loading (a deep link), failed (it cannot be
+ * read), or ready with where its customer and its stored state stand.
+ */
+export type DetailContext =
+  | { readonly status: 'loading' }
+  | { readonly status: 'error'; readonly error: Error }
+  | {
+      readonly status: 'ready';
+      readonly ctx: BookingContext;
+      readonly customerStatus: CustomerStatus;
+      /** The stored state could not be read: `ctx.state` may be `undefined`. */
+      readonly stateError: Error | null;
+      readonly retryState: () => void;
+    };
 
 /**
  * The tab of a booking read alone: from the trips in progress for a `CONFIRMED` one (from its
@@ -88,8 +95,10 @@ export function useDetailContext(
     return { booking, tab, customer, state: stateValue };
   }, [booking, tab, customer, stateValue, fromList]);
 
+  if (fromList === undefined && single.error) return { status: 'error', error: single.error };
+  if (ctx === null) return { status: 'loading' };
   const customerStatus: CustomerStatus =
-    booking?.userId === null || booking?.userId === undefined
+    ctx.booking.userId === null
       ? 'missing'
       : customer
         ? 'ok'
@@ -99,9 +108,10 @@ export function useDetailContext(
             ? 'missing'
             : 'loading';
   return {
+    status: 'ready',
     ctx,
-    isLoading: fromList === undefined && single.isPending,
-    error: fromList === undefined ? single.error : null,
     customerStatus,
+    stateError: state.error,
+    retryState: () => void state.refetch(),
   };
 }

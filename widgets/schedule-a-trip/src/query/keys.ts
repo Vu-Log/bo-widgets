@@ -26,6 +26,7 @@ export const MEMORY_QUERY_ROOTS = [
   'booking-states',
   'trips',
   'fleet-vehicles',
+  'booking-geocoding',
 ] as const;
 
 /** A root of a query key whose data may be persisted. */
@@ -67,9 +68,14 @@ export const queryKeys = {
   vehicleCatalog: (fleetId: string) => ['plates', fleetId] as const,
   /** Live state of the vehicles: status and position, in memory only. */
   liveVehicles: (fleetId: string) => ['fleet-vehicles', fleetId] as const,
-  /** An address by rounded coordinates and language: reference data. */
-  reverseGeocoding: (latitude: number, longitude: number, language: string) =>
-    ['geocoding', 'reverse', latitude.toFixed(5), longitude.toFixed(5), language] as const,
+  /**
+   * The address of the pickup point of a booking: where a customer is picked up is personal data,
+   * kept in memory only (never under the persisted `geocoding` root).
+   */
+  bookingAddress: (latitude: number, longitude: number, language: string) =>
+    ['booking-geocoding', latitude.toFixed(5), longitude.toFixed(5), language] as const,
+  /** Every booking of a fleet: the prefix of `bookings`, `bookingCount`, `confirmedBookings`, `booking`. */
+  fleetBookings: (fleetId: string) => ['bookings', fleetId] as const,
 } satisfies Record<
   string,
   (...args: never[]) => readonly [PersistedQueryRoot | MemoryQueryRoot, ...unknown[]]

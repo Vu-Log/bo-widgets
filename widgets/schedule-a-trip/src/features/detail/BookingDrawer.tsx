@@ -49,6 +49,7 @@ function DrawerHeader({
   const { t } = useI18n();
   const { now } = useSection();
   const name = ctx.customer ? customerName(ctx.customer) : null;
+  const customerStatus = useSection().customerStatus(ctx.booking.userId);
   const business = ctx.customer ? isBusinessBooking(ctx.customer, ctx.booking.profileId) : null;
   const primary = primaryActionOf(features, ctx);
   const stored = storedDataStatus(ctx.booking, ctx.state, now);
@@ -61,7 +62,14 @@ function DrawerHeader({
       <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
         <Avatar aria-hidden="true">{name ? initialsOf(name) : ''}</Avatar>
         <Typography variant="h6" component="h2" sx={{ flex: 1, minWidth: 0 }} noWrap>
-          {name ?? (ctx.customer === undefined ? <SkeletonCell width={160} /> : t('common.none'))}
+          {name ??
+            (customerStatus === 'loading' ? (
+              <SkeletonCell width={160} />
+            ) : customerStatus === 'error' ? (
+              t('customer.loadFailed')
+            ) : (
+              t('common.none')
+            ))}
         </Typography>
         <IconButton aria-label={t('detail.previous')} onClick={onPrevious} disabled={!onPrevious}>
           ↑
@@ -140,16 +148,17 @@ function DrawerBody(props: BookingDrawerProps & { readonly bookingId: string }) 
   const { t } = useI18n();
   const section = useSection();
   const detail = useDetailContext(section.fleetId, props.bookingId, props.fromList);
-  const sectionValue = useMemo(
-    () => ({
+  const sectionValue = useMemo(() => {
+    if (detail.status !== 'ready') return section;
+    return {
       ...section,
       customerStatus: (userId: string | null) =>
-        userId !== null && userId === detail.ctx?.booking.userId
+        userId !== null && userId === detail.ctx.booking.userId
           ? detail.customerStatus
           : section.customerStatus(userId),
-    }),
-    [section, detail.ctx, detail.customerStatus],
-  );
+      statesFailed: section.statesFailed || detail.stateError !== null,
+    };
+  }, [section, detail]);
   const cards = useMemo(
     () =>
       props.features
@@ -160,7 +169,7 @@ function DrawerBody(props: BookingDrawerProps & { readonly bookingId: string }) 
     [props.features],
   );
 
-  if (detail.error) {
+  if (detail.status === 'error') {
     return (
       <Box sx={{ p: 2, display: 'grid', gap: 2 }}>
         <Alert severity="error" role="alert">
@@ -170,7 +179,7 @@ function DrawerBody(props: BookingDrawerProps & { readonly bookingId: string }) 
       </Box>
     );
   }
-  if (!detail.ctx) {
+  if (detail.status === 'loading') {
     return (
       <Box sx={{ p: 2 }} aria-busy="true">
         <SkeletonCell width="60%" />
@@ -184,6 +193,19 @@ function DrawerBody(props: BookingDrawerProps & { readonly bookingId: string }) 
     <SectionProvider value={sectionValue}>
       <Box role="dialog" aria-label={t('detail.label')} sx={{ display: 'flex', flexDirection: 'column', height: '100%' }}>
         <DrawerHeader ctx={ctx} {...props} />
+        {detail.stateError && (
+          <Alert
+            severity="warning"
+            sx={{ borderRadius: 0 }}
+            action={
+              <Button color="inherit" size="small" onClick={detail.retryState}>
+                {t('grid.retry')}
+              </Button>
+            }
+          >
+            {t('detail.stateFailed')}
+          </Alert>
+        )}
         <Box
           sx={{
             flex: 1,

@@ -116,5 +116,10 @@
   "vehicle.preallocated": "Vorab zugewiesenes Fahrzeug",
   "vehicle.preallocatedHint": "Bis zum Beginn außer Betrieb, mit der Buchungs-ID im Grund.",
   "vehicle.preallocatedShort": "vorab zugewiesen",
-  "vehicle.title": "Fahrzeug"
+  "vehicle.title": "Fahrzeug",
+  "list.noFleet": "Das Backoffice gibt keine Flotte an: Wählen Sie eine Flotte, um ihre Buchungen zu sehen.",
+  "list.truncated": "Die Flotte hat mehr bestätigte Buchungen, als auf einmal gelesen werden können: Einige laufende Buchungen fehlen möglicherweise.",
+  "detail.stateFailed": "Die Daten, die das Widget zu dieser Buchung speichert, konnten nicht gelesen werden.",
+  "vehicle.catalogFailed": "Die Fahrzeuge der Flotte konnten nicht geladen werden: Das Kennzeichen ist unbekannt.",
+  "vehicle.unknown": "Dieses Fahrzeug gehört nicht zu den Fahrzeugen der Flotte."
 }

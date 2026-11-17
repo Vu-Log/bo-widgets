@@ -133,15 +133,25 @@ export function Plate({ plate }: { readonly plate: string }) {
  * The plate of a vehicle, from the vehicle catalogue.
  *
  * @param props - The vehicle id.
- * @returns The plate, a skeleton while the catalogue loads, the id when the plate is unknown.
+ * @returns The plate, a skeleton while the catalogue loads, the id (muted, with the reason in a
+ *   tooltip) when the plate is unknown or the catalogue failed.
  */
 export function VehiclePlate({ vehicleId }: { readonly vehicleId: string }) {
   const authFetch = useAuthFetch();
   const { fleetId } = useSection();
+  const { t } = useI18n();
   const catalog = useQuery(vehicleCatalogQueryOptions(authFetch, fleetId));
   if (catalog.isPending) return <SkeletonCell width={80} />;
   const plate = catalog.data?.find((vehicle) => vehicle.id === vehicleId)?.plate;
-  return <Plate plate={plate ?? vehicleId} />;
+  if (plate) return <Plate plate={plate} />;
+  // Never show an id as a plate: say why the plate is missing.
+  return (
+    <Tooltip title={catalog.isError ? t('vehicle.catalogFailed') : t('vehicle.unknown')}>
+      <Typography variant="caption" color="text.secondary" sx={{ fontFamily: 'monospace' }}>
+        {vehicleId}
+      </Typography>
+    </Tooltip>
+  );
 }
 
 /**

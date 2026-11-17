@@ -116,5 +116,10 @@
   "vehicle.preallocated": "Véhicule pré-alloué",
   "vehicle.preallocatedHint": "Hors service jusqu’au départ, avec l’id de la réservation dans son motif.",
   "vehicle.preallocatedShort": "pré-alloué",
-  "vehicle.title": "Véhicule"
+  "vehicle.title": "Véhicule",
+  "list.noFleet": "Le back office n’indique aucune flotte : choisissez une flotte pour voir ses réservations.",
+  "list.truncated": "La flotte a plus de réservations confirmées que ce qui peut être lu en une fois : des réservations en cours peuvent manquer.",
+  "detail.stateFailed": "Les données que le widget garde sur cette réservation n’ont pas pu être lues.",
+  "vehicle.catalogFailed": "Les véhicules de la flotte n’ont pas pu être chargés : la plaque est inconnue.",
+  "vehicle.unknown": "Ce véhicule ne fait pas partie des véhicules de la flotte."
 }

@@ -43,35 +43,65 @@ describe('useDetailContext', () => {
   it('reads a booking of a deep link, its customer and its state', async () => {
     stubVulogApi(fleetApi({ bookings: { ALERT: [apiBooking({ id: 'deep-1', status: 'ALERT' })] } }));
     const state = await run('deep-1');
-    await vi.waitFor(() => expect(state().ctx?.customer?.id).toBe('user-1'));
-    expect(state().ctx).toMatchObject({ tab: 'alert', state: null });
-    expect(state().customerStatus).toBe('ok');
+    const ready = () => {
+      const detail = state();
+      if (detail.status !== 'ready') throw new Error(detail.status);
+      return detail;
+    };
+    await vi.waitFor(() => expect(state()?.status).toBeDefined());
+    await vi.waitFor(() => expect(ready().ctx.customer?.id).toBe('user-1'));
+    expect(ready().ctx).toMatchObject({ tab: 'alert', state: null });
+    expect(ready().customerStatus).toBe('ok');
+    expect(ready().stateError).toBeNull();
   });
 
   it('gives the row of the list as it is when it has everything', async () => {
     const fetch = stubVulogApi(fleetApi({}));
     const row = context();
     const state = await run('booking-1', row);
-    await vi.waitFor(() => expect(state().ctx).toBe(row));
+    await vi.waitFor(() => expect(state().status === 'ready' && state()).toMatchObject({ ctx: row }));
+    const detail = state();
+    expect(detail.status === 'ready' && detail.ctx).toBe(row);
     expect(fetch.mock.calls.some(([input]) => String(input).includes('bookingrequests'))).toBe(false);
   });
 
   it('completes a row that has no customer yet', async () => {
     stubVulogApi(fleetApi({}));
     const state = await run('booking-1', context({ customer: undefined }));
-    await vi.waitFor(() => expect(state().ctx?.customer?.lastName).toBe('Doe'));
+    await vi.waitFor(() => {
+      const detail = state();
+      expect(detail.status === 'ready' && detail.ctx.customer?.lastName).toBe('Doe');
+    });
   });
 
   it('reports a booking that cannot be read', async () => {
     stubVulogApi(fleetApi({}));
     const state = await run('unknown-1');
-    await vi.waitFor(() => expect(state().error).not.toBeNull());
-    expect(state().ctx).toBeNull();
+    await vi.waitFor(() => expect(state().status).toBe('error'));
   });
 
   it('reports a customer that cannot be read', async () => {
     stubVulogApi(fleetApi({}, ({ path }) => (path.endsWith('users/list') ? new Response('', { status: 500 }) : undefined)));
     const state = await run('booking-1', context({ customer: undefined }));
-    await vi.waitFor(() => expect(state().customerStatus).toBe('error'), { timeout: 8000 });
+    await vi.waitFor(() => {
+      const detail = state();
+      expect(detail.status === 'ready' && detail.customerStatus).toBe('error');
+    }, { timeout: 8000 });
   }, 10_000);
+
+  it('reports a stored state that cannot be read, and reads it again', async () => {
+    stubVulogApi(fleetApi({}));
+    const bo = fakeBo();
+    bo.storage.api.get.mockRejectedValueOnce(Object.assign(new Error('rate'), { code: 'rate-limited', status: 429 }));
+    let latest: DetailContext | undefined;
+    function Probe() {
+      latest = useDetailContext('FLEET-1', 'booking-1', context({ state: undefined }));
+      return null;
+    }
+    const view = await renderInWidget(<Probe />, bo.api);
+    unmount = view.unmount;
+    await vi.waitFor(() => expect(latest?.status === 'ready' && latest.stateError).toBeTruthy());
+    if (latest?.status === 'ready') latest.retryState();
+    await vi.waitFor(() => expect(latest?.status === 'ready' && latest.ctx.state).toBeNull());
+  });
 });

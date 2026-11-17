@@ -14,6 +14,7 @@ import { matchesSearch } from '../domain/booking-search';
 import type { ListTab } from '../domain/statuses';
 import { useI18n } from '../i18n';
 import { queryKeys, type BookingListSort } from '../query/keys';
+import { describeError } from '../query/WidgetQueryProvider';
 import { ListGrid, type ListGridColumn } from '../ui/ListGrid';
 import { queryErrorText } from './core/cards';
 import { HIDDEN_CORE_COLUMNS } from './core';
@@ -69,11 +70,27 @@ export interface BookingSectionProps {
  * @param props - Extra actions of the header.
  * @returns The section.
  */
-export function BookingSection({ headerActions, extraFeatures }: BookingSectionProps) {
+export function BookingSection(props: BookingSectionProps) {
+  const { t } = useI18n();
+  const { fleetId } = useBoContext();
+  if (!fleetId) {
+    return (
+      <Alert severity="error" role="alert" sx={{ m: 2 }}>
+        {t('list.noFleet')}
+      </Alert>
+    );
+  }
+  return <FleetSection {...props} fleetId={fleetId} />;
+}
+
+/** The section of one fleet. */
+function FleetSection({
+  headerActions,
+  extraFeatures,
+  fleetId,
+}: BookingSectionProps & { readonly fleetId: string }) {
   const { t } = useI18n();
   const bo = useBoClient();
-  const { fleetId: contextFleet } = useBoContext();
-  const fleetId = contextFleet ?? '';
   const queryClient = useQueryClient();
   const settings = useSectionSettings();
   const now = useNow();
@@ -95,7 +112,9 @@ export function BookingSection({ headerActions, extraFeatures }: BookingSectionP
   const copyId = useCallback(
     (bookingId: string) => {
       const notify = (message: string, severity: 'success' | 'error') =>
-        void bo.notify({ message, severity }).catch(() => undefined);
+        void bo.notify({ message, severity }).catch((error: unknown) =>
+          bo.log.warn('A notification could not be shown', describeError(error)),
+        );
       if (!navigator.clipboard) {
         notify(t('action.copyFailed'), 'error');
         return;
@@ -183,14 +202,15 @@ export function BookingSection({ headerActions, extraFeatures }: BookingSectionP
   const kpis = useMemo(() => features.flatMap((feature) => feature.kpis ?? []), [features]);
   const kpiCounts = useMemo(() => {
     const counts = new Map<string, number>();
-    if (!tabBookings.complete) return counts;
+    // Without every row, or without their stored states, a count would be wrong: none is shown.
+    if (!tabBookings.complete || enrichment.statesError) return counts;
     const allFilters = features.flatMap((feature) => feature.filters ?? []);
     for (const kpi of kpis) {
       const filter = allFilters.find((candidate) => candidate.id === kpi.filterId);
       if (kpi.tab === tab && filter) counts.set(kpi.id, enrichment.contexts.filter(filter.test).length);
     }
     return counts;
-  }, [kpis, features, tab, tabBookings.complete, enrichment.contexts]);
+  }, [kpis, features, tab, tabBookings.complete, enrichment.statesError, enrichment.contexts]);
   const activeKpi =
     kpis.find(
       (kpi) => kpi.tab === tab && filters[tab].length === 1 && filters[tab][0] === kpi.filterId,
@@ -202,15 +222,15 @@ export function BookingSection({ headerActions, extraFeatures }: BookingSectionP
   };
 
   const counts = useTabCounts(fleetId);
-  const refreshing = useIsFetching({ queryKey: ['bookings', fleetId] }) > 0;
+  const refreshing = useIsFetching({ queryKey: queryKeys.fleetBookings(fleetId) }) > 0;
   const refresh = () => {
-    for (const queryKey of [
-      ['bookings', fleetId],
-      queryKeys.tripsInProgress(fleetId),
-      queryKeys.fleetBookingStates(fleetId),
-    ]) {
-      void queryClient.invalidateQueries({ queryKey, exact: queryKey[0] === 'booking-states' });
-    }
+    void queryClient.invalidateQueries({ queryKey: queryKeys.fleetBookings(fleetId) });
+    void queryClient.invalidateQueries({ queryKey: queryKeys.tripsInProgress(fleetId) });
+    // The listing only: it seeds the state of each booking again.
+    void queryClient.invalidateQueries({
+      queryKey: queryKeys.fleetBookingStates(fleetId),
+      exact: true,
+    });
   };
 
   // `/` focuses the search, wherever the focus is but in a text field.
@@ -347,6 +367,11 @@ export function BookingSection({ headerActions, extraFeatures }: BookingSectionP
           />
         </Box>
       )}
+      {tabBookings.truncated && (
+        <Alert severity="warning" sx={{ flex: 'none', borderRadius: 0 }}>
+          {t('list.truncated')}
+        </Alert>
+      )}
       {enrichment.statesError && (
         <Alert
           severity="warning"
@@ -390,7 +415,7 @@ export function BookingSection({ headerActions, extraFeatures }: BookingSectionP
             rowHeight={DENSITIES[preferences.density]}
             totalCount={filtering ? rows.length : (counts[tab] ?? null)}
             isLoading={tabBookings.isLoading}
-            pagination={filtering && loadAll ? undefined : tabBookings.pagination}
+            pagination={tabBookings.pagination}
             onVisibleRowsChange={setVisibleIds}
             empty={empty}
             onRowActivate={route.open}

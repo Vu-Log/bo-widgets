@@ -2,7 +2,9 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import { createI18n } from '../i18n';
 import { renderInWidget } from '../test/render';
 import type { BookingFeature } from './extensions';
-import { useBookingFeatures } from './registry';
+import { useBookingFeatures, validateFeatures } from './registry';
+import { fakeBo } from '../test/fake-bo';
+import { createCoreFeature } from './core';
 
 const t = createI18n('en_GB').t;
 const deps = {
@@ -42,5 +44,62 @@ describe('useBookingFeatures', () => {
     const view = await renderInWidget(<Probe />);
     unmount = view.unmount;
     await vi.waitFor(() => expect(ids).toEqual(['core']));
+  });
+});
+
+describe('validateFeatures', () => {
+  const core = createCoreFeature(deps);
+  const filter = { id: 'f', label: 'F', tabs: ['upcoming' as const], test: () => true, needsAllPages: false };
+
+  it('accepts the core feature and a consistent feature', () => {
+    expect(validateFeatures([core])).toEqual([]);
+    expect(
+      validateFeatures([core, { id: 'x', filters: [filter], kpis: [{ id: 'k', label: 'K', tab: 'upcoming', filterId: 'f', tone: 'info' }] }]),
+    ).toEqual([]);
+  });
+
+  it('reports duplicate ids and KPIs on an unknown or foreign filter', () => {
+    expect(
+      validateFeatures([
+        core,
+        {
+          id: 'core',
+          columns: () => [{ id: 'start', header: 'S', width: '1px', render: () => null }],
+          filters: [filter, filter],
+          kpis: [
+            { id: 'k1', label: 'K', tab: 'upcoming', filterId: 'missing', tone: 'info' },
+            { id: 'k2', label: 'K', tab: 'alert', filterId: 'f', tone: 'info' },
+          ],
+          detailCards: [{ id: 'trip', order: 1, render: () => null }],
+        },
+      ]),
+    ).toEqual([
+      'Duplicate feature id: core',
+      'Duplicate column (alert) id: start',
+      'Duplicate column (upcoming) id: start',
+      'Duplicate column (ongoing) id: start',
+      'Duplicate column (completed) id: start',
+      'Duplicate column (cancelled) id: start',
+      'Duplicate filter id: f',
+      'Duplicate detail card id: trip',
+      'KPI k1 names an unknown filter: missing',
+      'KPI k2 is on alert, where its filter f does not apply',
+    ]);
+  });
+
+  it('logs the broken rules of the registry', async () => {
+    const bo = fakeBo();
+    const extra: BookingFeature[] = [{ id: 'core' }];
+    function Probe() {
+      useBookingFeatures(deps, extra);
+      return null;
+    }
+    const view = await renderInWidget(<Probe />, bo.api);
+    unmount = view.unmount;
+    await vi.waitFor(() =>
+      expect(bo.api.log.error).toHaveBeenCalledWith('The booking features break the extension point', {
+        problems: ['Duplicate feature id: core'],
+      }),
+    );
   });
 });

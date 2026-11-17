@@ -9,23 +9,34 @@ export const DENSITIES = { compact: 36, standard: 48, comfortable: 56 } as const
 /** A density of the list. */
 export type Density = keyof typeof DENSITIES;
 
+/** The columns the operator changed: each list holds column ids, the two lists never share one. */
+export interface ColumnChoices {
+  /** Columns shown by default that the operator hid. */
+  readonly hidden: readonly string[];
+  /** Columns hidden by default that the operator showed. */
+  readonly shown: readonly string[];
+}
+
 /** What the list remembers for the operator, in the browser: nothing personal. */
 export interface ListPreferences {
   readonly density: Density;
-  /** Ids of the columns the operator hid, or showed among those hidden by default (`!id`). */
-  readonly columns: readonly string[];
+  readonly columns: ColumnChoices;
 }
 
 /** Key of the preferences in `localStorage`. */
-export const PREFERENCES_KEY = 'schedule-a-trip:list-preferences:v1';
+export const PREFERENCES_KEY = 'schedule-a-trip:list-preferences:v2';
 
+const ids = z.array(z.string()).max(200).catch([]);
 const preferencesSchema = z.object({
-  density: z.enum(['compact', 'standard', 'comfortable']).catch('standard'),
-  columns: z.array(z.string()).max(200).catch([]),
+  density: z.enum(Object.keys(DENSITIES) as [Density, ...Density[]]).catch('standard'),
+  columns: z.object({ hidden: ids, shown: ids }).catch({ hidden: [], shown: [] }),
 });
 
 /** Default preferences. */
-export const DEFAULT_PREFERENCES: ListPreferences = { density: 'standard', columns: [] };
+export const DEFAULT_PREFERENCES: ListPreferences = {
+  density: 'standard',
+  columns: { hidden: [], shown: [] },
+};
 
 /**
  * Reads the preferences; anything unreadable gives the defaults.
@@ -46,35 +57,37 @@ export function readPreferences(storage: KeyValueStorage | null): ListPreference
 }
 
 /**
- * Whether a column is shown: a column hidden by default shows once listed as `!id`, any other hides
- * once listed as `id`.
+ * Whether a column is shown: a column hidden by default once the operator showed it, any other
+ * until the operator hid it.
  *
- * @param columns - `columns` of the preferences.
+ * @param columns - The choices of the operator.
  * @param id - The id of the column.
  * @param hiddenByDefault - Whether the column starts hidden.
  * @returns `true` when shown.
  */
-export const isColumnShown = (columns: readonly string[], id: string, hiddenByDefault: boolean) =>
-  hiddenByDefault ? columns.includes(`!${id}`) : !columns.includes(id);
+export const isColumnShown = (columns: ColumnChoices, id: string, hiddenByDefault: boolean) =>
+  hiddenByDefault ? columns.shown.includes(id) : !columns.hidden.includes(id);
 
 /**
- * Shows or hides a column in the preferences.
+ * Shows or hides a column: records the choice only when it differs from the default.
  *
- * @param columns - `columns` of the preferences.
+ * @param columns - The choices of the operator.
  * @param id - The id of the column.
  * @param hiddenByDefault - Whether the column starts hidden.
  * @param shown - Whether to show it.
- * @returns The new list.
+ * @returns The new choices.
  */
 export function withColumn(
-  columns: readonly string[],
+  columns: ColumnChoices,
   id: string,
   hiddenByDefault: boolean,
   shown: boolean,
-): string[] {
-  const entry = hiddenByDefault ? `!${id}` : id;
-  const others = columns.filter((column) => column !== entry);
-  return shown === hiddenByDefault ? [...others, entry] : others;
+): ColumnChoices {
+  const hidden = columns.hidden.filter((column) => column !== id);
+  const shownIds = columns.shown.filter((column) => column !== id);
+  if (hiddenByDefault && shown) shownIds.push(id);
+  if (!hiddenByDefault && !shown) hidden.push(id);
+  return { hidden, shown: shownIds };
 }
 
 /**

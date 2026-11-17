@@ -3,7 +3,7 @@
 import { connect } from '@vulog/bo-widget-sdk';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { bookingsCollection, createBookingState } from '../storage/booking-state';
-import { fakeBo } from '../test/fake-bo';
+import { fakeBo, hostError } from '../test/fake-bo';
 import { activeObservers, installFakeIntersectionObserver } from '../test/intersection-observer';
 import { renderInWidget } from '../test/render';
 import { apiBooking, calledPaths, fleetApi, stubVulogApi } from '../test/vulog-api';
@@ -352,5 +352,110 @@ describe('the booking section', () => {
       'Vehicle',
       'Customer',
     ]);
+  });
+
+  it('says when the back office gives no fleet, and calls nothing', async () => {
+    const fetch = stubVulogApi(fleetApi({}));
+    const bo = fakeBo({ getContext: async () => ({ fleetId: null, locale: 'en_GB', basename: '/' }) });
+    const view = await render(bo.api);
+    await vi.waitFor(() =>
+      expect(view.container.querySelector('[role="alert"]')?.textContent).toContain('no fleet'),
+    );
+    expect(calledPaths(fetch).some((path) => path.includes('bookingrequests'))).toBe(false);
+  });
+
+  it('warns when Ongoing cannot read every confirmed booking at once', async () => {
+    stubVulogApi(
+      fleetApi({}, ({ path }) =>
+        path.endsWith('/status/CONFIRMED')
+          ? Response.json([], { headers: { totalelements: '2500', totalpages: '2' } })
+          : undefined,
+      ),
+    );
+    const view = await render(routedBo().api);
+    await vi.waitFor(() => expect(view.tab('Ongoing')).toBeDefined());
+    view.tab('Ongoing')?.click();
+    await vi.waitFor(() => expect(view.container.textContent).toContain('some ongoing bookings may be missing'));
+  });
+
+  it('refreshes the bookings, the counts, the trips and the stored states', async () => {
+    const fetch = stubVulogApi(fleetApi({ bookings: { PENDING: upcoming } }));
+    const bo = routedBo();
+    const view = await render(bo.api);
+    await vi.waitFor(() => expect(view.row('booking-1')).not.toBeNull());
+    await vi.waitFor(() => expect(bo.storage.api.query).toHaveBeenCalledTimes(1));
+    const before = calledPaths(fetch).length;
+
+    view.button('Refresh', view.container)?.click();
+
+    await vi.waitFor(() => expect(bo.storage.api.query).toHaveBeenCalledTimes(2));
+    await vi.waitFor(() => {
+      const after = calledPaths(fetch).slice(before);
+      expect(after.some((path) => path.includes('status/PENDING?page=0&size=50'))).toBe(true);
+      expect(after.some((path) => path.includes('status/ALERT?page=0&size=1'))).toBe(true);
+    });
+  });
+
+  it('shows no KPI count while the stored states cannot be read', async () => {
+    stubVulogApi(fleetApi({ bookings: { PENDING: upcoming } }));
+    const bo = routedBo();
+    bo.storage.api.query.mockRejectedValue(hostError('rate-limited', 429));
+    const view = await render(bo.api);
+    await vi.waitFor(() => expect(view.container.textContent).toContain('could not be loaded: pre-allocations'));
+    const kpi = view.container.querySelector('[role="group"] button');
+    expect(kpi?.textContent).toBe('No vehicle < 24 h');
+  });
+
+  it('keeps the retry of a failed page while every page loads for a filter', async () => {
+    let failSecond = true;
+    stubVulogApi(
+      fleetApi({}, ({ path, query }) => {
+        if (!path.endsWith('/status/PENDING') || query.get('size') === '1') return undefined;
+        const headers = { totalelements: '2', totalpages: '2' };
+        if (query.get('page') === '0') return Response.json([apiBooking({ id: 'booking-1' })], { headers });
+        if (failSecond) return new Response('', { status: 503 });
+        return Response.json([apiBooking({ id: 'booking-2' })], { headers });
+      }),
+    );
+    const view = await render(routedBo().api);
+    await vi.waitFor(() => expect(view.row('booking-1')).not.toBeNull());
+    [...view.container.querySelectorAll<HTMLElement>('.MuiChip-root')]
+      .find((chip) => chip.textContent === 'No return date')
+      ?.click();
+    await vi.waitFor(() => expect(view.container.textContent).toContain('The next rows could not be loaded.'), {
+      timeout: 5000,
+    });
+    failSecond = false;
+    view.button('Retry', view.container)?.click();
+    await vi.waitFor(() => expect(view.container.textContent).not.toContain('The next rows could not be loaded.'));
+  });
+
+  it('copies a booking id and says so, or says it could not', async () => {
+    stubVulogApi(fleetApi({ bookings: { PENDING: upcoming } }));
+    const bo = routedBo();
+    const writeText = vi.fn(async () => undefined);
+    vi.stubGlobal('navigator', { ...navigator, clipboard: { writeText } });
+    const view = await render(bo.api);
+    await vi.waitFor(() => expect(view.row('booking-1')).not.toBeNull());
+    const copy = async () => {
+      view.button('More actions', view.row('booking-1')!)?.click();
+      await vi.waitFor(() => expect(document.body.textContent).toContain('Copy the booking id'));
+      [...document.body.querySelectorAll<HTMLElement>('[role="menuitem"]')]
+        .find((item) => item.textContent === 'Copy the booking id')
+        ?.click();
+    };
+    await copy();
+    await vi.waitFor(() =>
+      expect(bo.api.notify).toHaveBeenCalledWith({ message: 'Booking id copied.', severity: 'success' }),
+    );
+    expect(writeText).toHaveBeenCalledWith('booking-1');
+    writeText.mockRejectedValueOnce(new Error('denied'));
+    await copy();
+    await vi.waitFor(() =>
+      expect(bo.api.notify).toHaveBeenCalledWith({
+        message: 'The booking id could not be copied.',
+        severity: 'error',
+      }),
+    );
   });
 });

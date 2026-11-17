@@ -18,34 +18,40 @@ const memory = (value: string | null) => ({
 
 describe('readPreferences', () => {
   it('reads the saved preferences', () => {
-    expect(readPreferences(memory('{"density":"compact","columns":["model"]}'))).toEqual({
-      density: 'compact',
-      columns: ['model'],
-    });
+    expect(
+      readPreferences(memory('{"density":"compact","columns":{"hidden":["model"],"shown":["radius"]}}')),
+    ).toEqual({ density: 'compact', columns: { hidden: ['model'], shown: ['radius'] } });
   });
 
   it('gives the defaults without storage, or for what it cannot read', () => {
     expect(readPreferences(null)).toEqual(DEFAULT_PREFERENCES);
     expect(readPreferences(memory(null))).toEqual(DEFAULT_PREFERENCES);
     expect(readPreferences(memory('not json'))).toEqual(DEFAULT_PREFERENCES);
-    expect(readPreferences(memory('{"density":"huge","columns":"x"}'))).toEqual(DEFAULT_PREFERENCES);
+    expect(readPreferences(memory('{"density":"huge","columns":["x"]}'))).toEqual(DEFAULT_PREFERENCES);
   });
 });
 
 describe('isColumnShown and withColumn', () => {
+  const none = { hidden: [], shown: [] };
+
   it('hides a column shown by default, and shows it again', () => {
-    const hidden = withColumn([], 'model', false, false);
-    expect(hidden).toEqual(['model']);
+    const hidden = withColumn(none, 'model', false, false);
+    expect(hidden).toEqual({ hidden: ['model'], shown: [] });
     expect(isColumnShown(hidden, 'model', false)).toBe(false);
-    expect(withColumn(hidden, 'model', false, true)).toEqual([]);
+    expect(withColumn(hidden, 'model', false, true)).toEqual(none);
   });
 
   it('shows a column hidden by default, and hides it again', () => {
-    const shown = withColumn([], 'radius', true, true);
-    expect(shown).toEqual(['!radius']);
+    const shown = withColumn(none, 'radius', true, true);
+    expect(shown).toEqual({ hidden: [], shown: ['radius'] });
     expect(isColumnShown(shown, 'radius', true)).toBe(true);
-    expect(isColumnShown([], 'radius', true)).toBe(false);
-    expect(withColumn(shown, 'radius', true, false)).toEqual([]);
+    expect(isColumnShown(none, 'radius', true)).toBe(false);
+    expect(withColumn(shown, 'radius', true, false)).toEqual(none);
+  });
+
+  it('records a column once, whatever its id', () => {
+    const twice = withColumn(withColumn(none, '!odd', false, false), '!odd', false, false);
+    expect(twice).toEqual({ hidden: ['!odd'], shown: [] });
   });
 });
 
@@ -74,7 +80,7 @@ describe('useListPreferences', () => {
     await vi.waitFor(() => expect(view.container.textContent).toBe('comfortable'));
     expect(JSON.parse(localStorage.getItem(PREFERENCES_KEY) ?? '{}')).toEqual({
       density: 'comfortable',
-      columns: [],
+      columns: { hidden: [], shown: [] },
     });
   });
 

@@ -45,11 +45,22 @@ describe('queryKeys', () => {
       expect(isPersistedQueryKey(key)).toBe(false);
   });
 
-  it('persists the vehicle catalogue and the addresses, with rounded coordinates', () => {
+  it('persists the vehicle catalogue, never the address of a pickup point', () => {
     expect(isPersistedQueryKey(queryKeys.vehicleCatalog('FLEET-1'))).toBe(true);
-    const key = queryKeys.reverseGeocoding(48.8566123, 2.3522987, 'fr');
-    expect(key).toEqual(['geocoding', 'reverse', '48.85661', '2.35230', 'fr']);
-    expect(isPersistedQueryKey(key)).toBe(true);
+    const key = queryKeys.bookingAddress(48.8566123, 2.3522987, 'fr');
+    expect(key).toEqual(['booking-geocoding', '48.85661', '2.35230', 'fr']);
+    expect(isPersistedQueryKey(key)).toBe(false);
+  });
+
+  it('makes the fleet bookings a prefix of every booking key', () => {
+    const prefix = queryKeys.fleetBookings('FLEET-1');
+    for (const key of [
+      queryKeys.bookings('FLEET-1', 'alert', { field: 'startDate', direction: 'ASC' }),
+      queryKeys.bookingCount('FLEET-1', 'alert'),
+      queryKeys.confirmedBookings('FLEET-1'),
+      queryKeys.booking('FLEET-1', 'b'),
+    ])
+      expect(key.slice(0, prefix.length)).toEqual([...prefix]);
   });
 
   it('makes the fleet states a prefix of the state of a booking', () => {

@@ -33,6 +33,11 @@ export interface TabBookings {
   readonly complete: boolean;
   /** Pages loaded and their total, while every page is being loaded. */
   readonly progress: { readonly loaded: number; readonly total: number | null } | null;
+  /**
+   * Ongoing only: the API has more `CONFIRMED` bookings than the one call reads, so bookings may be
+   * missing.
+   */
+  readonly truncated: boolean;
   /** When the first page was received, in ms, 0 before. */
   readonly updatedAt: number;
   readonly refetch: () => void;
@@ -98,6 +103,9 @@ export function useTabBookings(
       pagination: undefined,
       complete: true,
       progress: null,
+      truncated:
+        confirmed.data?.totalElements != null &&
+        confirmed.data.totalElements > confirmed.data.items.length,
       updatedAt: confirmed.dataUpdatedAt,
       refetch: () => {
         void confirmed.refetch();
@@ -119,6 +127,7 @@ export function useTabBookings(
       fetchNextPage: () => void fetchNextPage(),
     },
     complete: pages.isSuccess && !hasNextPage,
+    truncated: false,
     progress:
       loadAll && pages.isSuccess && hasNextPage ? { loaded: pageCount, total: totalPages } : null,
     updatedAt: pages.dataUpdatedAt,

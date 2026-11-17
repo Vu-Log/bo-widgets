@@ -116,5 +116,10 @@
   "vehicle.preallocated": "Pre-allocated vehicle",
   "vehicle.preallocatedHint": "Out of service until the start, with the booking id in its reason.",
   "vehicle.preallocatedShort": "pre-allocated",
-  "vehicle.title": "Vehicle"
+  "vehicle.title": "Vehicle",
+  "list.noFleet": "The back office gives no fleet: choose a fleet to see its bookings.",
+  "list.truncated": "The fleet has more confirmed bookings than can be read at once: some ongoing bookings may be missing.",
+  "detail.stateFailed": "The data the widget keeps for this booking could not be read.",
+  "vehicle.catalogFailed": "The vehicles of the fleet could not be loaded: the plate is unknown.",
+  "vehicle.unknown": "This vehicle is not among the vehicles of the fleet."
 }

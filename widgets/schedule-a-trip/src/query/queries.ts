@@ -296,7 +296,8 @@ export const liveVehiclesQueryOptions = (authFetch: AuthFetch, fleetId: string) 
   });
 
 /**
- * The address of a point: reference data, persisted, never fetched again while cached.
+ * The address of the pickup point of a booking: personal data, in memory only, never fetched again
+ * while cached.
  *
  * @param token - The public Mapbox token.
  * @param point - The point.
@@ -304,18 +305,17 @@ export const liveVehiclesQueryOptions = (authFetch: AuthFetch, fleetId: string) 
  * @param fetcher - `fetch`, for the tests.
  * @returns Options for `useQuery`.
  */
-export const reverseGeocodingQueryOptions = (
+export const bookingAddressQueryOptions = (
   token: string,
   point: GeoPoint,
   language: string,
   fetcher?: FetchLike,
 ) =>
   queryOptions({
-    queryKey: queryKeys.reverseGeocoding(point.latitude, point.longitude, language),
+    queryKey: queryKeys.bookingAddress(point.latitude, point.longitude, language),
     queryFn: async ({ signal }) =>
       unwrap(await reverseGeocode(token, point, language, fetcher, signal)),
     staleTime: Number.POSITIVE_INFINITY,
-    gcTime: PERSIST_MAX_AGE_MS,
   });
 
 /**

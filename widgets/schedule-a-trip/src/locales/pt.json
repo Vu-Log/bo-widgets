@@ -116,5 +116,10 @@
   "vehicle.preallocated": "Veículo pré-alocado",
   "vehicle.preallocatedHint": "Fora de serviço até a saída, com o id da reserva no motivo.",
   "vehicle.preallocatedShort": "pré-alocado",
-  "vehicle.title": "Veículo"
+  "vehicle.title": "Veículo",
+  "list.noFleet": "O back office não indica nenhuma frota: escolha uma frota para ver as reservas.",
+  "list.truncated": "A frota tem mais reservas confirmadas do que é possível ler de uma vez: algumas reservas em andamento podem estar faltando.",
+  "detail.stateFailed": "Não foi possível ler os dados que o widget guarda desta reserva.",
+  "vehicle.catalogFailed": "Não foi possível carregar os veículos da frota: a placa é desconhecida.",
+  "vehicle.unknown": "Este veículo não está entre os veículos da frota."
 }

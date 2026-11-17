@@ -116,5 +116,10 @@
   "vehicle.preallocated": "Előre kiosztott jármű",
   "vehicle.preallocatedHint": "Az indulásig üzemen kívül, az okban a foglalásazonosítóval.",
   "vehicle.preallocatedShort": "előre kiosztva",
-  "vehicle.title": "Jármű"
+  "vehicle.title": "Jármű",
+  "list.noFleet": "A back office nem ad meg flottát: válasszon flottát a foglalásai megtekintéséhez.",
+  "list.truncated": "A flottának több megerősített foglalása van, mint amennyi egyszerre beolvasható: egyes folyamatban lévő foglalások hiányozhatnak.",
+  "detail.stateFailed": "A widget által erről a foglalásról tárolt adatok nem olvashatók be.",
+  "vehicle.catalogFailed": "A flotta járművei nem tölthetők be: a rendszám ismeretlen.",
+  "vehicle.unknown": "Ez a jármű nincs a flotta járművei között."
 }

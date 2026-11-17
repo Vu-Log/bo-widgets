@@ -5,7 +5,7 @@ import type { ReactNode } from 'react';
 import { apiErrorText, ApiRequestError } from '../../api/http';
 import { customerName, isBusinessBooking } from '../../domain/customers';
 import { useI18n } from '../../i18n';
-import { reverseGeocodingQueryOptions } from '../../query/queries';
+import { bookingAddressQueryOptions } from '../../query/queries';
 import { SkeletonCell } from '../../ui/SkeletonCell';
 import { StaticMap } from '../../ui/StaticMap';
 import type { BookingContext } from '../extensions';
@@ -114,7 +114,7 @@ function Address({ latitude, longitude }: { readonly latitude: number; readonly 
   const { mapboxToken } = useSection();
   const point = { latitude, longitude };
   const address = useQuery({
-    ...reverseGeocodingQueryOptions(mapboxToken ?? '', point, language),
+    ...bookingAddressQueryOptions(mapboxToken ?? '', point, language),
     enabled: mapboxToken !== null,
   });
   const coordinates = `${latitude.toFixed(5)}, ${longitude.toFixed(5)}`;
