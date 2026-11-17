@@ -179,7 +179,8 @@ export function useBookingContexts(input: {
         previous.state === state &&
         previous.customer === customer
           ? previous
-          : { booking, tab, state, customer };
+          : // Frozen: the grid memoizes the rows on these objects, a feature must never change one.
+            Object.freeze({ booking, tab, state, customer });
       next.set(booking.id, context);
       return context;
     });

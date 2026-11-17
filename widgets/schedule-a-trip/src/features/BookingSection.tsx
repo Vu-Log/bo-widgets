@@ -216,6 +216,9 @@ function FleetSection({
       (kpi) => kpi.tab === tab && filters[tab].length === 1 && filters[tab][0] === kpi.filterId,
     ) ?? null;
   const selectKpi = (kpi: BookingKpi) => {
+    // A KPI on an unknown filter (logged by the registry) would look active and filter nothing.
+    const known = features.some((feature) => feature.filters?.some((filter) => filter.id === kpi.filterId));
+    if (!known) return;
     const isActive = activeKpi?.id === kpi.id;
     setTab(kpi.tab);
     setFilters((current) => ({ ...current, [kpi.tab]: isActive ? [] : [kpi.filterId] }));

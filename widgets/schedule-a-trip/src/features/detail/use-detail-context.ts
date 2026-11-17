@@ -92,7 +92,7 @@ export function useDetailContext(
   const ctx = useMemo<BookingContext | null>(() => {
     if (!booking || tab === null) return null;
     if (fromList && fromList.customer === customer && fromList.state === stateValue) return fromList;
-    return { booking, tab, customer, state: stateValue };
+    return Object.freeze({ booking, tab, customer, state: stateValue });
   }, [booking, tab, customer, stateValue, fromList]);
 
   if (fromList === undefined && single.error) return { status: 'error', error: single.error };

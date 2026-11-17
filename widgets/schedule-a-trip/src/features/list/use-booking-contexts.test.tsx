@@ -58,6 +58,10 @@ describe('useBookingContexts', () => {
     expect(latest().customerStatus('user-2')).toBe('loading');
     expect(latest().customerStatus(null)).toBe('missing');
     const first = latest().contexts[0];
+    expect(Object.isFrozen(first)).toBe(true);
+    expect(() => {
+      (first as { tab: string }).tab = 'alert';
+    }).toThrow(TypeError);
 
     rerender(['b-1', 'b-2']);
     await vi.waitFor(() => expect(latest().contexts[1]?.customer?.id).toBe('user-2'));
