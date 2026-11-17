@@ -171,7 +171,9 @@ function FleetSection({
   const failedSources = useMemo(() => {
     const active = new Set(activeIds.split('\n'));
     return features.flatMap((feature) =>
-      (feature.filterSources ?? []).filter((source) => active.has(source.filterId) && source.error),
+      (feature.filterSources ?? []).flatMap((source) =>
+        active.has(source.filterId) && source.failure ? [source.failure] : [],
+      ),
     );
   }, [features, activeIds]);
   const bookings = useMemo(() => {
@@ -413,7 +415,7 @@ function FleetSection({
           severity="warning"
           sx={{ flex: 'none', borderRadius: 0 }}
           action={
-            <Button color="inherit" size="small" onClick={() => failedSources.forEach((source) => source.retry?.())}>
+            <Button color="inherit" size="small" onClick={() => failedSources.forEach((failure) => failure.retry())}>
               {t('grid.retry')}
             </Button>
           }

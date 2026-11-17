@@ -66,6 +66,43 @@ describe('createPrepaymentFeature', () => {
     }
   });
 
+  it('disables exactly the actions that call the billing API', () => {
+    const feature = createPrepaymentFeature({ t, now: () => NOW, moneyBlocker: 'X' });
+    const charged = { chargeStartedAt: NOW.toISOString(), invoiceId: 'i-1' };
+    const primary = (ctx: ReturnType<typeof row>) => {
+      const action = feature.primaryAction?.(ctx);
+      return [action?.id, action?.disabledReason ?? null];
+    };
+    expect(primary(row({ state: doc({ chargeStartedAt: NOW.toISOString() }) }))).toEqual(['prepayment.verify', 'X']);
+    expect(primary(row({ state: doc({ ...charged, invoiceStatus: 'REFUSED' }) }))).toEqual(['prepayment.retry', 'X']);
+    expect(primary(row({ tab: 'cancelled', state: doc({ ...charged, invoiceStatus: 'PAID', refundedAt: NOW.toISOString() }) }))).toEqual([
+      'prepayment.resume-refund',
+      'X',
+    ]);
+    expect(
+      primary(row({ tab: 'cancelled', state: doc({ ...charged, invoiceStatus: 'REFUNDED', refundedAt: NOW.toISOString(), toRegularize: { missingAmount: 1, at: NOW.toISOString() }, regularizationPending: true }) })),
+    ).toEqual(['prepayment.regularize', null]);
+  });
+
+  it('opens the dialogs of its cards in its own store, shown by its host', async () => {
+    const dialogs = createDialogStore();
+    const feature = createPrepaymentFeature({ t, now: () => NOW, dialogs });
+    expect(createPrepaymentFeature({ t, dialogs }).Host).toBe(feature.Host);
+    const Host = feature.Host!;
+    const ctx = row({ state: doc({ internalNotes: '' }) });
+    const rendered = await renderWithBilling(
+      <>
+        {feature.detailCards?.map((card) => <div key={card.id}>{card.render(ctx)}</div>)}
+        <Host />
+      </>,
+    );
+    unmount = rendered.view.unmount;
+    await vi.waitFor(() => expect(bodyText()).toContain('Internal notes'));
+    [...document.body.querySelectorAll<HTMLButtonElement>('button')].find((candidate) => candidate.textContent === 'Internal notes')?.click();
+    await vi.waitFor(() => expect(dialogs.getSnapshot()).toMatchObject({ action: 'notes' }));
+    await vi.waitFor(() => expect(document.body.querySelector('[role="dialog"]')).not.toBeNull());
+  });
+
   it('shows the refund and the notes disabled without stored data, with why', () => {
     const feature = createPrepaymentFeature({ t, now: () => NOW });
     const reasons = (ctx: ReturnType<typeof row>) =>

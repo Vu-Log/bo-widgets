@@ -444,6 +444,14 @@ describe('the booking section', () => {
       () => expect(view.container.textContent).toContain('The bookings of this filter could not be found'),
       { timeout: 5000 },
     );
+
+    // The storage answers again: the retry lists the bookings and the warning goes.
+    bo.storage.api.query.mockReset();
+    bo.storage.api.query.mockImplementation(async () => ({ items: [], nextCursor: null }));
+    view.button('Retry', view.container)?.click();
+    await vi.waitFor(() =>
+      expect(view.container.textContent).not.toContain('The bookings of this filter could not be found'),
+    );
   });
 
   it('shows no KPI count while the stored states cannot be read', async () => {

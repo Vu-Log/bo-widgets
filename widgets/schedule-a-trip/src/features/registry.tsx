@@ -60,12 +60,19 @@ export function validateFeatures(features: readonly SectionFeature[]): string[] 
 export interface FilterSource {
   /** The filter (of the same feature) these bookings are for. */
   readonly filterId: string;
-  /** Their ids; `undefined` while they load or when they could not be found. */
+  /**
+   * Their ids; `undefined` while they load or when the first lookup failed. After a later lookup
+   * failed, the last ids found (maybe stale), with {@link FilterSource.failure} set.
+   */
   readonly bookingIds: readonly string[] | undefined;
-  /** Why they could not be found: the section says the list may be incomplete. */
-  readonly error?: Error | null;
-  /** Looks for them again, after an error. */
-  readonly retry?: () => void;
+  /** Set when the last lookup failed: the section says the list may be incomplete, with a retry. */
+  readonly failure?: FilterSourceFailure | null;
+}
+
+/** A lookup of a {@link FilterSource} that failed, and how to try it again. */
+export interface FilterSourceFailure {
+  readonly error: Error;
+  readonly retry: () => void;
 }
 
 /**
@@ -109,6 +116,15 @@ export function useBookingFeatures(
   const pending = usePendingRegularizations();
   const regularizationIds = useMemo(() => pending.data?.docs.map((doc) => doc.id), [pending.data]);
   const retryRegularizations = pending.refetch;
+  const invalidRegularizations = pending.data?.invalid;
+  // A document that breaks the contract is left out of "To regularize": say which, never silently.
+  useEffect(() => {
+    if (invalidRegularizations && invalidRegularizations.length > 0) {
+      bo.log.warn('Bookings to regularize left out: they break the contract', {
+        documents: invalidRegularizations.map((doc) => ({ id: doc.id, issues: doc.issues })),
+      });
+    }
+  }, [bo, invalidRegularizations]);
   useEffect(() => {
     if (pending.error) {
       bo.log.warn('The bookings to regularize could not be listed', { error: pending.error.message });
@@ -121,8 +137,7 @@ export function useBookingFeatures(
         {
           filterId: PREPAYMENT_FILTER_IDS.toRegularize,
           bookingIds: regularizationIds,
-          error: pending.error,
-          retry: () => void retryRegularizations(),
+          failure: pending.error ? { error: pending.error, retry: () => void retryRegularizations() } : null,
         },
       ],
     }),

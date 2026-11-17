@@ -154,7 +154,7 @@ describe('the registered features', () => {
     const features = await registryFeatures(bo.api);
     const prepayment = features().find((feature) => feature.id === 'prepayment');
     expect(prepayment?.filterSources).toMatchObject([
-      { filterId: PREPAYMENT_FILTER_IDS.toRegularize, bookingIds: ['booking-7'], error: null },
+      { filterId: PREPAYMENT_FILTER_IDS.toRegularize, bookingIds: ['booking-7'], failure: null },
     ]);
   });
 
@@ -169,7 +169,7 @@ describe('the registered features', () => {
     const view = await renderInWidget(<Probe />, bo.api);
     unmount = view.unmount;
     await vi.waitFor(
-      () => expect(features.find((feature) => feature.id === 'prepayment')?.filterSources?.[0]?.error).toBeInstanceOf(Error),
+      () => expect(features.find((feature) => feature.id === 'prepayment')?.filterSources?.[0]?.failure?.error).toBeInstanceOf(Error),
       { timeout: 5000 },
     );
     expect(features.find((feature) => feature.id === 'prepayment')?.filterSources?.[0]?.bookingIds).toBeUndefined();

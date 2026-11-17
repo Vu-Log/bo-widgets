@@ -4,7 +4,7 @@ import { fakeInvoice } from '../../test/fake-aima';
 import { FeatureHost } from '../../test/feature-host';
 import { BOOKING_ID, booking, customer, moneySetup, NOW, renderWithBilling } from '../../test/prepayment-fixtures';
 import { prepaymentFeature } from './index';
-import { recordInvoiceStatus } from './invoice-status';
+import { recordInvoiceStatus, resetInvoiceStatusSync } from './invoice-status';
 
 let setup: Awaited<ReturnType<typeof moneySetup>> | undefined;
 let unmount: (() => void) | undefined;
@@ -13,6 +13,7 @@ afterEach(() => {
   setup = undefined;
   unmount?.();
   unmount = undefined;
+  resetInvoiceStatusSync();
   vi.restoreAllMocks();
 });
 
@@ -89,6 +90,62 @@ describe('useInvoiceStatusSync', () => {
     await vi.waitFor(() => expect(cell()).toBe('Paid'));
     await vi.waitFor(() => expect(rendered.aima.calls.some((call) => call.path.endsWith('/invoices/invoice-1'))).toBe(true));
     expect(rendered.bo.storage.api.update).not.toHaveBeenCalled();
+  });
+
+  it('shows the document read again when another write got there first', async () => {
+    const rendered = await renderWithBilling(
+      <FeatureHost feature={prepaymentFeature} booking={booking()} tab="upcoming" customer={customer()} />,
+      { stored: charged, aima: { invoices: [fakeInvoice({ status: 'PAID' })] } },
+    );
+    // The scheduler (or another browser) wrote the status meanwhile.
+    const original = rendered.bo.storage.api.get.getMockImplementation()!;
+    rendered.bo.storage.api.get.mockImplementation(async (...args: Parameters<typeof original>) => {
+      const doc = await original(...args);
+      return doc ? { ...doc, value: { ...doc.value, invoiceStatus: 'PAID', internalNotes: 'from elsewhere' } } : doc;
+    });
+    unmount = rendered.view.unmount;
+
+    await vi.waitFor(() => expect(document.body.textContent).toContain('from elsewhere'));
+    expect(rendered.bo.storage.api.update).not.toHaveBeenCalled();
+  });
+
+  it('reads the document again after a write whose outcome is unknown', async () => {
+    const rendered = await renderWithBilling(
+      <FeatureHost feature={prepaymentFeature} booking={booking()} tab="upcoming" customer={customer()} />,
+      { stored: charged, aima: { invoices: [fakeInvoice({ status: 'PAID' })] } },
+    );
+    rendered.bo.storage.api.update.mockRejectedValue(hostError('TIMEOUT', null));
+    unmount = rendered.view.unmount;
+
+    await vi.waitFor(() => expect(rendered.bo.storage.api.update).toHaveBeenCalled());
+    await vi.waitFor(() => expect(rendered.bo.storage.api.get.mock.calls.length).toBeGreaterThanOrEqual(3));
+    expect(rendered.bo.api.log.warn).not.toHaveBeenCalledWith('Prepayment: invoice-status ended with unknown-outcome', expect.anything());
+  });
+
+  it('pauses the write-backs after a rate-limited answer', async () => {
+    const rendered = await renderWithBilling(
+      <FeatureHost feature={prepaymentFeature} booking={booking()} tab="upcoming" customer={customer()} />,
+      { stored: charged, aima: { invoices: [fakeInvoice({ status: 'PAID' })] } },
+    );
+    rendered.bo.storage.api.update.mockRejectedValue(hostError('rate-limited', 429));
+    unmount = rendered.view.unmount;
+    await vi.waitFor(() =>
+      expect(rendered.bo.api.log.warn).toHaveBeenCalledWith('Prepayment: invoice-status ended with rate-limited', expect.anything()),
+      { timeout: 5000 },
+    );
+    const writes = rendered.bo.storage.api.update.mock.calls.length;
+    unmount();
+    unmount = undefined;
+
+    const again = await renderWithBilling(
+      <FeatureHost feature={prepaymentFeature} booking={booking()} tab="upcoming" customer={customer()} />,
+      { stored: charged, aima: { invoices: [fakeInvoice({ status: 'PAID' })] } },
+    );
+    unmount = again.view.unmount;
+    await vi.waitFor(() => expect(again.aima.calls.some((call) => call.path.endsWith('/invoices/invoice-1'))).toBe(true));
+    await new Promise((resolve) => setTimeout(resolve, 50));
+    expect(again.bo.storage.api.update).not.toHaveBeenCalled();
+    expect(writes).toBeGreaterThan(0);
   });
 
   it('logs a write that failed, and keeps the live status shown', async () => {

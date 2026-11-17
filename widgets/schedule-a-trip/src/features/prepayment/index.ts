@@ -6,6 +6,7 @@ export {
   createPrepaymentFeature,
   pendingRegularizationsQueryOptions,
   prepaymentFeature,
+  prepaymentHostOf,
   PREPAYMENT_FILTER_IDS,
   usePendingRegularizations,
   usePrepaymentFeature,

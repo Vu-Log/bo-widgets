@@ -41,12 +41,51 @@ export function recordInvoiceStatus(
 
 /** The writes in flight, by fleet, booking and status: several cells of a row read the same invoice. */
 const inFlight = new Set<string>();
+/** The write-backs run one after the other: the storage takes about one write per second. */
+let queue: Promise<unknown> = Promise.resolve();
+/** Pause of the write-backs after a `rate-limited` answer, so that they leave room for the actions. */
+export const SYNC_COOLDOWN_MS = 60_000;
+let pausedUntil = 0;
+
+const enqueue = <T,>(task: () => Promise<T>): Promise<T> => {
+  const next = queue.then(task, task);
+  queue = next.catch(() => undefined);
+  return next;
+};
+
+/** What a write-back did with the cache of the row. */
+type SyncOutcome =
+  | { readonly kind: 'written' | 'read-again'; readonly doc: BookingStateDoc | null }
+  | { readonly kind: 'skipped' }
+  | { readonly kind: 'failed'; readonly failure: StorageFailure };
+
+/**
+ * Writes the status, then gives the document to show: the one written, or the one read again when
+ * another write got there first or the outcome of the write is unknown.
+ */
+async function syncOnce(
+  deps: Pick<MoneyDeps, 'collection' | 'now' | 'sleep'>,
+  bookingId: string,
+  invoice: Pick<Invoice, 'id' | 'status'>,
+): Promise<SyncOutcome> {
+  if (Date.now() < pausedUntil) return { kind: 'skipped' };
+  const written = await recordInvoiceStatus(deps, bookingId, invoice);
+  if (written.ok) return { kind: 'written', doc: written.value };
+  const failure = written.error;
+  if (failure.kind === 'rate-limited') pausedUntil = Date.now() + SYNC_COOLDOWN_MS;
+  if (failure.kind !== 'refused' && failure.kind !== 'unknown-outcome') return { kind: 'failed', failure };
+  // Another write got there first, or this one may have landed: show the document as it is now.
+  const fresh = await readBookingState(deps.collection, bookingId);
+  return fresh.ok ? { kind: 'read-again', doc: fresh.value } : { kind: 'failed', failure: fresh.error };
+}
 
 /**
  * Keeps the stored status of the invoice of a row equal to the live one: when the invoice read
  * differs from the document, writes it once ({@link recordInvoiceStatus}) and puts the document in
- * the cache of the row (read again when another write got there first). A failure is logged,
- * never retried in a loop: the next read of the invoice tries again.
+ * the cache of the row (read again when another write got there first or its outcome is unknown).
+ * The write-backs of the rows run one at a time, and pause for {@link SYNC_COOLDOWN_MS} after a
+ * `rate-limited` answer. A failure is logged, never retried in a loop: the next mount of the row
+ * tries again.
  *
  * @param ctx - The row.
  * @param invoice - Its live invoice, `undefined` while not loaded.
@@ -67,23 +106,22 @@ export function useInvoiceStatusSync(ctx: BookingContext, invoice: Invoice | und
     if (inFlight.has(key)) return;
     inFlight.add(key);
     void guard('invoice-status', bookingId, () =>
-      recordInvoiceStatus(deps, bookingId, { id: invoiceId, status }),
-    ).then(async (result) => {
+      enqueue(() => syncOnce(deps, bookingId, { id: invoiceId, status })),
+    ).then((result) => {
       inFlight.delete(key);
       if (!result.ok) return;
-      const stateKey = queryKeys.bookingState(fleetId, bookingId);
-      if (result.value.ok) {
-        queryClient.setQueryData(stateKey, result.value.value);
-        return;
+      const outcome = result.value;
+      if (outcome.kind === 'failed') logOutcome('invoice-status', bookingId, outcome.failure);
+      else if (outcome.kind !== 'skipped') {
+        queryClient.setQueryData(queryKeys.bookingState(fleetId, bookingId), outcome.doc);
       }
-      if (result.value.error.kind !== 'refused') {
-        logOutcome('invoice-status', bookingId, result.value.error);
-        return;
-      }
-      // Another write got there first: show the document as it is now.
-      const fresh = await readBookingState(deps.collection, bookingId);
-      if (fresh.ok) queryClient.setQueryData(stateKey, fresh.value);
-      else logOutcome('invoice-status', bookingId, fresh.error);
     });
   }, [deps, fleetId, bookingId, invoiceId, status, queryClient, guard, logOutcome]);
+}
+
+/** Forgets the pause and the writes in flight: for tests only. */
+export function resetInvoiceStatusSync(): void {
+  inFlight.clear();
+  pausedUntil = 0;
+  queue = Promise.resolve();
 }

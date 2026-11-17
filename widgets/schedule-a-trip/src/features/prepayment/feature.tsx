@@ -52,25 +52,43 @@ export interface PrepaymentFeatureOptions {
   /** Where the actions open their dialogs; {@link prepaymentDialogs} by default. */
   readonly dialogs?: DialogStore;
   /**
-   * The host of the dialogs of {@link dialogs}, built once per store: a new component on each new
-   * feature (a change of language) would remount the dialog open. Built here by default.
-   */
-  readonly Host?: () => ReactNode;
-  /**
    * Why the money actions (charge, verify, retry, refund) cannot run, as a final text: invalid
    * settings, or no operator id ({@link moneyBlockerReason}). They are shown disabled with it.
    */
   readonly moneyBlocker?: string | null;
 }
 
-/** The actions that call the billing API: disabled while the settings are invalid. */
-const MONEY_ACTIONS: ReadonlySet<PrepaymentActionId> = new Set([
-  'charge',
-  'verify',
-  'retry',
-  'refund',
-  'resume-refund',
-]);
+/** Whether each action calls the billing API: those are disabled while the settings are invalid. */
+const IS_MONEY_ACTION: Readonly<Record<PrepaymentActionId, boolean>> = {
+  charge: true,
+  verify: true,
+  retry: true,
+  refund: true,
+  'resume-refund': true,
+  regularize: false,
+  'undo-regularization': false,
+  notes: false,
+};
+
+const hosts = new WeakMap<DialogStore, () => ReactNode>();
+
+/**
+ * The host of the dialogs of a store, one component per store: a new component on each new
+ * feature (a change of language) would remount the dialog open and lose what was typed.
+ *
+ * @param store - The dialog store of the feature.
+ * @returns The same component for the same store.
+ */
+export function prepaymentHostOf(store: DialogStore): () => ReactNode {
+  let Host = hosts.get(store);
+  if (!Host) {
+    Host = function PrepaymentDialogs() {
+      return <PrepaymentHost store={store} />;
+    };
+    hosts.set(store, Host);
+  }
+  return Host;
+}
 
 const UNAVAILABLE_REASONS: Readonly<Record<UnavailableReason, MessageKey>> = {
   archived: 'prepayment.tooltip.archived',
@@ -129,11 +147,11 @@ export function createPrepaymentFeature(options: PrepaymentFeatureOptions): Book
   const now = options.now ?? (() => new Date());
   const dialogs = options.dialogs ?? prepaymentDialogs;
   const moneyBlocker = options.moneyBlocker ?? null;
-  const Host = options.Host ?? (() => <PrepaymentHost store={dialogs} />);
+  const Host = prepaymentHostOf(dialogs);
 
   /** An action; `reason` disables it, and so does {@link moneyBlocker} for a money action. */
   const action = (id: PrepaymentActionId, reason: string | null = null): BookingAction => {
-    const disabledReason = reason ?? (MONEY_ACTIONS.has(id) ? moneyBlocker : null);
+    const disabledReason = reason ?? (IS_MONEY_ACTION[id] ? moneyBlocker : null);
     return {
       id: `prepayment.${id}`,
       label: t(ACTION_LABELS[id]),
@@ -274,16 +292,9 @@ export function usePrepaymentFeature(options: { readonly now?: () => Date } = {}
   const user = useCurrentUser();
   const moneyBlocker = moneyBlockerReason(settings.isError ? null : settings.data, user.id, t);
   const [dialogs] = useState(createDialogStore);
-  const Host = useMemo(
-    () =>
-      function PrepaymentDialogs() {
-        return <PrepaymentHost store={dialogs} />;
-      },
-    [dialogs],
-  );
   return useMemo(
-    () => createPrepaymentFeature({ t, now, dialogs, Host, moneyBlocker }),
-    [t, now, dialogs, Host, moneyBlocker],
+    () => createPrepaymentFeature({ t, now, dialogs, moneyBlocker }),
+    [t, now, dialogs, moneyBlocker],
   );
 }
 
