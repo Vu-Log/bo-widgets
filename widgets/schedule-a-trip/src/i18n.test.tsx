@@ -115,6 +115,30 @@ describe('createI18n', () => {
     expect(createI18n('en_GB').formatDate(date, 'P')).toBe('10/03/2026');
   });
 
+  it('formats a date in a time zone, or in the zone of the browser without one', () => {
+    const date = new Date('2026-03-10T12:00:00Z');
+    const french = createI18n('fr_FR');
+    expect(french.formatDateInZone(date, 'HH:mm', 'Asia/Tokyo')).toBe('21:00');
+    expect(french.formatDateInZone(date, 'PPP', 'America/Los_Angeles')).toBe('10 mars 2026');
+    expect(french.formatDateInZone(date, 'HH:mm', null)).toBe(french.formatDate(date, 'HH:mm'));
+  });
+
+  it('throws on an unknown time zone', () => {
+    expect(() => createI18n('en_GB').formatDateInZone(new Date(), 'p', 'Not/AZone')).toThrow(
+      RangeError,
+    );
+  });
+
+  it('says how far a date is from now', () => {
+    const now = new Date('2026-03-10T12:00:00Z');
+    expect(createI18n('en_GB').formatRelative(new Date('2026-03-10T14:00:00Z'), now)).toBe(
+      'in about 2 hours',
+    );
+    expect(createI18n('de_DE').formatRelative(new Date('2026-03-07T12:00:00Z'), now)).toBe(
+      'vor 3 Tagen',
+    );
+  });
+
   it('uses the Brazilian date locale for pt_BR', () => {
     const date = new Date(2026, 2, 10);
     expect(createI18n('pt_BR').formatDate(date, 'P')).toBe('10/03/2026');

@@ -1,5 +1,6 @@
 import { useBoContext } from '@vulog/bo-widget-react';
-import { format, type Locale } from 'date-fns';
+import { format, formatDistance, type Locale } from 'date-fns';
+import { formatInTimeZone } from 'date-fns-tz';
 import { de, enGB, es, fr, hu, it, nl, pt, ptBR } from 'date-fns/locale';
 import { useMemo } from 'react';
 import deMessages from './locales/de.json';
@@ -101,6 +102,13 @@ export interface I18n {
   readonly formatCurrency: (amount: number, currency: string) => string;
   /** A date with a date-fns pattern (`PPp`…), in the locale of the BO. */
   readonly formatDate: (date: Date, pattern: string) => string;
+  /**
+   * A date with a date-fns pattern in a time zone (the fleet's), in the locale of the BO; in the
+   * time zone of the browser when `timeZone` is `null`.
+   */
+  readonly formatDateInZone: (date: Date, pattern: string, timeZone: string | null) => string;
+  /** How far a date is from now, in words: "in 2 hours", "3 days ago". */
+  readonly formatRelative: (date: Date, now: Date) => string;
 }
 
 const bcp47 = (boLocale: string | null, language: Language): string => {
@@ -131,6 +139,12 @@ export function createI18n(boLocale: string | null): I18n {
     formatCurrency: (amount, currency) =>
       new Intl.NumberFormat(locale, { style: 'currency', currency }).format(amount),
     formatDate: (date, pattern) => format(date, pattern, { locale: dateLocale }),
+    formatDateInZone: (date, pattern, timeZone) =>
+      timeZone === null
+        ? format(date, pattern, { locale: dateLocale })
+        : formatInTimeZone(date, timeZone, pattern, { locale: dateLocale }),
+    formatRelative: (date, now) =>
+      formatDistance(date, now, { addSuffix: true, locale: dateLocale }),
   };
 }
 

@@ -1,0 +1,356 @@
+// Wires the real section (features, queries, API wrappers, storage, grid, drawer) together; only
+// the edges are faked: the back office API, fetch and the IntersectionObserver.
+import { connect } from '@vulog/bo-widget-sdk';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { bookingsCollection, createBookingState } from '../storage/booking-state';
+import { fakeBo } from '../test/fake-bo';
+import { activeObservers, installFakeIntersectionObserver } from '../test/intersection-observer';
+import { renderInWidget } from '../test/render';
+import { apiBooking, calledPaths, fleetApi, stubVulogApi } from '../test/vulog-api';
+import { BookingSection } from './BookingSection';
+import type { BookingContext, BookingFeature } from './extensions';
+
+let unmount: (() => void) | undefined;
+
+beforeEach(() => {
+  installFakeIntersectionObserver();
+  localStorage.clear();
+});
+afterEach(() => {
+  unmount?.();
+  unmount = undefined;
+  vi.unstubAllGlobals();
+  vi.restoreAllMocks();
+  localStorage.clear();
+});
+
+/** A fake BO whose `navigate` pushes `routeChanged`, as the back office does. */
+function routedBo(initialPath = '/') {
+  window.history.replaceState(null, '', initialPath);
+  const bo = fakeBo({
+    getContext: async () => ({ fleetId: 'FLEET-1', locale: 'en_GB', basename: '/', timezone: 'UTC' }),
+  });
+  const navigate = vi.fn(async ({ path }: { path: string }) => {
+    const resolved = new URL(path, 'https://bo.example.com/').pathname;
+    queueMicrotask(() => bo.emit('routeChanged', { pathname: resolved, search: '', hash: '' }));
+    return { path: resolved };
+  });
+  Object.assign(bo.api, { navigate });
+  return { ...bo, navigate };
+}
+
+const gridObserver = () =>
+  activeObservers().find((observer) => observer.options.rootMargin?.endsWith('px 0px') && !observer.options.rootMargin.startsWith('0px'));
+
+async function render(api: object, extraFeatures?: readonly BookingFeature[]) {
+  const view = await renderInWidget(<BookingSection extraFeatures={extraFeatures} />, api);
+  unmount = view.unmount;
+  const root = view.container;
+  return {
+    ...view,
+    row: (id: string) => root.querySelector<HTMLElement>(`[role="row"][data-row-id="${id}"]`),
+    drawer: () => document.body.querySelector<HTMLElement>('[role="dialog"][aria-label="Booking details"]'),
+    button: (name: string, within: ParentNode = document.body) =>
+      [...within.querySelectorAll<HTMLButtonElement>('button')].find(
+        (button) => button.textContent === name || button.getAttribute('aria-label') === name,
+      ),
+    tab: (name: string) =>
+      [...root.querySelectorAll<HTMLElement>('[role="tab"]')].find((tab) =>
+        tab.textContent?.startsWith(name),
+      ),
+  };
+}
+
+const upcoming = [
+  apiBooking({ id: 'booking-1', userId: 'user-1', startDate: '2026-03-10T10:00:00Z' }),
+  apiBooking({
+    id: 'booking-2',
+    userId: 'user-2',
+    profileId: 'profile-2',
+    plannedReturnDate: null,
+    startDate: '2026-03-11T10:00:00Z',
+  }),
+];
+
+describe('the booking section', () => {
+  it('lists a tab, enriches the visible rows only, and shows the pre-allocation kept in storage', async () => {
+    const fetch = stubVulogApi(
+      fleetApi({
+        bookings: { PENDING: upcoming, ALERT: [apiBooking({ id: 'alert-1', status: 'ALERT' })] },
+        catalog: [{ id: 'vehicle-1', plate: 'AB-123-CD', model: { id: 7, name: 'City car' } }],
+      }),
+    );
+    const bo = routedBo();
+    const seeding = await connect({ vulogBo: bo.api });
+    await createBookingState(bookingsCollection(seeding.storage), 'booking-2', {
+      fleetId: 'FLEET-1',
+      patch: { preallocatedVehicleId: 'vehicle-1', preallocatedPlate: 'AB-123-CD' },
+    });
+    seeding.disconnect();
+
+    const view = await render(bo.api);
+
+    await vi.waitFor(() => expect(view.row('booking-2')?.textContent).toContain('AB-123-CD'));
+    expect(view.row('booking-1')?.textContent).toContain('City car');
+    expect(view.row('booking-2')?.textContent).toContain('No return date');
+    expect(view.row('booking-1')?.querySelector('[data-skeleton]')).not.toBeNull();
+    expect(calledPaths(fetch).some((path) => path.includes('users/list'))).toBe(false);
+    await vi.waitFor(() => expect(view.tab('Alert')?.textContent).toBe('Alert1'));
+
+    await vi.waitFor(() => expect(gridObserver()?.targets.size).toBe(2));
+    gridObserver()?.report([view.row('booking-2')!], true);
+
+    await vi.waitFor(() => expect(view.row('booking-2')?.textContent).toContain('Jane Doe'));
+    expect(view.row('booking-2')?.textContent).toContain('B2B');
+    const usersCall = fetch.mock.calls.find(([input]) => String(input).includes('users/list'));
+    expect(usersCall?.[1]?.body).toBe('["user-2"]');
+    expect(view.row('booking-1')?.textContent).not.toContain('Jane');
+  });
+
+  it('opens the detail of a row in the URL, moves with the arrows and closes', async () => {
+    stubVulogApi(fleetApi({ bookings: { PENDING: upcoming } }));
+    const bo = routedBo();
+    const view = await render(bo.api);
+    await vi.waitFor(() => expect(view.row('booking-1')).not.toBeNull());
+
+    view.row('booking-1')?.click();
+
+    await vi.waitFor(() => expect(view.drawer()).not.toBeNull());
+    expect(bo.navigate).toHaveBeenLastCalledWith({ path: 'booking-1' });
+    const drawer = view.drawer()!;
+    await vi.waitFor(() => expect(drawer.textContent).toContain('Jane Doe'));
+    expect(drawer.textContent).toContain('#booking-1');
+    expect(drawer.querySelectorAll('section[aria-label]').length).toBe(3);
+    expect(drawer.querySelector('[data-step="prepaid"]')?.getAttribute('data-state')).toBe('current');
+    expect(drawer.querySelector('svg[role="img"]')?.getAttribute('aria-label')).toContain('500 m');
+    expect(view.row('booking-1')?.getAttribute('aria-selected')).toBe('true');
+
+    view.button('Next booking')?.click();
+    await vi.waitFor(() => expect(view.drawer()?.textContent).toContain('#booking-2'));
+    expect(bo.navigate).toHaveBeenLastCalledWith({ path: 'booking-2' });
+    expect(view.button('Next booking')?.disabled).toBe(true);
+
+    view.button('Close')?.click();
+    await vi.waitFor(() => expect(bo.navigate).toHaveBeenLastCalledWith({ path: '.' }));
+    await vi.waitFor(() => expect(view.drawer()).toBeNull());
+  });
+
+  it('opens a deep link to a booking that is not in the tab', async () => {
+    stubVulogApi(
+      fleetApi({
+        bookings: {
+          PENDING: upcoming,
+          CANCELLED: [
+            apiBooking({ id: 'gone-1', status: 'CANCELLED', cancellationDate: '2026-03-09T10:00:00Z' }),
+          ],
+        },
+      }),
+    );
+    const bo = routedBo('/gone-1');
+    const view = await render(bo.api);
+
+    await vi.waitFor(() => expect(view.drawer()?.textContent).toContain('#gone-1'));
+    const drawer = view.drawer()!;
+    expect(drawer.textContent).toContain('Cancelled');
+    expect(drawer.querySelector('[data-step="cancelled"]')?.getAttribute('data-state')).toBe('failed');
+    await vi.waitFor(() => expect(drawer.textContent).toContain('Jane Doe'));
+  });
+
+  it('says when a deep link points to an unknown booking', async () => {
+    stubVulogApi(fleetApi({ bookings: { PENDING: upcoming } }));
+    const view = await render(routedBo('/unknown-1').api);
+    await vi.waitFor(() => expect(view.drawer()).toBeNull());
+    await vi.waitFor(() =>
+      expect(document.body.querySelector('[role="alert"]')?.textContent).toBe('Not found.'),
+    );
+  });
+
+  it('splits the confirmed bookings between Ongoing and Completed with the trips in progress', async () => {
+    const confirmed = [
+      apiBooking({ id: 'ongoing-1', status: 'CONFIRMED', journeyId: 'trip-1', vehicleId: 'vehicle-1' }),
+      apiBooking({ id: 'done-1', status: 'CONFIRMED', journeyId: 'trip-2', completed: true }),
+      apiBooking({ id: 'odd-1', status: 'CONFIRMED', journeyId: 'trip-3' }),
+    ];
+    stubVulogApi(
+      fleetApi({
+        bookings: { CONFIRMED: confirmed },
+        trips: [{ id: 'vehicle-1', orderId: 'trip-1' }],
+      }),
+    );
+    const view = await render(routedBo().api);
+    await vi.waitFor(() => expect(view.tab('Ongoing')).toBeDefined());
+
+    view.tab('Ongoing')?.click();
+    await vi.waitFor(() => expect(view.row('ongoing-1')).not.toBeNull());
+    expect(view.row('done-1')).toBeNull();
+    expect(view.row('odd-1')).toBeNull();
+    await vi.waitFor(() => expect(view.tab('Ongoing')?.textContent).toBe('Ongoing1'));
+
+    view.tab('Completed')?.click();
+    await vi.waitFor(() => expect(view.row('done-1')).not.toBeNull());
+    expect(view.row('ongoing-1')).toBeNull();
+  });
+
+  it('shows an error when the trips in progress cannot be read, not an empty tab', async () => {
+    stubVulogApi(
+      fleetApi({ bookings: { CONFIRMED: [] } }, ({ path }) =>
+        path.endsWith('/book') ? new Response('', { status: 403 }) : undefined,
+      ),
+    );
+    const view = await render(routedBo().api);
+    await vi.waitFor(() => expect(view.tab('Completed')).toBeDefined());
+    view.tab('Completed')?.click();
+    await vi.waitFor(() =>
+      expect(view.container.querySelector('[role="alert"]')?.textContent).toContain('not allowed'),
+    );
+  });
+
+  it('loads every page for a filter, with the progress, then filters', async () => {
+    const pageOne = [apiBooking({ id: 'booking-1', vehicleId: 'vehicle-1' })];
+    const pageTwo = [apiBooking({ id: 'booking-2', userId: 'user-2' })];
+    let release: () => void = () => undefined;
+    const secondPage = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    stubVulogApi(
+      fleetApi({}, async ({ path, query }) => {
+        if (!path.endsWith('/status/PENDING') || query.get('size') === '1') return undefined;
+        const headers = { totalelements: '2', totalpages: '2' };
+        if (query.get('page') === '0') return Response.json(pageOne, { headers });
+        await secondPage;
+        return Response.json(pageTwo, { headers });
+      }),
+    );
+    const view = await render(routedBo().api);
+    await vi.waitFor(() => expect(view.row('booking-1')).not.toBeNull());
+
+    [...view.container.querySelectorAll<HTMLElement>('.MuiChip-root')]
+      .find((chip) => chip.textContent === 'No vehicle')
+      ?.click();
+
+    await vi.waitFor(() =>
+      expect(view.container.querySelector('[role="status"]')?.textContent).toContain('1/2'),
+    );
+    release();
+    await vi.waitFor(() => expect(view.row('booking-2')).not.toBeNull());
+    expect(view.row('booking-1')).toBeNull();
+    expect(view.container.querySelector('[role="status"]')).toBeNull();
+  });
+
+  it('searches by customer name, loading the customers of every row', async () => {
+    stubVulogApi(
+      fleetApi({ bookings: { PENDING: upcoming } }, ({ path, init }) => {
+        if (!path.endsWith('users/list') || !init) return undefined;
+        const ids = JSON.parse(String(init.body)) as string[];
+        return Response.json(
+          ids.map((id) => ({ id, firstName: id === 'user-2' ? 'Ada' : 'Jane', lastName: 'Doe' })),
+        );
+      }),
+    );
+    const view = await render(routedBo().api);
+    await vi.waitFor(() => expect(view.row('booking-2')).not.toBeNull());
+    const search = view.container.querySelector<HTMLInputElement>('input[type="search"]')!;
+
+    search.focus();
+    const setter = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')?.set;
+    setter?.call(search, 'ada');
+    search.dispatchEvent(new Event('input', { bubbles: true }));
+
+    await vi.waitFor(() => expect(view.row('booking-1')).toBeNull());
+    expect(view.row('booking-2')?.textContent).toContain('Ada Doe');
+  });
+
+  it('shows a failure of the list with a retry', async () => {
+    let fail = true;
+    stubVulogApi(
+      fleetApi({ bookings: { PENDING: upcoming } }, ({ path }) =>
+        fail && path.endsWith('/status/PENDING') ? new Response('', { status: 403 }) : undefined,
+      ),
+    );
+    const view = await render(routedBo().api);
+    await vi.waitFor(() =>
+      expect(view.container.querySelector('[role="alert"]')?.textContent).toContain(
+        'You are not allowed',
+      ),
+    );
+    fail = false;
+    view.button('Retry', view.container)?.click();
+    await vi.waitFor(() => expect(view.row('booking-1')).not.toBeNull());
+  });
+
+  it('moves between the rows with the keyboard and opens one with Enter', async () => {
+    stubVulogApi(fleetApi({ bookings: { PENDING: upcoming } }));
+    const bo = routedBo();
+    const view = await render(bo.api);
+    await vi.waitFor(() => expect(view.row('booking-2')).not.toBeNull());
+    const first = view.row('booking-1')!;
+    expect(first.tabIndex).toBe(0);
+    expect(view.row('booking-2')?.tabIndex).toBe(-1);
+
+    first.focus();
+    first.dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowDown', bubbles: true }));
+    expect(document.activeElement).toBe(view.row('booking-2'));
+    view.row('booking-2')?.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }));
+
+    await vi.waitFor(() => expect(bo.navigate).toHaveBeenLastCalledWith({ path: 'booking-2' }));
+  });
+
+  it('plugs a feature in every slot: column, actions, filter, KPI, card and host', async () => {
+    stubVulogApi(
+      fleetApi({ bookings: { PENDING: [...upcoming, apiBooking({ id: 'booking-3', userId: 'user-3' })] } }, ({ path, query }) =>
+        path.endsWith('/status/PENDING') && query.get('size') !== '1'
+          ? Response.json(
+              query.get('page') === '0' ? upcoming : [apiBooking({ id: 'booking-3', userId: 'user-3' })],
+              { headers: { totalelements: '3', totalpages: '2' } },
+            )
+          : undefined,
+      ),
+    );
+    const ran: string[] = [];
+    const flagged = (ctx: BookingContext) => ctx.booking.id !== 'booking-1';
+    const feature: BookingFeature = {
+      id: 'test',
+      columns: (tab) => [
+        { id: 'test-column', header: 'Test column', width: '100px', render: (ctx) => `col-${ctx.booking.id}-${tab}` },
+      ],
+      primaryAction: (ctx) =>
+        flagged(ctx) ? { id: 'do', label: 'Do it', run: (target) => ran.push(target.booking.id) } : null,
+      menuActions: () => [{ id: 'extra', label: 'Extra action', run: (target) => ran.push(`extra-${target.booking.id}`) }],
+      filters: [{ id: 'flagged', label: 'Flagged', tabs: ['upcoming'], test: flagged, needsAllPages: true }],
+      kpis: [{ id: 'flagged', label: 'Flagged bookings', tab: 'upcoming', filterId: 'flagged', tone: 'err' }],
+      detailCards: [{ id: 'test-card', order: 15, render: (ctx) => <p data-test-card="">card-{ctx.booking.id}</p> }],
+      Host: () => <p data-test-host="">host</p>,
+    };
+    const features = [feature];
+    const view = await render(routedBo().api, features);
+
+    await vi.waitFor(() => expect(view.row('booking-2')?.textContent).toContain('col-booking-2-upcoming'));
+    expect(view.container.querySelector('[data-test-host]')).not.toBeNull();
+    view.button('Do it', view.row('booking-2')!)?.click();
+    expect(ran).toEqual(['booking-2']);
+    expect(view.button('Do it', view.row('booking-1')!)).toBeUndefined();
+
+    view.button('More actions', view.row('booking-1')!)?.click();
+    await vi.waitFor(() => expect(document.body.textContent).toContain('Extra action'));
+    [...document.body.querySelectorAll<HTMLElement>('[role="menuitem"]')]
+      .find((item) => item.textContent === 'Extra action')
+      ?.click();
+    expect(ran).toEqual(['booking-2', 'extra-booking-1']);
+
+    // The KPI turns on its filter, which loads every page; its count shows once all are there.
+    view.button('Flagged bookings')?.click();
+    await vi.waitFor(() => expect(view.row('booking-3')).not.toBeNull());
+    expect(view.row('booking-1')).toBeNull();
+    await vi.waitFor(() => expect(view.button('2Flagged bookings')).toBeDefined());
+
+    view.row('booking-3')?.click();
+    await vi.waitFor(() => expect(view.drawer()?.querySelector('[data-test-card]')?.textContent).toBe('card-booking-3'));
+    const cards = [...view.drawer()!.querySelectorAll('section[aria-label], [data-test-card]')];
+    expect(cards.map((card) => card.getAttribute('aria-label') ?? 'test')).toEqual([
+      'Trip',
+      'test',
+      'Vehicle',
+      'Customer',
+    ]);
+  });
+});

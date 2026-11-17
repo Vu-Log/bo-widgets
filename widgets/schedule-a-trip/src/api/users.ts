@@ -20,6 +20,7 @@ const userSchema = z.object({
   profiles: z
     .array(
       z.object({
+        id: nullableString,
         type: nullableString,
         entity: z.object({ id: nullableString }).nullish(),
       }),
@@ -27,8 +28,10 @@ const userSchema = z.object({
     .nullish(),
 });
 
-/** A profile of a customer: its type (`Single`, `Business`…) and the entity billed. */
+/** A profile of a customer: its id, its type (`Single`, `Business`…) and the entity billed. */
 export interface CustomerProfile {
+  /** The `profileId` of the bookings made with it; `null` when the API does not give it. */
+  readonly id: string | null;
   readonly type: string | null;
   readonly entityId: string | null;
 }
@@ -44,7 +47,7 @@ export interface Customer {
 
 /**
  * Reads customers by id. `POST user/fleets/{fleetId}/users/list`, body `string[]`. Keeps only the
- * id, the names, the user name and, per profile, its type and entity id: no other personal data.
+ * id, the names, the user name and, per profile, its id, type and entity id: no other personal data.
  *
  * @param authFetch - `useAuthFetch()`.
  * @param fleetId - The fleet.
@@ -90,6 +93,7 @@ export async function listUsersByIds(
       lastName: user.lastName,
       userName: user.userName,
       profiles: (user.profiles ?? []).map((profile) => ({
+        id: profile.id,
         type: profile.type,
         entityId: profile.entity?.id ?? null,
       })),

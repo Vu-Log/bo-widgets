@@ -41,10 +41,11 @@ Before you say a change is done: `npm test` and `npm run build` pass.
 | `domain/`                  | Pure business rules (amount, refund policy, statuses, vehicles in range): no React, no I/O, 100 % covered.                                    |
 | `storage/booking-state.ts` | The contract of the `bookings` collection of `bo.storage`, shared with a server scheduler.                                                    |
 | `query/`                   | TanStack Query: client, persistence, query keys and query options.                                                                            |
-| `ui/`                      | Primitives without business logic: `ListGrid`, `SkeletonCell`, `ConfigurationBanner`, the `IntersectionObserver` hooks.                       |
+| `features/`                | The booking section: `BookingSection`, the list (`list/`), the drawer (`detail/`), the `core` feature, `registry.ts` and `extensions.ts`.      |
+| `ui/`                      | Primitives without business logic: `ListGrid`, `SkeletonCell`, `StaticMap`, `ConfigurationBanner`, the `IntersectionObserver` hooks.          |
 | `settings.ts`              | The installation settings, checked with zod.                                                                                                  |
 | `i18n.ts`, `locales/`      | Translation (`useI18n().t`) and `Intl`/date-fns formatting; one flat JSON catalogue per language.                                             |
-| `test/`                    | Test helpers only: the fake BO (with an in-memory storage), the fake `IntersectionObserver`, `renderInWidget`.                                |
+| `test/`                    | Test helpers only: the fake BO (in-memory storage), the fake `IntersectionObserver`, `renderInWidget`, the fake Vulog API, `renderInSection`. |
 
 ## Languages
 
@@ -64,6 +65,8 @@ The widget speaks 8 languages: English (source and fallback), German, French, It
 - A 403 is shown as "not allowed" (`apiErrorMessage`), not as a generic failure. Mutations are never retried.
 - `bookings/{bookingId}`: read the document, then write a patch over it with `updateBookingState(collection, current, patch)` (always `ifVersion`; never `set` over an existing document). Create with `createBookingState` (`allocationProcessed: false`, no expiry). Start the 365-day expiry only at the end of a cycle with `startExpiry`, remove it with `stopExpiry`. Claim a charge with `claimCharge` before creating an invoice, and `releaseCharge` when the API refused it. Record an action by passing `events: withEvent(...)` in the patch of its own write. The widget never writes the scheduler fields (`SCHEDULER_FIELDS`), and every write is checked against the contract, rules between fields included. Raise `SCHEMA_VERSION` for any change of the contract: the scheduler reads it too.
 - Branch on the `kind` of a `StorageFailure`: after `unknown-outcome`, read again before writing; after `rate-limited`, wait, never retry in a loop.
+- Features: add what the list or the drawer shows as a `BookingFeature` (`features/extensions.ts`) registered in `features/registry.ts`, never inside `BookingSection`. Labels are final texts: build the feature with `t`. A row's `BookingContext` keeps its identity until its booking, state or customer changes: the grid memoizes the rows on it.
+- Stored state of a row: the query `queryKeys.bookingState(fleetId, bookingId)` is its source, seeded by one listing of the fleet (`fleetBookingStatesQueryOptions`). After a write, set that query with the document written.
 - Lists: `useInfiniteQuery` with `bookingPagesQueryOptions`, rendered with `ListGrid` (divs in CSS grid with `content-visibility: auto`, never a `<table>`), with `isLoading` and `pagination` (pass `isFetchNextPageError`: the grid stops asking after a failed page and shows a retry). Load the extra data of the visible rows only (`onVisibleRowsChange`), one query per cell, with `SkeletonCell` until it arrives.
 
 ## Calling the Vulog API
@@ -76,7 +79,7 @@ In `npm run dev` (mock mode), API calls are answered by `dev.responses` of `widg
 
 ## Tests
 
-`src/main.test.tsx` mounts the element with a fake of the BO API (an object with `getContext`, `on`, `off`… set as `vulogBo`). Extend it for every behaviour you add: nominal case, `BoError` from a request, an event changing the display, cleanup on removal. Stub `fetch` for `authFetch`. `src/integration.test.tsx` wires the real API, query, storage and grid modules together with only the edges faked: extend it when a feature crosses modules. Test values stay neutral (`FLEET-1`, `Jane Doe`): the repository is public.
+`src/main.test.tsx` mounts the element with a fake of the BO API (an object with `getContext`, `on`, `off`… set as `vulogBo`). Extend it for every behaviour you add: nominal case, `BoError` from a request, an event changing the display, cleanup on removal. Stub `fetch` for `authFetch`. `src/integration.test.tsx` and `src/features/BookingSection.test.tsx` wire the real modules together with only the edges faked (`stubVulogApi` and `fleetApi` of `src/test/vulog-api.ts`): extend them when a feature crosses modules. Test values stay neutral (`FLEET-1`, `Jane Doe`): the repository is public.
 
 ## Documentation
 

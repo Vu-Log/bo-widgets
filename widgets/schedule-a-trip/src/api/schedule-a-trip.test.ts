@@ -1,7 +1,7 @@
 import type { AuthFetch } from '@vulog/bo-widget-sdk';
 import { describe, expect, it, vi } from 'vitest';
 import { jsonResponse } from '../test/fake-bo';
-import { listBookingRequests, MAX_BOOKING_PAGE_SIZE } from './schedule-a-trip';
+import { getBookingRequest, listBookingRequests, MAX_BOOKING_PAGE_SIZE } from './schedule-a-trip';
 
 const params = {
   fleetId: 'FLEET-1',
@@ -119,5 +119,24 @@ describe('listBookingRequests', () => {
     const result = await listBookingRequests(authFetch, { ...params, ...override });
     expect(result.ok === false && result.error.kind).toBe('invalid-request');
     expect(authFetch).not.toHaveBeenCalled();
+  });
+});
+
+describe('getBookingRequest', () => {
+  it('reads one booking with the list shape', async () => {
+    const authFetch = vi.fn<AuthFetch>(async () => jsonResponse(apiBooking));
+    const result = await getBookingRequest(authFetch, 'FLEET-1', 'booking/1');
+    expect(authFetch).toHaveBeenCalledWith(
+      'user/scheduleATrip/fleets/FLEET-1/bookingrequests/booking%2F1',
+      { signal: undefined },
+    );
+    expect(result.ok && result.data).toMatchObject({ id: 'booking-1', radius: 500, notes: null });
+    expect(result.ok && 'unexpected' in result.data).toBe(false);
+  });
+
+  it('maps a 404 to not-found', async () => {
+    const authFetch = vi.fn<AuthFetch>(async () => new Response('', { status: 404 }));
+    const result = await getBookingRequest(authFetch, 'FLEET-1', 'booking-1');
+    expect(result).toEqual({ ok: false, error: { kind: 'not-found', status: 404 } });
   });
 });

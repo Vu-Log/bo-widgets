@@ -196,6 +196,32 @@ export async function requestJson<S extends z.ZodType>(
 }
 
 /**
+ * Calls the Vulog API for a write whose answer the widget does not read (an empty `200`, or a body
+ * it ignores): only the status counts.
+ *
+ * @param authFetch - `useAuthFetch()` of `@vulog/bo-widget-react`, or `bo.authFetch`.
+ * @param path - A path relative to the back office admin API (`user/...`), never `boapi/proxy/...`.
+ * @param init - `fetch` options (method, body, `signal`…).
+ * @returns `ok` for any 2xx, or why the call failed.
+ * @throws What `authFetch` rejects with when it is neither a `BoError`, a `TypeError` nor an
+ *   `AbortError`: a bug, not a failure of the API.
+ */
+export async function requestNoContent(
+  authFetch: AuthFetch,
+  path: string,
+  init?: RequestInit,
+): Promise<ApiResult<null>> {
+  let response: Response;
+  try {
+    response = await authFetch(path, init);
+  } catch (error) {
+    return { ok: false, error: rejectionError(error, init?.signal) };
+  }
+  if (!response.ok) return { ok: false, error: statusError(response.status) };
+  return { ok: true, data: null };
+}
+
+/**
  * Encodes one segment of a path (an id), so that it cannot change the route.
  *
  * @param value - An id from the API or the storage.

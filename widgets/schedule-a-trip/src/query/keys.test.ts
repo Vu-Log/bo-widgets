@@ -33,6 +33,30 @@ describe('queryKeys', () => {
     );
   });
 
+  it('keeps the live vehicles, the trips, the counts and the states in memory', () => {
+    for (const key of [
+      queryKeys.liveVehicles('FLEET-1'),
+      queryKeys.tripsInProgress('FLEET-1'),
+      queryKeys.bookingCount('FLEET-1', 'alert'),
+      queryKeys.confirmedBookings('FLEET-1'),
+      queryKeys.booking('FLEET-1', 'booking-1'),
+      queryKeys.fleetBookingStates('FLEET-1'),
+    ])
+      expect(isPersistedQueryKey(key)).toBe(false);
+  });
+
+  it('persists the vehicle catalogue and the addresses, with rounded coordinates', () => {
+    expect(isPersistedQueryKey(queryKeys.vehicleCatalog('FLEET-1'))).toBe(true);
+    const key = queryKeys.reverseGeocoding(48.8566123, 2.3522987, 'fr');
+    expect(key).toEqual(['geocoding', 'reverse', '48.85661', '2.35230', 'fr']);
+    expect(isPersistedQueryKey(key)).toBe(true);
+  });
+
+  it('makes the fleet states a prefix of the state of a booking', () => {
+    const fleet = queryKeys.fleetBookingStates('FLEET-1');
+    expect(queryKeys.bookingState('FLEET-1', 'b').slice(0, fleet.length)).toEqual([...fleet]);
+  });
+
   it('does not change the ids given', () => {
     const ids = ['b', 'a'];
     queryKeys.customers('FLEET-1', ids);

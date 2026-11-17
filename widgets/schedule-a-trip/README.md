@@ -2,7 +2,16 @@
 
 A widget of the Vulog back office to handle the scheduled bookings ("Schedule a trip") of a fleet, with their prepayment: the booking list by tab (Alert, Upcoming, Ongoing, Completed, Cancelled), the prepayment invoice and its refund, the credits, the pre-allocation of a vehicle and internal notes. Built with React and [MUI](https://mui.com) (7.3.6 or later). It calls the Vulog API with the token of the operator (`authFetch`) and keeps the state of each booking in the storage of the back office (`bo.storage`): no backend of its own.
 
-**Status: foundation.** This version holds the tabs (empty for now), the installation settings, the data layer (API wrappers, query cache, storage contract), the business rules and the list primitives. The screens come next.
+**Status: booking section, read only.** The five tabs list the bookings page by page, with the customer, the model and the vehicle of the visible rows; a booking opens in a drawer (its URL is `{view}/{bookingId}`) with its lifecycle, its trip on a map, its vehicle and its customer. Creating, editing, allocating and the prepayment come next.
+
+## The booking section
+
+- **List**: KPI buttons (quick filters), the tabs Alert, Upcoming, Ongoing, Completed and Cancelled with their counts, a search (customer, plate, booking id; `/` focuses it), filter chips, the density and the columns (both kept in the browser), and a refresh. The rows of a tab load 50 at a time as you scroll; a filter the API cannot apply loads every page first, with the progress. The customers are read for the visible rows only, by batches of 100.
+- **Ongoing and Completed** both read the `CONFIRMED` bookings: a booking is Ongoing while its trip is in progress (`fleetmanager/public/fleets/{fleetId}/book`), Completed once completed and no longer in progress. Ongoing reads them at once, Completed page by page, latest first.
+- **Keyboard**: in the list, ↑/↓, Home and End move between the rows, Enter opens one; in the drawer, ↑/↓ open the previous or next booking, Escape closes it.
+- **Map**: a [Mapbox static image](https://docs.mapbox.com/api/maps/static-images/) with the radius and the markers drawn over it in SVG, and the address from the Mapbox geocoding, with the public token of the settings. No map library: `mapbox-gl` would add hundreds of KB gzipped and WebGL to a widget that only shows a point and a radius, under a license that is not open source; the image needs no style outside the shadow root.
+- **No stored data**: a booking the widget never wrote for has no document; one whose last activity is more than 365 days old shows **Archived data**, read only (the document may have expired).
+- **Extension point**: everything the list and the drawer show comes from the features of `src/features/registry.ts` (`BookingFeature` in `src/features/extensions.ts`): columns, a primary action per row (the first feature that gives one wins), menu actions, filters (`needsAllPages` when the API cannot apply them), KPIs, detail cards (by `order`: Trip 10, Vehicle 20, Customer 30) and a `Host` rendered once (dialogs).
 
 ## Settings
 
@@ -86,9 +95,10 @@ npx bo-widget dev --login
 The back office loads `index.js`, registers its default export (the element class) under a tag of its own, sets its API on the element (`vulogBo`) and inserts it in its content zone. The widget never calls `customElements.define`.
 
 - `src/main.tsx` exports `toCustomElement(App)` of [`@vulog/bo-widget-react`](https://github.com/Vu-Log/bo-widget-sdk/tree/main/packages/bo-widget-react): React rendered in a shadow root, the MUI (Emotion) styles kept in it, MUI dialogs, menus and tooltips rendered in it too, a MUI theme built from the theme of the back office, and a clean unmount.
-- `src/App.tsx` shows the header, the settings banner and the tabs, inside `WidgetQueryProvider` (TanStack Query, with the persisted cache of the reference data). It reads the back office with the hooks `useBoContext()`, `useAuthFetch()` and `useBoClient()`.
+- `src/App.tsx` shows the settings banner and the booking section (`src/features/BookingSection.tsx`), inside `WidgetQueryProvider` (TanStack Query, with the persisted cache of the reference data). It reads the back office with the hooks `useBoContext()`, `useAuthFetch()` and `useBoClient()`.
 - `src/api/` calls the Vulog API with `authFetch` and the paths of the Vulog API reference. The routes `user/scheduleATrip/fleets/{fleetId}/bookingrequests/...` are the ones the back office calls for its own Schedule a trip page: they are not in the public reference yet.
 - `src/domain/` holds the business rules as pure functions; `src/storage/booking-state.ts` the stored state of each booking.
+- `src/features/` holds the booking section: the list (`list/`), the detail drawer (`detail/`), the core feature (`core/`: columns, cards, filters) and the registry of the features.
 - Keep MUI 7.3.6 or later: earlier versions trap the focus of a dialog outside a shadow root, so its text fields cannot be typed in.
 - `connect` of [`@vulog/bo-widget-sdk`](https://github.com/Vu-Log/bo-widget-sdk/tree/main/packages/bo-widget-sdk) gives the client of the back office: `getContext()`, `getCurrentUser()`, `getSettings()`, `notify()`, `navigate()`, `on('fleetChanged')`… and `authFetch` to call the Vulog API (permission `apiInfo` in `widget.config.ts`):
 

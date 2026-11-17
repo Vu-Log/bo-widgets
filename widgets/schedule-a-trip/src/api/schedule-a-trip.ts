@@ -126,3 +126,29 @@ export async function listBookingRequests(
     },
   };
 }
+
+/**
+ * Reads one Schedule a trip booking, with the shape of the list routes.
+ * `GET user/scheduleATrip/fleets/{fleetId}/bookingrequests/{id}`: the route the back office calls to
+ * read a booking again after a change (not in the public reference either).
+ *
+ * @param authFetch - `useAuthFetch()`.
+ * @param fleetId - The fleet.
+ * @param bookingId - The booking.
+ * @param signal - Aborts the call.
+ * @returns The booking, `not-found` when it does not exist, or why the call failed.
+ */
+export async function getBookingRequest(
+  authFetch: AuthFetch,
+  fleetId: string,
+  bookingId: string,
+  signal?: AbortSignal,
+): Promise<ApiResult<ScheduledBooking>> {
+  const result = await requestJson(
+    authFetch,
+    `user/scheduleATrip/fleets/${segment(fleetId)}/bookingrequests/${segment(bookingId)}`,
+    scheduledBookingSchema,
+    { signal },
+  );
+  return result.ok ? { ok: true, data: result.data.body } : result;
+}

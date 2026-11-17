@@ -1,7 +1,8 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import Widget from './main';
 import { CATALOGUES } from './i18n';
-import { fakeBo, VALID_SETTINGS } from './test/fake-bo';
+import { fakeBo, jsonResponse, VALID_SETTINGS } from './test/fake-bo';
+import { installFakeIntersectionObserver } from './test/intersection-observer';
 
 customElements.define('test-widget', Widget);
 
@@ -15,9 +16,25 @@ const text = (element: HTMLElement): string => element.shadowRoot?.textContent ?
 const tabs = (element: HTMLElement) => [
   ...(element.shadowRoot?.querySelectorAll('[role="tab"]') ?? []),
 ];
+/** The label of a tab, without its count. */
+const label = (tab: Element | undefined | null) => tab?.textContent?.replace(/\d+$/, '');
+const panelText = (element: HTMLElement) =>
+  element.shadowRoot?.querySelector('[role="tabpanel"]')?.textContent ?? '';
+
+/** The Vulog API of a fleet without any booking. */
+const stubEmptyApi = () =>
+  vi
+    .spyOn(globalThis, 'fetch')
+    .mockImplementation(async () =>
+      jsonResponse([], { headers: { totalelements: '0', totalpages: '0' } }),
+    );
 
 describe('Widget', () => {
-  beforeEach(() => localStorage.clear());
+  beforeEach(() => {
+    localStorage.clear();
+    installFakeIntersectionObserver();
+    stubEmptyApi();
+  });
   afterEach(() => {
     document.body.replaceChildren();
     vi.restoreAllMocks();
@@ -28,32 +45,28 @@ describe('Widget', () => {
     const element = mount(fakeBo().api);
 
     await vi.waitFor(() => expect(text(element)).toContain('Schedule a trip'));
-    expect(tabs(element).map((tab) => tab.textContent)).toEqual([
+    expect(tabs(element).map(label)).toEqual([
       'Alert',
       'Upcoming',
       'Ongoing',
       'Completed',
       'Cancelled',
     ]);
-    expect(
-      element.shadowRoot?.querySelector('[role="tab"][aria-selected="true"]')?.textContent,
-    ).toBe('Upcoming');
-    expect(element.shadowRoot?.querySelector('[role="tabpanel"]')?.textContent).toBe(
-      'No upcoming booking.',
+    expect(label(element.shadowRoot?.querySelector('[role="tab"][aria-selected="true"]'))).toBe(
+      'Upcoming',
     );
+    await vi.waitFor(() => expect(panelText(element)).toContain('No upcoming booking.'));
+    // The counts come from the totals of the API.
+    await vi.waitFor(() => expect(tabs(element)[0]?.textContent).toBe('Alert0'));
   });
 
   it('shows the panel of the tab chosen', async () => {
     const element = mount(fakeBo().api);
     await vi.waitFor(() => expect(tabs(element)).toHaveLength(5));
 
-    (tabs(element).find((tab) => tab.textContent === 'Cancelled') as HTMLElement).click();
+    (tabs(element).find((tab) => label(tab) === 'Cancelled') as HTMLElement).click();
 
-    await vi.waitFor(() =>
-      expect(element.shadowRoot?.querySelector('[role="tabpanel"]')?.textContent).toBe(
-        'No cancelled booking.',
-      ),
-    );
+    await vi.waitFor(() => expect(panelText(element)).toContain('No cancelled booking.'));
     const panel = element.shadowRoot?.querySelector('[role="tabpanel"]');
     const selected = element.shadowRoot?.querySelector('[role="tab"][aria-selected="true"]');
     expect(panel?.getAttribute('aria-labelledby')).toBe(selected?.id);
@@ -103,7 +116,7 @@ describe('Widget', () => {
 
     emit('localeChanged', { locale: 'fr_FR' });
 
-    await vi.waitFor(() => expect(tabs(element)[1]?.textContent).toBe('À venir'));
+    await vi.waitFor(() => expect(label(tabs(element)[1])).toBe('À venir'));
   });
 
   it.each([
@@ -123,16 +136,14 @@ describe('Widget', () => {
     );
 
     await vi.waitFor(() => expect(text(element)).toContain(messages['settings.incomplete.title']));
-    expect(tabs(element).map((tab) => tab.textContent)).toEqual([
+    expect(tabs(element).map(label)).toEqual([
       messages['tabs.alert'],
       messages['tabs.upcoming'],
       messages['tabs.ongoing'],
       messages['tabs.completed'],
       messages['tabs.cancelled'],
     ]);
-    expect(element.shadowRoot?.querySelector('[role="tabpanel"]')?.textContent).toBe(
-      messages['tabs.empty.upcoming'],
-    );
+    await vi.waitFor(() => expect(panelText(element)).toContain(messages['tabs.empty.upcoming']));
     expect(text(element)).toContain(messages['settings.issue.invalid']);
   });
 

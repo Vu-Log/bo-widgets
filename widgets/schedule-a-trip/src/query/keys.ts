@@ -24,6 +24,8 @@ export const MEMORY_QUERY_ROOTS = [
   'customers',
   'invoices',
   'booking-states',
+  'trips',
+  'fleet-vehicles',
 ] as const;
 
 /** A root of a query key whose data may be persisted. */
@@ -43,6 +45,8 @@ export interface BookingListSort {
  */
 export const queryKeys = {
   settings: () => ['settings'] as const,
+  /** The settings the booking section reads alone (map token, radius, time zone). */
+  sectionSettings: () => ['settings', 'section'] as const,
   models: (fleetId: string) => ['models', fleetId] as const,
   bookings: (fleetId: string, tab: ListTab, sort: BookingListSort) =>
     ['bookings', fleetId, tab, sort.field, sort.direction] as const,
@@ -51,6 +55,21 @@ export const queryKeys = {
   invoice: (fleetId: string, invoiceId: string) => ['invoices', fleetId, invoiceId] as const,
   bookingState: (fleetId: string, bookingId: string) =>
     ['booking-states', fleetId, bookingId] as const,
+  /** Every stored state of a fleet; a prefix of {@link queryKeys.bookingState}. */
+  fleetBookingStates: (fleetId: string) => ['booking-states', fleetId] as const,
+  /** Total of a tab, read with a page of one row. */
+  bookingCount: (fleetId: string, tab: ListTab) => ['bookings', fleetId, tab, 'count'] as const,
+  /** The `CONFIRMED` bookings read at once, for the Ongoing tab. */
+  confirmedBookings: (fleetId: string) => ['bookings', fleetId, 'confirmed', 'all'] as const,
+  booking: (fleetId: string, bookingId: string) => ['bookings', fleetId, 'one', bookingId] as const,
+  tripsInProgress: (fleetId: string) => ['trips', fleetId, 'in-progress'] as const,
+  /** Administrative data of the vehicles (plates, models, services): reference data. */
+  vehicleCatalog: (fleetId: string) => ['plates', fleetId] as const,
+  /** Live state of the vehicles: status and position, in memory only. */
+  liveVehicles: (fleetId: string) => ['fleet-vehicles', fleetId] as const,
+  /** An address by rounded coordinates and language: reference data. */
+  reverseGeocoding: (latitude: number, longitude: number, language: string) =>
+    ['geocoding', 'reverse', latitude.toFixed(5), longitude.toFixed(5), language] as const,
 } satisfies Record<
   string,
   (...args: never[]) => readonly [PersistedQueryRoot | MemoryQueryRoot, ...unknown[]]
