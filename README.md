@@ -4,9 +4,9 @@ The widgets Vulog builds for its back office, with [`@vulog/bo-widget-sdk`](http
 
 ## Widgets
 
-| Widget                            | Stack       | What it does                    |
-| --------------------------------- | ----------- | ------------------------------- |
-| [`sat-admin`](widgets/sat-admin/) | React + MUI | Being migrated: no content yet. |
+| Widget                                        | Stack       | What it does                                                                                                 |
+| --------------------------------------------- | ----------- | ------------------------------------------------------------------------------------------------------------ |
+| [`schedule-a-trip`](widgets/schedule-a-trip/) | React + MUI | The scheduled bookings of a fleet and their prepayment. Foundation only for now: tabs, settings, data layer. |
 
 ## Start your widget from one of ours
 

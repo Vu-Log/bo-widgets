@@ -1,6 +1,6 @@
 # AGENTS.md
 
-Instructions for AI coding agents working on **Sat admin**, a widget of the Vulog back office (BO), built with React and MUI, through `@vulog/bo-widget-react`.
+Instructions for AI coding agents working on **Schedule a trip**, a widget of the Vulog back office (BO), built with React and MUI, through `@vulog/bo-widget-react`.
 
 ## Read first
 
@@ -14,7 +14,7 @@ Instructions for AI coding agents working on **Sat admin**, a widget of the Vulo
 | ------------------------ | ----------------------------------------------------------------------------------- |
 | `npm run dev`            | Shows the widget in a fake BO with the mock data of `widget.config.ts` (`dev`).     |
 | `npm test`               | After every change (Vitest).                                                        |
-| `npm run build`          | Type-checks (`tsc`), builds `dist/` and packs `sat-admin-<version>.zip`.             |
+| `npm run build`          | Type-checks (`tsc`), builds `dist/` and packs `schedule-a-trip-<version>.zip`.      |
 | `npx bo-widget validate` | Checks the zip of the current version with the rules the BO applies at publication. |
 
 Before you say a change is done: `npm test` and `npm run build` pass.
@@ -33,6 +33,29 @@ Before you say a change is done: `npm test` and `npm run build` pass.
 - The bundle is public: no secret, no API key, no token in the code or in `widget.config.ts`. `.env.local` holds the developer's values and is never committed.
 - Errors the BO cannot see (anything after the element is inserted) are shown by the widget itself, with a loading and an error state.
 
+## Layout of `src/`
+
+| Path                       | Holds                                                                                                                                         |
+| -------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------- |
+| `api/`                     | One module per API domain: thin wrappers over `authFetch` that return an `ApiResult` (`{ ok, data }` or `{ ok: false, error }`), never throw. |
+| `domain/`                  | Pure business rules (amount, refund policy, statuses, vehicles in range): no React, no I/O, 100 % covered.                                    |
+| `storage/booking-state.ts` | The contract of the `bookings` collection of `bo.storage`, shared with a server scheduler.                                                    |
+| `query/`                   | TanStack Query: client, persistence, query keys and query options.                                                                            |
+| `ui/`                      | Primitives without business logic: `ListGrid`, `SkeletonCell`, `ConfigurationBanner`, the `IntersectionObserver` hooks.                       |
+| `settings.ts`              | The installation settings, checked with zod.                                                                                                  |
+| `i18n.ts`                  | The texts, in English and French.                                                                                                             |
+| `test/`                    | Test helpers only: the fake BO (with an in-memory storage), the fake `IntersectionObserver`, `renderInWidget`.                                |
+
+## Data rules
+
+- Build every query key with `queryKeys` (`query/keys.ts`). Only the roots of `PERSISTED_QUERY_ROOTS` (models, services, cities, plates, geocoding, fleet config) are written to `localStorage`: never a customer name, a payment status, a booking, a stored state or the settings. A new root is memory-only until it is added to that list, and `query/client.test.ts` checks it.
+- A persisted query needs a `gcTime` at least `PERSIST_MAX_AGE_MS`, or it is never restored.
+- Keep only the fields the widget needs from an API answer (`api/users.ts` keeps names and profile types, never other personal data).
+- A 403 is shown as "not allowed" (`apiErrorMessage`), not as a generic failure. Mutations are never retried.
+- `bookings/{bookingId}`: write patches with `updateBookingState` (never `set` over an existing document), create with `createBookingState` (`allocationProcessed: false`, no expiry), start the 365-day expiry only at the end of a cycle with `startExpiry`, and record an action by passing `events: withEvent(...)` in the patch of its own write. Raise `SCHEMA_VERSION` for any change of the contract: the scheduler reads it too.
+- Branch on the `kind` of a `StorageFailure`: after `unknown-outcome`, read again before writing; after `rate-limited`, wait, never retry in a loop.
+- Lists: `useInfiniteQuery` with `bookingPagesQueryOptions`, rendered with `ListGrid` (divs in CSS grid with `content-visibility: auto`, never a `<table>`). Load the extra data of the visible rows only (`onVisibleRowsChange`), one query per cell, with `SkeletonCell` until it arrives.
+
 ## Calling the Vulog API
 
 Use `useAuthFetch()`, then `authFetch('<service path>/<route>')`, a path relative to the BO admin API (`.../boapi/proxy/`): never prefix it with `boapi/proxy/`, never add `Authorization` or `X-API-Key`. The widget needs the `apiInfo` permission.
@@ -43,7 +66,7 @@ In `npm run dev` (mock mode), API calls are answered by `dev.responses` of `widg
 
 ## Tests
 
-`src/main.test.tsx` mounts the element with a fake of the BO API (an object with `getContext`, `on`, `off`… set as `vulogBo`). Extend it for every behaviour you add: nominal case, `BoError` from a request, an event changing the display, cleanup on removal. Stub `fetch` for `authFetch`.
+`src/main.test.tsx` mounts the element with a fake of the BO API (an object with `getContext`, `on`, `off`… set as `vulogBo`). Extend it for every behaviour you add: nominal case, `BoError` from a request, an event changing the display, cleanup on removal. Stub `fetch` for `authFetch`. `src/integration.test.tsx` wires the real API, query, storage and grid modules together with only the edges faked: extend it when a feature crosses modules. Test values stay neutral (`FLEET-1`, `Jane Doe`): the repository is public.
 
 ## Documentation
 
