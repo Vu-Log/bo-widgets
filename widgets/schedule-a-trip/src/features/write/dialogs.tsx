@@ -23,7 +23,6 @@ import { cancel, removePreallocation, type OperationResult } from './operations'
 import { DateFields, PickupFields, toPickup, type DatesValue, type PickupValue } from './fields';
 import { failureText, useAfterWrite, useReportFailure, useWriteDeps } from './use-write';
 
-export { MAX_NOTES_LENGTH } from '../../domain/new-booking';
 import { MAX_NOTES_LENGTH } from '../../domain/new-booking';
 
 /** Props of {@link WriteDialogFrame}. */

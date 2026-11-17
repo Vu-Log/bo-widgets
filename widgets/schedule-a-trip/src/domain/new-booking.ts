@@ -1,3 +1,4 @@
+import type { NewBookingRequest } from '../api/schedule-a-trip';
 import { datesProblems, toPickup, type DatesProblem } from './booking-dates';
 
 /** Largest notes of a booking, as the back office takes them. */
@@ -25,20 +26,8 @@ export type NewBookingProblem =
   | 'pickup-invalid'
   | 'notes-too-long';
 
-/** A booking ready to be created: every rule checked. */
-export interface ValidNewBooking {
-  readonly userId: string;
-  readonly profileId: string;
-  readonly serviceId: string;
-  readonly cityId: string;
-  readonly start: Date;
-  readonly plannedReturn: Date | null;
-  readonly modelId: number | null;
-  readonly latitude: number;
-  readonly longitude: number;
-  readonly radius: number;
-  readonly notes: string;
-}
+/** A booking ready to be created: every rule checked (the body of the creation request). */
+export type ValidNewBooking = NewBookingRequest;
 
 /**
  * Checks a booking being created and builds the request: a customer and a profile, a service, a
