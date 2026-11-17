@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
-import { applyMoneyEvent, applyMoneyEvents, type MoneyEvent } from './money-steps';
+import { applyMoneyEvent, applyMoneyEvents, isMoneyStepEventType, MONEY_STEP_EVENT_TYPES, type MoneyEvent } from './money-steps';
+import { MONEY_EVENT_TYPES } from './booking-state';
 
 const AT = '2026-03-10T08:00:00.000Z';
 const ev = (type: string, details?: Record<string, unknown>): MoneyEvent => ({ at: AT, by: 'operator-1', type, ...(details ? { details } : {}) });
@@ -17,10 +18,25 @@ describe('applyMoneyEvent', () => {
       refundStartedBy: 'operator-1',
       refundAmount: 50,
       refundOutcome: 'in-doubt',
-      refundDecidedAt: null,
-      refundDecidedBy: null,
       refundCompletedAt: null,
     });
+  });
+
+  it('records the decision of an operator on a release, and keeps it when the step starts again', () => {
+    expect(applyMoneyEvent({}, ev('refund-released', { decided: true }))).toEqual({ refundOutcome: 'released', refundDecidedAt: AT, refundDecidedBy: 'operator-1' });
+    expect(applyMoneyEvent({ feeAmount: 15 }, ev('cancellation-fee-released', { decided: true }))).toEqual({
+      feeOutcome: 'released',
+      feeAmount: null,
+      feeDecidedAt: AT,
+      feeDecidedBy: 'operator-1',
+    });
+    expect(applyMoneyEvent({}, ev('refund-started'))).not.toHaveProperty('refundDecidedAt');
+    expect(applyMoneyEvent({}, ev('cancellation-fee-started'))).not.toHaveProperty('feeDecidedAt');
+  });
+
+  it('never keeps a negative amount', () => {
+    expect(applyMoneyEvent({}, ev('refund-started', { amount: -5 }))).toMatchObject({ refundAmount: null });
+    expect(applyMoneyEvent({}, ev('cancellation-fee-started', { amount: -1, balance: -3 }))).toMatchObject({ feeAmount: null, walletBalanceBeforeFee: -3 });
   });
 
   it('ends a refund: recorded, confirmed by an operator, or released', () => {
@@ -63,6 +79,17 @@ describe('applyMoneyEvent', () => {
   it('sets nothing for an entry that is not a money step, and ignores invalid details', () => {
     expect(applyMoneyEvent({}, ev('internal-notes-saved'))).toEqual({});
     expect(applyMoneyEvent({}, ev('cancellation-fee-started', { amount: 'x', balance: Number.NaN }))).toMatchObject({ feeAmount: null, walletBalanceBeforeFee: null });
+  });
+});
+
+describe('MONEY_STEP_EVENT_TYPES', () => {
+  it('sets fields for every step type, and the journal keeps them when it is full', () => {
+    for (const type of MONEY_STEP_EVENT_TYPES) {
+      expect(isMoneyStepEventType(type)).toBe(true);
+      expect(MONEY_EVENT_TYPES.has(type)).toBe(true);
+      expect(Object.keys(applyMoneyEvent({}, ev(type))).length).toBeGreaterThan(0);
+    }
+    expect(isMoneyStepEventType('internal-notes-saved')).toBe(false);
   });
 });
 

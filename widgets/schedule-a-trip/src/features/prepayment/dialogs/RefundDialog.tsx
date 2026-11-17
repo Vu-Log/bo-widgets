@@ -95,6 +95,12 @@ export function refundOutcomeText(
         text: actionErrorText('refund', outcome.error),
         detail: outcome.releaseFailure ? storageErrorText(outcome.releaseFailure) : null,
       };
+    case 'refund-unrecorded':
+      return {
+        severity: 'error',
+        text: { key: 'prepayment.refund.refundUnrecorded', params: { amount: formatAmount(outcome.amount) } },
+        detail: storageErrorText(outcome.failure),
+      };
     case 'refund-unknown':
       return { severity: 'warning', text: { key: 'prepayment.refund.refundUnknown' }, detail: actionErrorText('refund', outcome.error) };
     case 'fee-refused':

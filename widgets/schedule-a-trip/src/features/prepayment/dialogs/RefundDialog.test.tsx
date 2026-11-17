@@ -113,6 +113,11 @@ describe('planFailureText and refundOutcomeText', () => {
   it('names the action on a 403', () => {
     expect(planFailureText({ kind: 'api', error: { kind: 'not-allowed', status: 403 } })).toEqual({ key: 'prepayment.notAllowed.refund' });
     expect(refundOutcomeText({ kind: 'refund-refused', error: { kind: 'not-allowed', status: 403 }, releaseFailure: null }, String).text).toEqual({ key: 'prepayment.notAllowed.refund' });
+    expect(refundOutcomeText({ kind: 'refund-unrecorded', amount: 50, failure: { kind: 'rate-limited' } }, String)).toEqual({
+      severity: 'error',
+      text: { key: 'prepayment.refund.refundUnrecorded', params: { amount: '50' } },
+      detail: { key: 'prepayment.storage.rateLimited' },
+    });
   });
 
   it('has a message for every failure', () => {

@@ -60,7 +60,10 @@ export function chargeOutcomeText(outcome: ChargeOutcome): { severity: 'success'
             text: { key: 'prepayment.charge.unrecorded', params: { invoiceId: outcome.invoiceId } },
           };
     case 'charged-id-unknown':
-      return { severity: 'warning', text: { key: 'prepayment.charge.idUnknown' } };
+      // Without the acceptance recorded, the claim could be unlocked over an invoice that exists.
+      return outcome.markFailure
+        ? { severity: 'error', text: { key: 'prepayment.charge.idUnknownUnrecorded' } }
+        : { severity: 'warning', text: { key: 'prepayment.charge.idUnknown' } };
     case 'refused':
       return outcome.releaseFailure
         ? { severity: 'error', text: { key: 'prepayment.charge.refusedLocked' } }

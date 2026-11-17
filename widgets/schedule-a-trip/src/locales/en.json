@@ -411,5 +411,7 @@
   "prepayment.event.refundReleased": "Refund not done",
   "prepayment.event.refundConfirmed": "Refund confirmed",
   "write.preallocateNeedsPayment": "Pre-allocation needs a paid prepayment, or a business booking.",
-  "list.sourceError": "The bookings of this filter could not be found: the list may be incomplete."
+  "list.sourceError": "The bookings of this filter could not be found: the list may be incomplete.",
+  "prepayment.refund.refundUnrecorded": "The refund of {amount} was made, but it could not be recorded. Never refund this booking again: resume the refund to record it.",
+  "prepayment.charge.idUnknownUnrecorded": "The Vulog API accepted the invoice without giving its id, and this could not be recorded. Never charge nor unlock this booking: find the invoice in billing and attach it."
 }

@@ -411,5 +411,7 @@
   "prepayment.event.refundReleased": "Remboursement non effectué",
   "prepayment.event.refundConfirmed": "Remboursement confirmé",
   "write.preallocateNeedsPayment": "La pré-allocation demande un prépaiement payé, ou une réservation professionnelle.",
-  "list.sourceError": "Les réservations de ce filtre n’ont pas pu être trouvées : la liste peut être incomplète."
+  "list.sourceError": "Les réservations de ce filtre n’ont pas pu être trouvées : la liste peut être incomplète.",
+  "prepayment.refund.refundUnrecorded": "Le remboursement de {amount} a été fait, mais n’a pas pu être enregistré. Ne remboursez jamais à nouveau cette réservation : reprenez le remboursement pour l’enregistrer.",
+  "prepayment.charge.idUnknownUnrecorded": "L’API Vulog a accepté la facture sans donner son identifiant, et cela n’a pas pu être enregistré. Ne facturez ni ne débloquez jamais cette réservation : retrouvez la facture dans la facturation et rattachez-la."
 }

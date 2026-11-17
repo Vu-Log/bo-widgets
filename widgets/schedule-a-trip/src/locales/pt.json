@@ -411,5 +411,7 @@
   "prepayment.event.refundReleased": "Reembolso não realizado",
   "prepayment.event.refundConfirmed": "Reembolso confirmado",
   "write.preallocateNeedsPayment": "A pré-atribuição requer um pré-pagamento pago ou uma reserva empresarial.",
-  "list.sourceError": "Não foi possível encontrar as reservas deste filtro: a lista pode estar incompleta."
+  "list.sourceError": "Não foi possível encontrar as reservas deste filtro: a lista pode estar incompleta.",
+  "prepayment.refund.refundUnrecorded": "O reembolso de {amount} foi feito, mas não pôde ser registado. Nunca reembolse esta reserva novamente: retome o reembolso para o registar.",
+  "prepayment.charge.idUnknownUnrecorded": "A API Vulog aceitou a fatura sem indicar o id, e isso não pôde ser registado. Nunca cobre nem desbloqueie esta reserva: encontre a fatura na faturação e associe-a."
 }

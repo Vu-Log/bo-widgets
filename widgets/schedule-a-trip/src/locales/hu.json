@@ -411,5 +411,7 @@
   "prepayment.event.refundReleased": "Visszatérítés nem történt meg",
   "prepayment.event.refundConfirmed": "Visszatérítés megerősítve",
   "write.preallocateNeedsPayment": "Az előzetes hozzárendeléshez kifizetett előleg vagy céges foglalás szükséges.",
-  "list.sourceError": "A szűrő foglalásai nem találhatók: a lista hiányos lehet."
+  "list.sourceError": "A szűrő foglalásai nem találhatók: a lista hiányos lehet.",
+  "prepayment.refund.refundUnrecorded": "A(z) {amount} visszatérítése megtörtént, de nem sikerült rögzíteni. Ezt a foglalást soha ne térítse vissza újra: folytassa a visszatérítést a rögzítéshez.",
+  "prepayment.charge.idUnknownUnrecorded": "A Vulog API az azonosító megadása nélkül fogadta el a számlát, és ezt nem sikerült rögzíteni. Ezt a foglalást soha ne terhelje és ne oldja fel: keresse meg a számlát a számlázásban, és csatolja."
 }

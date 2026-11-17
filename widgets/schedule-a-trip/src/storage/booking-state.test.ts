@@ -292,6 +292,14 @@ describe('updateBookingState', () => {
       { feeOutcome: 'in-doubt' as const },
       { feeOutcome: 'unknown' },
       { refundAmount: -1 },
+      { refundStartedAt: 'not a date', refundOutcome: 'in-doubt' },
+      { refundStartedAt: now.toISOString() },
+      { feeStartedAt: now.toISOString() },
+      { feeStartedAt: now.toISOString(), feeOutcome: 'charged' },
+      { feeInvoiceId: 'fee-1' },
+      { refundDecidedAt: now.toISOString() },
+      { feeDecidedAt: now.toISOString(), feeDecidedBy: '' },
+      { chargeAcceptedAt: now.toISOString() },
     ]) {
       const result = await updateBookingState(collection, doc, patch as never);
       expect(result.ok === false && result.error.kind).toBe('invalid-write');
@@ -507,6 +515,13 @@ describe('claimCharge', () => {
 
 describe('releaseCharge', () => {
   const input = { userId: 'user-1', now };
+
+  it('never releases a claim the API accepted', async () => {
+    await seed({ chargeStartedAt: now.toISOString(), chargeAcceptedAt: now.toISOString() });
+
+    expect(await releaseCharge(collection, await current(), input)).toEqual({ ok: false, error: { kind: 'charge-accepted' } });
+    expect(bo.storage.api.update).not.toHaveBeenCalled();
+  });
 
   it('clears the claim and records it in the journal', async () => {
     await claimCharge(collection, BOOKING, { ...input, fleetId: 'FLEET-1' });

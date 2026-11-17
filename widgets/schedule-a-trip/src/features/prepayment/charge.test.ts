@@ -110,6 +110,24 @@ describe('chargePrepayment', () => {
     expect(await unlockClaim(setup.deps, BOOKING_ID, NOW.toISOString())).toEqual({ ok: false, error: { kind: 'charge-accepted' } });
   });
 
+  it('never unlocks a claim the API accepted between the check and the release', async () => {
+    setup = await moneySetup();
+    await setup.seed({ chargeStartedAt: NOW.toISOString(), chargeStartedBy: 'operator-1' });
+    setup.setNow(new Date(NOW.getTime() + 60 * 60_000));
+    // The second read sees the acceptance written by another operator meanwhile.
+    const get = setup.bo.storage.api.get;
+    const real = get.getMockImplementation()!;
+    let reads = 0;
+    get.mockImplementation(async (...args: Parameters<typeof real>) => {
+      reads += 1;
+      const doc = await real(...args);
+      return reads >= 2 && doc ? { ...doc, value: { ...doc.value, chargeAcceptedAt: NOW.toISOString() } } : doc;
+    });
+
+    expect(await unlockClaim(setup.deps, BOOKING_ID, NOW.toISOString())).toEqual({ ok: false, error: { kind: 'charge-accepted' } });
+    expect(setup.bo.storage.api.update).not.toHaveBeenCalled();
+  });
+
   it('unlocks a claim the fields do not mark accepted, whatever the journal says', async () => {
     setup = await moneySetup();
     await setup.seed({

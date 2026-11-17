@@ -5,6 +5,10 @@ import type { BookingState } from '../../storage/booking-state';
 import { readBookingState } from '../../storage/booking-state';
 import { saveInternalNotes } from './notes';
 import { executeRefund, planRefund, refundAmounts, type RefundPlan } from './refund';
+import { refundProgress } from './rules';
+
+const refundProgressOf = (state: Partial<BookingState>) =>
+  refundProgress({ schemaVersion: 1, fleetId: 'FLEET-1', allocationProcessed: false, ...state });
 
 let setup: Awaited<ReturnType<typeof moneySetup>>;
 afterEach(() => setup?.disconnect());
@@ -294,6 +298,46 @@ describe('executeRefund', () => {
     });
   });
 
+  it('says a refund made but not recorded, and records it on resume without refunding again', async () => {
+    await start();
+    const update = setup.bo.storage.api.update;
+    const real = update.getMockImplementation()!;
+    update.mockImplementation(async (...args: Parameters<typeof real>) => {
+      if ((args[2] as { refundedAt?: string }).refundedAt) throw Object.assign(new Error('quota'), { code: 'quota-exceeded', status: 507 });
+      return real(...args);
+    });
+
+    expect(await executeRefund(setup.deps, await plan(48))).toMatchObject({ kind: 'refund-unrecorded', amount: 50 });
+    expect(setup.stored()?.value).toMatchObject({ refundOutcome: 'in-doubt' });
+    update.mockImplementation(real);
+
+    expect((await plan(48)).refund).toEqual({ kind: 'record-only' });
+    expect(await executeRefund(setup.deps, await plan(48))).toMatchObject({ kind: 'done' });
+    expect(setup.aima.callsTo('POST', '/refund')).toHaveLength(1);
+  });
+
+  it('records a refund made even when someone else started the fees meanwhile', async () => {
+    await start({ balance: 40 });
+    const planned = await plan(10);
+    const update = setup.bo.storage.api.update;
+    const real = update.getMockImplementation()!;
+    let injected = false;
+    update.mockImplementation(async (...args: Parameters<typeof real>) => {
+      if (!injected && (args[2] as { refundedAt?: string }).refundedAt) {
+        injected = true;
+        // Another operator starts the fees just before the record of the refund.
+        const doc = setup.stored()!;
+        await setup.bo.storage.api.set('bookings', BOOKING_ID, { ...doc.value, feeStartedAt: NOW.toISOString(), feeAmount: 15, feeOutcome: 'in-doubt' });
+      }
+      return real(...args);
+    });
+
+    expect(await executeRefund(setup.deps, planned)).toEqual({ kind: 'write-failed', step: 'fee', failure: { kind: 'refused', reason: 'fee-started' } });
+    expect(setup.stored()?.value).toMatchObject({ refundOutcome: 'confirmed', feeOutcome: 'in-doubt' });
+    expect(setup.stored()?.value.refundedAt).toBeTruthy();
+    expect(feeCharges()).toHaveLength(0);
+  });
+
   it('records a confirmed refund whose record failed, without refunding again', async () => {
     await start();
     setup.aima.failNext('refund', { reject: new TypeError('Failed to fetch') });
@@ -329,8 +373,12 @@ describe('executeRefund', () => {
     expect(await executeRefund(setup.deps, await plan(48), { refund: 'not-refunded' })).toMatchObject({ kind: 'done' });
     expect(setup.aima.callsTo('POST', '/refund')).toHaveLength(2);
     expect(eventTypes()).toContain('refund-released');
-    // The new call started after the decision: the step is a new one, the decision stays in the journal.
-    expect(setup.stored()?.value).toMatchObject({ refundOutcome: 'confirmed', refundDecidedAt: null });
+    // The decision is kept when the refund is started again: it is the last one taken on the step.
+    expect(setup.stored()?.value).toMatchObject({
+      refundOutcome: 'confirmed',
+      refundDecidedAt: new Date(NOW.getTime() + 11 * 60_000).toISOString(),
+      refundDecidedBy: 'operator-1',
+    });
   });
 
   it('refunds once when two operators run the same refund at the same time', async () => {
@@ -345,16 +393,56 @@ describe('executeRefund', () => {
     expect(setup.stored()?.value).toMatchObject({ refundOutcome: 'confirmed', refundCompletedAt: NOW.toISOString() });
   });
 
-  it('charges the fees once when two operators resume the same refund at the same time', async () => {
+  it('refuses the second of two refunds run at the same time at its start, with the reason', async () => {
     await start({ balance: 40 });
     const first = await plan(0.5);
     const second = await plan(0.5);
 
-    await Promise.all([executeRefund(setup.deps, first), executeRefund(setup.deps, second)]);
+    const outcomes = await Promise.all([executeRefund(setup.deps, first), executeRefund(setup.deps, second)]);
 
     expect(feeCharges()).toHaveLength(1);
     expect(setup.aima.callsTo('POST', '/refund')).toHaveLength(1);
+    expect(outcomes).toContainEqual({ kind: 'write-failed', step: 'refund', failure: { kind: 'refused', reason: 'refund-in-progress' } });
+  });
+
+  it('charges the fees once when two operators resume them at the same time', async () => {
+    await start({ balance: 40 });
+    setup.aima.failNext('charge', { status: 400 });
+    expect(await executeRefund(setup.deps, await plan(10))).toMatchObject({ kind: 'fee-refused' });
+    expect(setup.stored()?.value).toMatchObject({ refundOutcome: 'confirmed', feeOutcome: 'released', feeAmount: null });
+    const first = await plan(10);
+    const second = await plan(10);
+
+    const outcomes = await Promise.all([executeRefund(setup.deps, first), executeRefund(setup.deps, second)]);
+
+    expect(feeCharges()).toHaveLength(2);
+    expect(outcomes).toContainEqual({ kind: 'write-failed', step: 'fee', failure: { kind: 'refused', reason: 'fee-started' } });
     expect(setup.stored()?.value.feeOutcome).toBe('charged');
+  });
+
+  it('lets one of two operators decide a refund in doubt', async () => {
+    await start();
+    setup.aima.failNext('refund', { status: 502 });
+    await executeRefund(setup.deps, await plan(48));
+    setup.setNow(new Date(NOW.getTime() + 11 * 60_000));
+    const first = await plan(48);
+    const second = await plan(48);
+
+    const outcomes = await Promise.all([
+      executeRefund(setup.deps, first, { refund: 'refunded' }),
+      executeRefund(setup.deps, second, { refund: 'not-refunded' }),
+    ]);
+
+    expect(outcomes).toContainEqual({ kind: 'write-failed', step: 'decision', failure: { kind: 'refused', reason: 'refund-not-in-doubt' } });
+    const decisions = eventTypes().filter((type) => type === 'refund-confirmed' || type === 'refund-released');
+    expect(decisions).toHaveLength(1);
+    expect(setup.aima.callsTo('POST', '/refund').length).toBeLessThanOrEqual(2);
+  });
+
+  it('reads a refund or fees started without an outcome as in doubt, never to do', async () => {
+    const read = (state: Partial<BookingState>) => refundProgressOf(state);
+    expect(read({ refundStartedAt: NOW.toISOString() }).refund).toBe('in-doubt');
+    expect(read({ feeStartedAt: NOW.toISOString() }).fee).toBe('in-doubt');
   });
 
   it('decides from the fields, whatever the journal says', async () => {

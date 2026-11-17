@@ -74,24 +74,25 @@ One document per booking, in the collection `bookings` of `bo.storage`, under th
 | `refundStartedAt`, `refundStartedBy` | ISO date, user id | The refund call is about to be sent. |
 | `refundAmount` | number \| null | Amount of the refund call. |
 | `refundOutcome` | `in-doubt` \| `confirmed` \| `released` | `in-doubt` from the start until the refund is recorded (`confirmed`), refused or said not done (`released`). |
-| `refundDecidedAt`, `refundDecidedBy` | ISO date, user id | An operator decided a refund in doubt. |
+| `refundDecidedAt`, `refundDecidedBy` | ISO date, user id | An operator decided a refund in doubt (the last decision on the step, kept when it starts again). |
 | `feeStartedAt` | ISO date | The cancellation fee invoice is about to be created. |
 | `feeAmount` | number \| null | Fees started, charged or confirmed. |
 | `walletBalanceBeforeFee` | number \| null | Wallet balance read before the fees. |
 | `feeInvoiceId`, `feeChargedAt` | string, ISO date | The fee invoice the API created. |
 | `feeOutcome` | `in-doubt` \| `charged` \| `confirmed` \| `skipped` \| `released` | `in-doubt` from the start; `confirmed` and `released` may be an operator's decision. |
-| `feeDecidedAt`, `feeDecidedBy` | ISO date, user id | An operator decided fees in doubt. |
+| `feeDecidedAt`, `feeDecidedBy` | ISO date, user id | An operator decided fees in doubt (the last decision, kept when they start again). |
 | `creditsRevocationStartedAt`, `creditsRevocationBalance` | ISO date, number | The wallet is about to be emptied; the balance recorded before. |
 | `creditsRevocationSkippedAt` | ISO date | No wallet to empty. |
 | `creditsRevoked` | boolean | The wallet was emptied. |
-| `refundCompletedAt` | ISO date | Refund, fees and revocation are done. |
+| `refundCompletedAt` | ISO date | Refund, fees and revocation are done; cleared when a refund starts again. |
 
-A step `in-doubt` (a lost answer) is never done again until an operator decides it, at least 10 minutes after it started. A refund or fees `in-doubt` must have their start date: the contract refuses a write that breaks it.
+A step `in-doubt` (a lost answer) is never done again until an operator decides it, at least 10 minutes after it started; a refund or fees started without an outcome are read as in doubt. The contract refuses a write that breaks a rule between these fields: a step started without its outcome, or in doubt without its start; fees `charged` or a fee invoice without `feeChargedAt`; a decision without its author; `chargeAcceptedAt` without a claim. A claim with `chargeAcceptedAt` is never released.
 
 ### Rules for the server scheduler
 
 - It writes only its own fields (`allocationProcessed`, `creditsAdded`, `walletId`, `schedulerErrors`) with `update` over the version it read, and documents with `schemaVersion: 1`.
 - **Credits are granted only once `invoiceId` is set and the invoice is `PAID`**: `chargeAmount` is written with the claim, before the invoice exists, and a claim may be released.
+- **No credits once a refund started**: never grant them when `refundStartedAt`, `refundedAt` or `creditsRevocationSkippedAt` is set (a partial refund may leave the invoice `PAID`).
 - It never writes the money steps (the refund, fees and credits revocation fields above), the charge claim nor the regularization.
 - Every user of the host can read this storage: it holds user ids, never names, emails or secrets.
 

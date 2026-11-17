@@ -411,5 +411,7 @@
   "prepayment.event.refundReleased": "Erstattung nicht durchgeführt",
   "prepayment.event.refundConfirmed": "Erstattung bestätigt",
   "write.preallocateNeedsPayment": "Eine Vorabzuweisung erfordert eine bezahlte Vorauszahlung oder eine Geschäftsbuchung.",
-  "list.sourceError": "Die Buchungen dieses Filters konnten nicht gefunden werden: Die Liste ist möglicherweise unvollständig."
+  "list.sourceError": "Die Buchungen dieses Filters konnten nicht gefunden werden: Die Liste ist möglicherweise unvollständig.",
+  "prepayment.refund.refundUnrecorded": "Die Erstattung von {amount} wurde ausgeführt, konnte aber nicht gespeichert werden. Diese Buchung nie erneut erstatten: Setzen Sie die Erstattung fort, um sie zu speichern.",
+  "prepayment.charge.idUnknownUnrecorded": "Die Vulog-API hat die Rechnung ohne ihre ID angenommen, und dies konnte nicht gespeichert werden. Diese Buchung nie belasten oder entsperren: Suchen Sie die Rechnung in der Abrechnung und verknüpfen Sie sie."
 }

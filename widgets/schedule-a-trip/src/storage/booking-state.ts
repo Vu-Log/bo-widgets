@@ -6,7 +6,7 @@ import {
   type BoStorageWhereValue,
 } from '@vulog/bo-widget-sdk';
 import { z } from 'zod';
-import { FEE_OUTCOMES, REFUND_CALL_OUTCOMES } from './money-steps';
+import { applyMoneyEvent, FEE_OUTCOMES, REFUND_CALL_OUTCOMES } from './money-steps';
 
 /*
  * The state of a Schedule a trip booking the widget keeps, in the collection `bookings` of
@@ -122,11 +122,11 @@ const fields = {
   // The money steps (storage/money-steps.ts): what the guards of the money actions read.
   chargeAcceptedAt: isoDate.nullable(),
   refundStartedAt: isoDate.nullable(),
-  refundStartedBy: z.string().nullable(),
+  refundStartedBy: z.string().min(1).nullable(),
   refundAmount: z.number().nonnegative().nullable(),
   refundOutcome: z.enum(REFUND_CALL_OUTCOMES).nullable(),
   refundDecidedAt: isoDate.nullable(),
-  refundDecidedBy: z.string().nullable(),
+  refundDecidedBy: z.string().min(1).nullable(),
   feeStartedAt: isoDate.nullable(),
   feeAmount: z.number().nonnegative().nullable(),
   walletBalanceBeforeFee: z.number().nullable(),
@@ -134,7 +134,7 @@ const fields = {
   feeChargedAt: isoDate.nullable(),
   feeOutcome: z.enum(FEE_OUTCOMES).nullable(),
   feeDecidedAt: isoDate.nullable(),
-  feeDecidedBy: z.string().nullable(),
+  feeDecidedBy: z.string().min(1).nullable(),
   creditsRevocationStartedAt: isoDate.nullable(),
   creditsRevocationBalance: z.number().nullable(),
   creditsRevocationSkippedAt: isoDate.nullable(),
@@ -162,7 +162,7 @@ export const MONEY_STEP_FIELDS = [
   'creditsRevocationBalance',
   'creditsRevocationSkippedAt',
   'refundCompletedAt',
-] as const;
+] as const satisfies readonly (keyof typeof fields)[];
 
 const stateShape = {
   schemaVersion: z.literal(SCHEMA_VERSION),
@@ -212,9 +212,10 @@ export const SCHEDULER_FIELDS = [
 ] as const;
 
 /**
- * The rules between fields that protect money: an invoice only after a charge claim, a refund or
- * fees in doubt only with their start, a pending regularization only with its amount, a
- * regularization only with its author.
+ * The rules between fields that protect money: an invoice or an accepted charge only after a
+ * charge claim; a refund or fees started with their outcome and in doubt with their start; fees
+ * charged with their date; a decision with its author; a pending regularization with its amount; a
+ * regularization with its author.
  */
 const checkCrossFields = (state: Partial<BookingState>, context: z.RefinementCtx): void => {
   if (state.invoiceId && !state.chargeStartedAt) {
@@ -231,20 +232,18 @@ const checkCrossFields = (state: Partial<BookingState>, context: z.RefinementCtx
       message: 'A pending regularization needs its amount (toRegularize)',
     });
   }
-  if (state.refundOutcome === 'in-doubt' && !state.refundStartedAt) {
-    context.addIssue({
-      code: 'custom',
-      path: ['refundOutcome'],
-      message: 'A refund in doubt needs its start (refundStartedAt)',
-    });
-  }
-  if (state.feeOutcome === 'in-doubt' && !state.feeStartedAt) {
-    context.addIssue({
-      code: 'custom',
-      path: ['feeOutcome'],
-      message: 'Fees in doubt need their start (feeStartedAt)',
-    });
-  }
+  const rule = (when: boolean, path: string, message: string) => {
+    if (when) context.addIssue({ code: 'custom', path: [path], message });
+  };
+  rule(state.refundOutcome === 'in-doubt' && !state.refundStartedAt, 'refundOutcome', 'A refund in doubt needs its start (refundStartedAt)');
+  rule(Boolean(state.refundStartedAt) && !state.refundOutcome, 'refundOutcome', 'A refund started needs its outcome (refundOutcome)');
+  rule(state.feeOutcome === 'in-doubt' && !state.feeStartedAt, 'feeOutcome', 'Fees in doubt need their start (feeStartedAt)');
+  rule(Boolean(state.feeStartedAt) && !state.feeOutcome, 'feeOutcome', 'Fees started need their outcome (feeOutcome)');
+  rule(state.feeOutcome === 'charged' && !state.feeChargedAt, 'feeChargedAt', 'Fees charged need their date (feeChargedAt)');
+  rule(Boolean(state.feeInvoiceId) && !state.feeChargedAt, 'feeChargedAt', 'A fee invoice needs its date (feeChargedAt)');
+  rule(Boolean(state.refundDecidedAt) && !state.refundDecidedBy, 'refundDecidedBy', 'A refund decision needs its author (refundDecidedBy)');
+  rule(Boolean(state.feeDecidedAt) && !state.feeDecidedBy, 'feeDecidedBy', 'A fee decision needs its author (feeDecidedBy)');
+  rule(Boolean(state.chargeAcceptedAt) && !state.chargeStartedAt, 'chargeAcceptedAt', 'An accepted charge needs its claim (chargeStartedAt)');
   if (state.regularizedAt && state.regularizedBy === undefined) {
     context.addIssue({
       code: 'custom',
@@ -353,6 +352,8 @@ export type ClaimFailure =
       readonly startedBy: string | null;
     }
   | { readonly kind: 'already-charged'; readonly invoiceId: string }
+  /** The API accepted the invoice of the claim (its id unknown): the claim is never released. */
+  | { readonly kind: 'charge-accepted' }
   | StorageFailure;
 
 const failureDetails = (failure: StorageFailure): string => {
@@ -734,6 +735,7 @@ export async function claimCharge(
     if (claimed) return { ok: false, error: claimed };
 
     const billed = input.patch;
+    const claimEvent: BookingEvent = { at, by: input.userId, type: 'charge-started' };
     const patch: BookingStatePatch = {
       ...(billed
         ? {
@@ -746,9 +748,8 @@ export async function claimCharge(
         : {}),
       chargeStartedAt: at,
       chargeStartedBy: input.userId,
-      // A new claim: the acceptance of a previous one no longer applies.
-      chargeAcceptedAt: null,
-      events: withEvent(current?.value.events, { at, by: input.userId, type: 'charge-started' }),
+      ...applyMoneyEvent({}, claimEvent),
+      events: withEvent(current?.value.events, claimEvent),
     };
     const written =
       current === null
@@ -778,15 +779,18 @@ export async function releaseCharge(
   if (current.value.invoiceId) {
     return { ok: false, error: { kind: 'already-charged', invoiceId: current.value.invoiceId } };
   }
+  // The invoice exists, its id unknown: releasing the claim would let a second charge through.
+  if (current.value.chargeAcceptedAt) return { ok: false, error: { kind: 'charge-accepted' } };
   const at = input.now.toISOString();
+  const release: BookingEvent = { at, by: input.userId, type: 'charge-released' };
   return updateBookingState(collection, current, {
     chargeStartedAt: null,
     chargeStartedBy: null,
     chargeAmount: null,
     computedAmount: null,
     amountWarnings: [],
-    chargeAcceptedAt: null,
-    events: withEvent(current.value.events, { at, by: input.userId, type: 'charge-released' }),
+    ...applyMoneyEvent({}, release),
+    events: withEvent(current.value.events, release),
   });
 }
 

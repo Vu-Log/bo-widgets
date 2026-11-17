@@ -21,7 +21,7 @@ import {
   refundNote,
   refundProgress,
 } from './rules';
-import { refuse, withMoneyEvents, writeOver, type RefusedWrite, type WriteFailure } from './writes';
+import { refuse, withMoneyEvents, writeOver, type PatchBesideSteps, type RefusedWrite, type WriteFailure } from './writes';
 
 /** The settings a refund reads. */
 export interface RefundPlanSettings extends RefundSettings {
@@ -323,7 +323,8 @@ export interface RefundDecisions {
  * - `needs-decision`: a step has an unknown outcome: ask the operator first (`too-recent` when the
  *   step is too recent to be decided).
  * - `refund-refused` (nothing refunded; `releaseFailure` when the mark could not be cleared),
- *   `refund-unknown` (check the invoice, then resume).
+ *   `refund-unknown` (check the invoice, then resume), `refund-unrecorded` (refunded, but the
+ *   record failed: it stays in doubt and is recorded on resume, never refunded again).
  * - `fee-refused` (no fee charged; resume charges it), `fee-unknown` (the fee may be charged),
  *   `fee-charged-unrecorded` (the fee invoice exists but could not be recorded: never charge
  *   again).
@@ -344,6 +345,7 @@ export type RefundOutcome =
       readonly releaseFailure: WriteFailure | null;
     }
   | { readonly kind: 'refund-unknown'; readonly error: ApiError }
+  | { readonly kind: 'refund-unrecorded'; readonly amount: number; readonly failure: WriteFailure }
   | {
       readonly kind: 'fee-refused';
       readonly error: ApiError;
@@ -376,14 +378,14 @@ const mark = (
   bookingId: string,
   entries: () => BookingEvent[],
   check: (current: BookingStateDoc) => RefusedWrite | null,
-  extra: BookingStatePatch = {},
+  extra: PatchBesideSteps = {},
 ) =>
   writeOver(deps, bookingId, (current) => {
     const refused = check(current);
     if (refused) return refused;
     return {
       mode: 'update',
-      patch: { ...withMoneyEvents(current.value, entries()), ...extra },
+      patch: withMoneyEvents(current.value, entries(), extra),
     };
   });
 
@@ -427,14 +429,13 @@ export async function executeRefund(
     const decided = await mark(
       deps,
       bookingId,
-      () => [entry(deps, answer === 'refunded' ? EVENTS.refundConfirmed : EVENTS.refundReleased)],
+      () => [entry(deps, answer === 'refunded' ? EVENTS.refundConfirmed : EVENTS.refundReleased, { decided: true })],
       (current) => {
         const progress = refundProgress(current.value);
         return progress.refund === 'in-doubt' && progress.refundStartedAt === step.startedAt
           ? null
           : refuse('refund-not-in-doubt');
       },
-      { refundDecidedAt: deps.now().toISOString(), refundDecidedBy: deps.userId },
     );
     if (!decided.ok) return { kind: 'write-failed', step: 'decision', failure: decided.error };
     if (answer === 'refunded') recordRefund = true;
@@ -454,14 +455,14 @@ export async function executeRefund(
     const decided = await mark(
       deps,
       bookingId,
-      () => [entry(deps, answer === 'charged' ? EVENTS.feeConfirmed : EVENTS.feeReleased, { amount: step.previousAmount })],
+      // The amount the fees were started with, else the price read now: never a fee done without one.
+      () => [entry(deps, answer === 'charged' ? EVENTS.feeConfirmed : EVENTS.feeReleased, { amount: step.previousAmount ?? step.charge.amount, decided: true })],
       (current) => {
         const progress = refundProgress(current.value);
         return progress.fee === 'in-doubt' && progress.feeStartedAt === step.startedAt
           ? null
           : refuse('fee-not-in-doubt');
       },
-      { feeDecidedAt: deps.now().toISOString(), feeDecidedBy: deps.userId },
     );
     if (!decided.ok) return { kind: 'write-failed', step: 'decision', failure: decided.error };
     if (answer === 'not-charged') feeCharge = step.charge;
@@ -509,14 +510,27 @@ export async function executeRefund(
   // 3. Records the refund (and marks the fee step), or marks the fee step alone.
   if (recordRefund) {
     const amount = refundCall?.amount ?? null;
-    const recorded = await mark(
-      deps,
-      bookingId,
-      () => [entry(deps, EVENTS.refunded, { amount }), ...feeMarks()],
-      (current) => (current.value.refundedAt ? refuse('already-refunded') : feeTodo(current)),
-      { refundedAt: deps.now().toISOString() },
-    );
-    if (!recorded.ok) return { kind: 'write-failed', step: 'refund', failure: recorded.error };
+    // Fees someone else started meanwhile never block the record of a refund made: it is written
+    // alone, and the fees are left to them.
+    let feesTaken = false;
+    const recorded = await writeOver(deps, bookingId, (current) => {
+      if (current.value.refundedAt) return refuse('already-refunded');
+      feesTaken = feeTodo(current) !== null;
+      return {
+        mode: 'update',
+        patch: withMoneyEvents(
+          current.value,
+          [entry(deps, EVENTS.refunded, { amount }), ...(feesTaken ? [] : feeMarks())],
+          { refundedAt: deps.now().toISOString() },
+        ),
+      };
+    });
+    if (!recorded.ok) {
+      // The money moved: say so, the refund in doubt is recorded when it is resumed.
+      if (refundCall) return { kind: 'refund-unrecorded', amount: refundCall.amount, failure: recorded.error };
+      return { kind: 'write-failed', step: 'refund', failure: recorded.error };
+    }
+    if (feesTaken) return { kind: 'write-failed', step: 'fee', failure: refuse('fee-started') };
   } else if (feeCharge || feeSkip) {
     const marked = await mark(deps, bookingId, feeMarks, feeTodo);
     if (!marked.ok) return { kind: 'write-failed', step: 'fee', failure: marked.error };
@@ -588,10 +602,7 @@ export async function executeRefund(
       ...(plan.credits.kind === 'skip' ? [entry(deps, EVENTS.creditsSkipped)] : []),
       entry(deps, EVENTS.refundCompleted, { missingAmount: missing }),
     ];
-    const patch: BookingStatePatch = {
-      ...withMoneyEvents(current.value, closing),
-      ...(plan.credits.kind === 'revoke' ? { creditsRevoked: true } : {}),
-    };
+    const patch = withMoneyEvents(current.value, closing, plan.credits.kind === 'revoke' ? { creditsRevoked: true } : {});
     if (missing > 0) {
       return {
         mode: 'update',

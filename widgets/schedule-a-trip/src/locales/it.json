@@ -411,5 +411,7 @@
   "prepayment.event.refundReleased": "Rimborso non effettuato",
   "prepayment.event.refundConfirmed": "Rimborso confermato",
   "write.preallocateNeedsPayment": "La pre-assegnazione richiede un prepagamento pagato o una prenotazione aziendale.",
-  "list.sourceError": "Non è stato possibile trovare le prenotazioni di questo filtro: l’elenco potrebbe essere incompleto."
+  "list.sourceError": "Non è stato possibile trovare le prenotazioni di questo filtro: l’elenco potrebbe essere incompleto.",
+  "prepayment.refund.refundUnrecorded": "Il rimborso di {amount} è stato effettuato, ma non è stato possibile registrarlo. Non rimborsare mai più questa prenotazione: riprendi il rimborso per registrarlo.",
+  "prepayment.charge.idUnknownUnrecorded": "L’API Vulog ha accettato la fattura senza fornirne l’id, e non è stato possibile registrarlo. Non addebitare né sbloccare mai questa prenotazione: trova la fattura nella fatturazione e collegala."
 }

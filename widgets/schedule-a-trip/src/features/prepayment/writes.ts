@@ -14,7 +14,7 @@ import {
   type StorageFailure,
   type StorageResult,
 } from '../../storage/booking-state';
-import { applyMoneyEvents } from '../../storage/money-steps';
+import { applyMoneyEvents, type MoneyStepField } from '../../storage/money-steps';
 
 /** Tries of {@link writeOver} when the document changes between its read and its write. */
 const WRITE_ATTEMPTS = 3;
@@ -135,15 +135,25 @@ export const withEvents = (
   ...(events ?? []),
 ]);
 
+/** A patch written with money steps: never a field of a step, which only its entry sets. */
+export type PatchBesideSteps = Omit<BookingStatePatch, MoneyStepField | 'events'>;
+
 /**
- * The entries of steps added to the journal, with the fields they set (contract v2): a money step
- * and its audit entry are always written together, and only the fields are read back.
+ * The entries of steps added to the journal, with the fields they set: a money step and its audit
+ * entry are always written together, and only the fields are read back. The other fields of the
+ * write (`extra`) cannot set a field of a step.
  *
  * @param current - The stored state the patch is written over.
  * @param added - The entries to add.
- * @returns The fields of the steps and the new journal, to spread in a patch.
+ * @param extra - The other fields of the write.
+ * @returns The patch.
  */
-export const withMoneyEvents = (current: BookingState, added: readonly BookingEvent[]): BookingStatePatch => ({
+export const withMoneyEvents = (
+  current: BookingState,
+  added: readonly BookingEvent[],
+  extra: PatchBesideSteps = {},
+): BookingStatePatch => ({
+  ...extra,
   ...applyMoneyEvents(current, added),
   events: withEvents(current.events, added),
 });

@@ -320,7 +320,7 @@ export interface RefundProgress {
 }
 
 /**
- * Reads the steps of a refund from the fields of the document (contract v2): `refundedAt`,
+ * Reads the steps of a refund from the fields of the document: `refundedAt`,
  * `refundOutcome`, `feeOutcome`, the credits revocation fields, `creditsRevoked`, `toRegularize`.
  * The journal is never read: it is an audit trail.
  *
@@ -332,10 +332,11 @@ export function refundProgress(value: BookingState): RefundProgress {
   const refund: RefundStep =
     refunded || value.refundOutcome === 'confirmed'
       ? 'done'
-      : value.refundOutcome === 'in-doubt'
+      : value.refundOutcome === 'in-doubt' || (value.refundStartedAt && !value.refundOutcome)
         ? 'in-doubt'
         : 'todo';
-  const feeOutcome = value.feeOutcome ?? null;
+  // A step started without an outcome (never written by the widget) is in doubt, never to do.
+  const feeOutcome = value.feeOutcome ?? (value.feeStartedAt ? 'in-doubt' : null);
   const fee: FeeStep =
     feeOutcome === 'in-doubt'
       ? 'in-doubt'
