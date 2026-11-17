@@ -16,7 +16,7 @@ describe('actionErrorText', () => {
 describe('storageErrorText', () => {
   it('maps each failure', () => {
     expect(storageErrorText({ kind: 'conflict' }).key).toBe('prepayment.storage.changed');
-    expect(storageErrorText({ kind: 'refused', reason: 'x' }).key).toBe('prepayment.storage.changed');
+    expect(storageErrorText({ kind: 'refused', reason: 'changed' }).key).toBe('prepayment.storage.changed');
     expect(storageErrorText({ kind: 'not-found' }).key).toBe('prepayment.storage.gone');
     expect(storageErrorText({ kind: 'rate-limited' }).key).toBe('prepayment.storage.rateLimited');
     expect(storageErrorText({ kind: 'forbidden' }).key).toBe('prepayment.notAllowed.storage');
@@ -26,6 +26,9 @@ describe('storageErrorText', () => {
     expect(storageErrorText({ kind: 'too-recent' }).key).toBe('prepayment.verify.tooRecent');
     expect(storageErrorText({ kind: 'no-claim' }).key).toBe('prepayment.verify.noClaim');
     expect(storageErrorText({ kind: 'too-large' }).key).toBe('prepayment.storage.failed');
+    expect(storageErrorText({ kind: 'invalid-input', reason: 'too-long' }).key).toBe('prepayment.storage.tooLong');
+    expect(storageErrorText({ kind: 'other-claim' }).key).toBe('prepayment.verify.otherClaim');
+    expect(storageErrorText({ kind: 'charge-accepted' }).key).toBe('prepayment.verify.accepted');
   });
 });
 

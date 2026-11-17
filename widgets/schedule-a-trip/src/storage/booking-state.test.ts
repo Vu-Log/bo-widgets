@@ -20,6 +20,7 @@ import {
   StorageRequestError,
   updateBookingState,
   withEvent,
+  MONEY_EVENT_TYPES,
   type BookingEvent,
   type BookingStateDoc,
   type BookingStateCollection,
@@ -498,7 +499,7 @@ describe('releaseCharge', () => {
     await claimCharge(collection, BOOKING, {
       ...input,
       fleetId: 'FLEET-1',
-      patch: { chargeAmount: 42, computedAmount: null, amountWarnings: ['below-minimum'], entityId: 'entity-1' },
+      patch: { chargeAmount: 42, computedAmount: null, amountWarnings: ['below-minimum'], entityId: 'entity-1', isB2B: false },
     });
 
     const result = await releaseCharge(collection, await current(), input);
@@ -547,6 +548,24 @@ describe('withEvent', () => {
     const result = withEvent(events, event(MAX_EVENTS));
     expect(result).toHaveLength(MAX_EVENTS);
     expect(result[0]).toEqual(event(1));
+    expect(result.at(-1)).toEqual(event(MAX_EVENTS));
+  });
+
+  it('drops the other entries before the money steps when full', () => {
+    expect(MONEY_EVENT_TYPES.has('cancellation-fee-started')).toBe(true);
+    const money = { ...event(0), type: 'cancellation-fee-started' };
+    const events = [money, ...Array.from({ length: MAX_EVENTS - 1 }, (_, index) => event(index + 1))];
+    const result = withEvent(events, event(MAX_EVENTS));
+    expect(result).toHaveLength(MAX_EVENTS);
+    expect(result[0]).toEqual(money);
+    expect(result[1]).toEqual(event(2));
+  });
+
+  it('drops the oldest money step only when the journal holds nothing else', () => {
+    const events = Array.from({ length: MAX_EVENTS }, (_, index) => ({ ...event(index), type: 'refunded' }));
+    const result = withEvent(events, event(MAX_EVENTS));
+    expect(result).toHaveLength(MAX_EVENTS);
+    expect(result[0]?.at).toBe(event(1).at);
     expect(result.at(-1)).toEqual(event(MAX_EVENTS));
   });
 });

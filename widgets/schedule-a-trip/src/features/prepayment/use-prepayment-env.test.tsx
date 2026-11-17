@@ -49,3 +49,46 @@ describe('usePrepaymentEnv', () => {
     await vi.waitFor(() => expect(bodyText()).toContain('settings.unavailable'));
   });
 });
+
+describe('guard and logOutcome', () => {
+  let captured: ReturnType<typeof usePrepaymentEnv> | undefined;
+  function Capture() {
+    captured = usePrepaymentEnv();
+    return null;
+  }
+
+  it('resolves a value, and logs an unexpected error instead of throwing', async () => {
+    const rendered = await renderWithBilling(<Capture />);
+    unmount = rendered.view.unmount;
+    await vi.waitFor(() => expect(captured).toBeDefined());
+    const env = captured!;
+
+    expect(await env.guard('charge', 'booking-1', async () => 42)).toEqual({ ok: true, value: 42 });
+    expect(await env.guard('charge', 'booking-1', async () => {
+      throw new RangeError('bug');
+    })).toEqual({ ok: false });
+    await vi.waitFor(() => expect(rendered.bo.api.log.error).toHaveBeenCalled());
+    expect(rendered.bo.api.log.error).toHaveBeenCalledWith('Prepayment: charge failed unexpectedly', {
+      bookingId: 'booking-1',
+      error: 'RangeError: bug',
+    });
+  });
+
+  it('logs the kinds and statuses of an outcome, never more', async () => {
+    captured = undefined;
+    const rendered = await renderWithBilling(<Capture />);
+    unmount = rendered.view.unmount;
+    await vi.waitFor(() => expect(captured).toBeDefined());
+
+    captured!.logOutcome('refund', 'booking-1', { kind: 'fee-charged-unrecorded', invoiceId: 'i-9', amount: 15, failure: { kind: 'rate-limited' } } as { kind: string });
+
+    await vi.waitFor(() =>
+      expect(rendered.bo.api.log.warn).toHaveBeenCalledWith('Prepayment: refund ended with fee-charged-unrecorded', {
+        bookingId: 'booking-1',
+        outcome: 'fee-charged-unrecorded',
+        failure: { kind: 'rate-limited' },
+        invoiceId: 'i-9',
+      }),
+    );
+  });
+});

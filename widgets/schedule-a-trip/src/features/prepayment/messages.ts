@@ -47,6 +47,8 @@ export function storageErrorText(failure: WriteFailure | ClaimFailure | UnlockFa
     case 'conflict':
     case 'refused':
       return { key: 'prepayment.storage.changed' };
+    case 'invalid-input':
+      return { key: 'prepayment.storage.tooLong' };
     case 'not-found':
       return { key: 'prepayment.storage.gone' };
     case 'rate-limited':
@@ -63,7 +65,19 @@ export function storageErrorText(failure: WriteFailure | ClaimFailure | UnlockFa
       return { key: 'prepayment.verify.tooRecent' };
     case 'no-claim':
       return { key: 'prepayment.verify.noClaim' };
-    default:
+    case 'other-claim':
+      return { key: 'prepayment.verify.otherClaim' };
+    case 'charge-accepted':
+      return { key: 'prepayment.verify.accepted' };
+    case 'invalid-document':
+    case 'invalid-write':
+    case 'too-large':
+    case 'quota-exceeded':
+    case 'not-installed':
+    case 'unsupported':
+    case 'disposed':
+    case 'too-many-pages':
+    case 'failed':
       return { key: 'prepayment.storage.failed' };
   }
 }

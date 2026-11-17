@@ -21,8 +21,9 @@ import type { BookingState, BookingStateDoc } from '../../storage/booking-state'
 /** Days after the last activity of a booking past which a missing document means "expired". */
 export const ARCHIVE_AFTER_DAYS = 365;
 /**
- * Minutes a charge claim must be old before "no invoice found, unlock" is offered: an invoice call
- * still in flight for another operator must not be unlocked under them.
+ * Minutes a money step with an unknown outcome (a charge claim, a refund or fees started) must be
+ * old before an operator may say it was not done ("no invoice found, unlock", "the refund was not
+ * done"): a call still in flight for another operator must not be undone under them.
  */
 export const UNLOCK_MIN_CLAIM_AGE_MINUTES = 10;
 /** Minutes searched before the claim: the claim date is a browser clock, the invoice one a server's. */
@@ -30,11 +31,14 @@ export const SEARCH_CLOCK_SKEW_MINUTES = 10;
 
 /** The types of the journal entries this feature writes (and reads back for the refund steps). */
 export const EVENTS = {
+  chargeAccepted: 'charge-accepted',
   charged: 'charged',
   chargeAttached: 'charge-attached',
   chargeReleased: 'charge-released',
   paymentRetried: 'payment-retried',
   refundStarted: 'refund-started',
+  refundReleased: 'refund-released',
+  refundConfirmed: 'refund-confirmed',
   refunded: 'refunded',
   feeStarted: 'cancellation-fee-started',
   feeCharged: 'cancellation-fee-charged',
@@ -162,11 +166,15 @@ export const cancellationFeeNotes = (bookingId: string): string =>
 export const refundNote = (bookingId: string): string =>
   `Schedule a trip ${bookingId} – refund of the prepayment`;
 
+/** The HTTP statuses that surely mean "refused, nothing done" (not a proxy timeout nor a conflict). */
+const CLEAR_REFUSAL_STATUSES: ReadonlySet<number> = new Set([400, 401, 403, 404, 422]);
+
 /**
- * Whether a failed call to create an invoice surely created none: an answer of the API refusing it
- * (any 4xx), or a request the widget or the back office did not send. A lost answer (`network`,
- * `aborted`), a 5xx, an unreadable answer or a refusal of the back office after sending may hide
- * an invoice: the charge must be verified, never released.
+ * Whether a failed money call surely did nothing: an answer of the API refusing it (400, 401, 403,
+ * 404, 422), or a request the widget or the back office did not send. A lost answer (`network`,
+ * `aborted`), a 5xx, another 4xx (408, 409, 429… may come from a proxy while the API works), an
+ * unreadable answer or a refusal of the back office after sending may hide an invoice or a
+ * refund: it must be verified, never released.
  *
  * @param error - The failure of the call.
  * @returns `true` when no invoice was created.
@@ -181,7 +189,7 @@ export function isClearRefusal(error: ApiError): boolean {
       // 401 from the API, or no token: the request was refused or never sent.
       return true;
     case 'http':
-      return error.status >= 400 && error.status < 500;
+      return CLEAR_REFUSAL_STATUSES.has(error.status);
     default:
       return false;
   }
@@ -222,7 +230,8 @@ export interface InvoiceCriteria {
 
 /**
  * The invoices of a search that are the prepayment of a booking: same amount (to the cent), same
- * customer, same product, and notes naming the booking. Never a guess on the amount alone.
+ * customer, same product, and notes starting with `Schedule a trip {bookingId} –` (never a booking
+ * whose id merely contains this one). Never a guess on the amount alone.
  *
  * @param invoices - The invoices of the search.
  * @param criteria - Booking, customer, product and amount charged.
@@ -232,6 +241,7 @@ export function matchPrepaymentInvoices(
   invoices: readonly BilledInvoice[],
   criteria: InvoiceCriteria,
 ): BilledInvoice[] {
+  const prefix = `Schedule a trip ${criteria.bookingId} –`;
   const seen = new Set<string>();
   return invoices.filter((invoice) => {
     if (seen.has(invoice.id)) return false;
@@ -240,7 +250,7 @@ export function matchPrepaymentInvoices(
       Math.abs(invoice.amount - criteria.amount) < 0.005 &&
       invoice.userId === criteria.userId &&
       invoice.productId === criteria.productId &&
-      (invoice.productNotes ?? '').includes(criteria.bookingId);
+      (invoice.productNotes ?? '').startsWith(prefix);
     if (matches) seen.add(invoice.id);
     return matches;
   });
@@ -273,6 +283,8 @@ export function missingAmount(fee: number, balance: number): number {
   return covered >= fee ? 0 : round2(fee - covered);
 }
 
+/** The step of the refund call: `in-doubt` when it was started and its outcome is unknown. */
+export type RefundStep = 'todo' | 'in-doubt' | 'done';
 /** The step of the cancellation fees in a refund. */
 export type FeeStep = 'todo' | 'in-doubt' | 'done';
 /** The step of the credits revocation in a refund. */
@@ -282,6 +294,17 @@ export type CreditsStep = 'todo' | 'started' | 'done';
 export interface RefundProgress {
   /** The prepayment was refunded (`refundedAt`). */
   readonly refunded: boolean;
+  /**
+   * The refund call: `in-doubt` when started and neither recorded nor released (a lost answer, or
+   * another operator calling right now): never refund again without checking.
+   */
+  readonly refund: RefundStep;
+  /** ISO date of the last `refund-started` entry, `null` without one. */
+  readonly refundStartedAt: string | null;
+  /** ISO date of the last `cancellation-fee-started` entry, `null` without one. */
+  readonly feeStartedAt: string | null;
+  /** Wallet balance read before the fees were charged (the fees may be paid with credits). */
+  readonly balanceBeforeFee: number | null;
   /**
    * `in-doubt`: the fee call was started and its outcome is unknown: never charge it again without
    * an operator checking.
@@ -309,6 +332,10 @@ const numberDetail = (details: Record<string, unknown> | undefined, key: string)
  * @returns The steps done, in doubt or to do.
  */
 export function refundProgress(value: BookingState): RefundProgress {
+  let refund: RefundStep = 'todo';
+  let refundStartedAt: string | null = null;
+  let feeStartedAt: string | null = null;
+  let balanceBeforeFee: number | null = null;
   let fee: FeeStep = 'todo';
   let feeAmount: number | null = null;
   let credits: CreditsStep = 'todo';
@@ -318,10 +345,21 @@ export function refundProgress(value: BookingState): RefundProgress {
     switch (event.type) {
       case EVENTS.refundStarted:
         completed = false;
+        refund = 'in-doubt';
+        refundStartedAt = event.at;
+        break;
+      case EVENTS.refundReleased:
+        refund = 'todo';
+        break;
+      case EVENTS.refunded:
+      case EVENTS.refundConfirmed:
+        refund = 'done';
         break;
       case EVENTS.feeStarted:
         fee = 'in-doubt';
+        feeStartedAt = event.at;
         feeAmount = numberDetail(event.details, 'amount');
+        balanceBeforeFee = numberDetail(event.details, 'balance');
         break;
       case EVENTS.feeCharged:
       case EVENTS.feeConfirmed:
@@ -354,6 +392,10 @@ export function refundProgress(value: BookingState): RefundProgress {
   const refunded = Boolean(value.refundedAt);
   return {
     refunded,
+    refund: refunded ? 'done' : refund,
+    refundStartedAt,
+    feeStartedAt,
+    balanceBeforeFee,
     fee,
     feeAmount,
     credits,
@@ -427,10 +469,10 @@ export function rowActions(row: RowInput, now: Date): RowActions {
     }
   } else if (tab === 'cancelled' && value?.invoiceId) {
     const progress = refundProgress(value);
-    if (!progress.refunded && (status === null || !NOT_REFUNDABLE_STATUSES.has(status))) {
-      primary = 'refund';
-    } else if (progress.refunded && !progress.complete) {
+    if (progress.refund === 'in-doubt' || (progress.refunded && !progress.complete)) {
       primary = 'resume-refund';
+    } else if (!progress.refunded && (status === null || !NOT_REFUNDABLE_STATUSES.has(status))) {
+      primary = 'refund';
     }
   } else if (value?.invoiceId) {
     menu.push('retry');
@@ -501,4 +543,17 @@ export function schedulerErrorNames(value: BookingState | null | undefined): str
     .filter(([, date]) => typeof date === 'string' && date !== '')
     .map(([name]) => name)
     .sort();
+}
+
+/**
+ * Whether the API accepted the invoice of the current claim (a 2xx whose answer gave no id): the
+ * invoice exists, so the claim must never be unlocked.
+ *
+ * @param value - The stored state.
+ * @returns `true` when a `charge-accepted` entry follows the last `charge-started` one.
+ */
+export function chargeAcceptedSinceClaim(value: BookingState): boolean {
+  const events = value.events ?? [];
+  const lastClaim = events.map((event) => event.type).lastIndexOf('charge-started');
+  return events.slice(lastClaim + 1).some((event) => event.type === EVENTS.chargeAccepted);
 }

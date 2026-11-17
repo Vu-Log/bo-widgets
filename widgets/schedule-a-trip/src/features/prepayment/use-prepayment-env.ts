@@ -30,7 +30,32 @@ export interface PrepaymentEnv {
   readonly refresh: (bookingId: string, doc?: BookingStateDoc | null) => Promise<void>;
   /** Formats an amount in {@link currency}, or as a plain number without one. */
   readonly formatAmount: (amount: number) => string;
+  /**
+   * Runs a workflow of the feature; an error it throws (a bug: the workflows resolve every
+   * failure of the API and the storage) is logged to the back office and resolved as
+   * `{ ok: false }`, so that a dialog never stays busy.
+   */
+  readonly guard: <T>(action: string, bookingId: string, task: () => Promise<T>) => Promise<GuardResult<T>>;
+  /** Logs the outcome of a money action that is not a plain success, for the support. */
+  readonly logOutcome: (action: string, bookingId: string, outcome: { readonly kind: string }) => void;
 }
+
+/** What {@link PrepaymentEnv.guard} resolves. */
+export type GuardResult<T> = { readonly ok: true; readonly value: T } | { readonly ok: false };
+
+/** Keeps only the kinds and statuses of an outcome for a log: never a customer value. */
+const describeOutcome = (outcome: { readonly kind: string }): Record<string, unknown> => {
+  const details: Record<string, unknown> = { outcome: outcome.kind };
+  for (const key of ['error', 'failure', 'releaseFailure', 'markFailure', 'recordFailure', 'step', 'invoiceId']) {
+    const value = (outcome as Record<string, unknown>)[key];
+    if (value === null || value === undefined) continue;
+    details[key] =
+      typeof value === 'object' && 'kind' in value
+        ? { kind: (value as { kind: unknown }).kind, status: (value as { status?: unknown }).status }
+        : value;
+  }
+  return details;
+};
 
 /**
  * The back office, the settings and the workflow dependencies of the prepayment feature.
@@ -72,7 +97,7 @@ export function usePrepaymentEnv(): PrepaymentEnv {
       if (doc) queryClient.setQueryData(key, doc);
       else await queryClient.invalidateQueries({ queryKey: key });
       await Promise.all([
-        queryClient.invalidateQueries({ queryKey: ['invoices', fleetId] }),
+        queryClient.invalidateQueries({ queryKey: queryKeys.invoices(fleetId) }),
         queryClient.invalidateQueries({ queryKey: queryKeys.pendingRegularizations(fleetId) }),
       ]);
     },
@@ -85,9 +110,36 @@ export function usePrepaymentEnv(): PrepaymentEnv {
     [currency, i18n],
   );
 
+  const guard = useCallback(
+    async <T,>(action: string, bookingId: string, task: () => Promise<T>): Promise<GuardResult<T>> => {
+      try {
+        return { ok: true, value: await task() };
+      } catch (error) {
+        bo.log.error(`Prepayment: ${action} failed unexpectedly`, {
+          bookingId,
+          error: error instanceof Error ? `${error.name}: ${error.message}` : String(error),
+        });
+        return { ok: false };
+      }
+    },
+    [bo],
+  );
+
+  const logOutcome = useCallback(
+    (action: string, bookingId: string, outcome: { readonly kind: string }) => {
+      bo.log.warn(`Prepayment: ${action} ended with ${outcome.kind}`, {
+        bookingId,
+        ...describeOutcome(outcome),
+      });
+    },
+    [bo],
+  );
+
   return {
     i18n,
     fleetId,
+    guard,
+    logOutcome,
     currency,
     deps,
     settings,

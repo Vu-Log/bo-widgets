@@ -5,7 +5,7 @@ import {
 } from '../../storage/booking-state';
 import type { MoneyDeps } from './charge';
 import { EVENTS } from './rules';
-import { refuse, withEvents, writeOver, type WriteFailure } from './writes';
+import { invalidInput, refuse, withEvents, writeOver, type WriteFailure } from './writes';
 
 /** What the regularization writes need: storage, operator and clock. */
 export type RegularizeDeps = Pick<MoneyDeps, 'collection' | 'sleep' | 'userId' | 'now'>;
@@ -26,7 +26,7 @@ export async function markRegularized(
   note: string,
 ): Promise<StorageResult<BookingStateDoc, WriteFailure>> {
   const text = note.trim();
-  if (text.length > MAX_NOTE_LENGTH) return { ok: false, error: refuse('note-too-long') };
+  if (text.length > MAX_NOTE_LENGTH) return { ok: false, error: invalidInput('too-long') };
   return writeOver(deps, bookingId, (current) => {
     if (current.value.regularizationPending !== true || !current.value.toRegularize) {
       return refuse('not-pending');

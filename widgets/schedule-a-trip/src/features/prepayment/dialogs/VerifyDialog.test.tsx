@@ -42,7 +42,7 @@ describe('VerifyDialog', () => {
 
   it('offers no unlock while the claim is recent', async () => {
     await open(claim(2));
-    await vi.waitFor(() => expect(bodyText()).toContain('No invoice was created for this prepayment.'));
+    await vi.waitFor(() => expect(bodyText()).toContain('No matching invoice was found.'));
     expect(button('No invoice found, unlock')?.disabled).toBe(true);
     expect(bodyText()).toContain('less than 10 minutes ago');
   });
@@ -66,6 +66,20 @@ describe('VerifyDialog', () => {
     await vi.waitFor(() => expect(bodyText()).toContain('You are not allowed to read the invoices'));
     expect(bodyText()).toContain('the prepayment stays locked');
     expect(button('No invoice found, unlock')).toBeUndefined();
+  });
+
+  it('never offers the unlock after an incomplete search', async () => {
+    const noise = Array.from({ length: 2000 }, (_, index) => fakeInvoice({ id: `noise-${index}`, productNotes: 'other' }));
+    await open(claim(30), noise);
+    await vi.waitFor(() => expect(bodyText()).toContain('Too many invoices to check them all.'));
+    expect(button('No invoice found, unlock')).toBeUndefined();
+  });
+
+  it('never offers the unlock when the API accepted the invoice', async () => {
+    const accepted = { ...claim(30), events: [{ at: claimedAt(30), by: 'user-1', type: 'charge-started' }, { at: claimedAt(29), by: 'user-1', type: 'charge-accepted' }] };
+    await open(accepted);
+    await vi.waitFor(() => expect(bodyText()).toContain('it exists and the prepayment cannot be unlocked'));
+    expect(button('No invoice found, unlock')?.disabled).toBe(true);
   });
 
   it('says there is nothing to verify once an invoice is known', async () => {

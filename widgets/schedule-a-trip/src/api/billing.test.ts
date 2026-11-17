@@ -45,6 +45,7 @@ describe('getInvoice', () => {
         entityId: 'entity-1',
         productId: '11111111-1111-4111-8111-111111111111',
         invoiceDate: '2026-03-01T10:00:00Z',
+        refundInProgress: false,
       },
     });
   });
@@ -92,6 +93,8 @@ describe('readChargedInvoice', () => {
     expect(readChargedInvoice('{"other":1}')).toEqual({ invoiceId: null, status: null });
     expect(readChargedInvoice('[1]')).toEqual({ invoiceId: null, status: null });
     expect(readChargedInvoice('"a b"')).toEqual({ invoiceId: null, status: null });
+    expect(readChargedInvoice('Created')).toEqual({ invoiceId: null, status: null });
+    expect(readChargedInvoice('"OK"')).toEqual({ invoiceId: null, status: null });
   });
 });
 
@@ -115,6 +118,12 @@ describe('chargeProduct', () => {
     expect(path).toBe('user/billing/fleets/FLEET-1/invoices/product');
     expect(init?.method).toBe('POST');
     expect(JSON.parse(String(init?.body))).toEqual({ ...input, additionalInfo: { bookingRequestId: 'b-1' } });
+  });
+
+  it.each([0, -1, Number.NaN])('refuses the amount %s without calling', async (amount) => {
+    const authFetch = vi.fn<AuthFetch>();
+    expect(await chargeProduct(authFetch, 'FLEET-1', { ...input, amount })).toMatchObject({ ok: false, error: { kind: 'invalid-request' } });
+    expect(authFetch).not.toHaveBeenCalled();
   });
 
   it('sends no additionalInfo without a booking', async () => {
@@ -178,6 +187,12 @@ describe('refundInvoice', () => {
     expect(result.ok).toBe(true);
     expect(authFetch.mock.calls[0]?.[0]).toBe('user/billing/fleets/FLEET-1/invoices/invoice-1/refund');
     expect(JSON.parse(String(authFetch.mock.calls[0]?.[1]?.body))).toEqual({ amount: 20, note: 'n', paymentIntentPspReference: 'psp-1' });
+  });
+
+  it('refuses an amount that is not positive without calling', async () => {
+    const authFetch = vi.fn<AuthFetch>();
+    expect(await refundInvoice(authFetch, 'FLEET-1', 'invoice-1', { amount: 0, note: 'n', paymentIntentPspReference: null })).toMatchObject({ ok: false, error: { kind: 'invalid-request' } });
+    expect(authFetch).not.toHaveBeenCalled();
   });
 
   it('leaves the receipt out when there is none, and gives a failure', async () => {

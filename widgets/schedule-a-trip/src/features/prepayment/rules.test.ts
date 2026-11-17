@@ -1,8 +1,11 @@
+import { BoError } from '@vulog/bo-widget-sdk';
 import { describe, expect, it } from 'vitest';
 import type { BilledInvoice } from '../../api/billing';
 import { booking, customer, doc, NOW, row } from '../../test/prepayment-fixtures';
+import { MONEY_EVENT_TYPES } from '../../storage/booking-state';
 import {
   canUnlockClaim,
+  chargeAcceptedSinceClaim,
   cancellationFeeNotes,
   EVENTS,
   invoiceSearchRange,
@@ -79,7 +82,7 @@ describe('notes', () => {
 describe('isClearRefusal', () => {
   it('is true for a 4xx and a request never sent', () => {
     expect(isClearRefusal({ kind: 'http', status: 400 })).toBe(true);
-    expect(isClearRefusal({ kind: 'http', status: 409 })).toBe(true);
+    expect(isClearRefusal({ kind: 'http', status: 422 })).toBe(true);
     expect(isClearRefusal({ kind: 'not-allowed', status: 403 })).toBe(true);
     expect(isClearRefusal({ kind: 'not-found', status: 404 })).toBe(true);
     expect(isClearRefusal({ kind: 'session-lost', status: 401 })).toBe(true);
@@ -88,6 +91,10 @@ describe('isClearRefusal', () => {
 
   it('is false whenever an invoice may exist', () => {
     expect(isClearRefusal({ kind: 'http', status: 500 })).toBe(false);
+    expect(isClearRefusal({ kind: 'http', status: 408 })).toBe(false);
+    expect(isClearRefusal({ kind: 'http', status: 409 })).toBe(false);
+    expect(isClearRefusal({ kind: 'http', status: 429 })).toBe(false);
+    expect(isClearRefusal({ kind: 'back-office', error: new BoError('TIMEOUT', 't') })).toBe(false);
     expect(isClearRefusal({ kind: 'network', cause: new TypeError() })).toBe(false);
     expect(isClearRefusal({ kind: 'aborted' })).toBe(false);
     expect(isClearRefusal({ kind: 'invalid-response', message: 'x' })).toBe(false);
@@ -138,6 +145,7 @@ describe('matchPrepaymentInvoices', () => {
           invoice({ id: 'user', userId: 'x' }),
           invoice({ id: 'product', productId: 'x' }),
           invoice({ id: 'no-amount', amount: null }),
+          invoice({ id: 'longer-id', productNotes: 'Schedule a trip booking-12 – 12 h' }),
         ],
         criteria,
       ).map((match) => match.id),
@@ -171,6 +179,10 @@ describe('refundProgress', () => {
   it('reads nothing done from an empty journal', () => {
     expect(refundProgress(doc().value)).toEqual({
       refunded: false,
+      refund: 'todo',
+      refundStartedAt: null,
+      feeStartedAt: null,
+      balanceBeforeFee: null,
       fee: 'todo',
       feeAmount: null,
       credits: 'todo',
@@ -272,6 +284,42 @@ describe('prepaymentDisplay', () => {
     expect(prepaymentDisplay(row({ state }), null, NOW)).toBe('PENDING');
     expect(prepaymentDisplay(row({ state }), 'PAID', NOW)).toBe('PAID');
     expect(prepaymentDisplay(row({ state: doc({ isB2B: true }) }), null, NOW)).toBe('NOT_REQUIRED');
+  });
+});
+
+describe('refund steps', () => {
+  it('reads a refund started and not recorded as in doubt, then done or released', () => {
+    const started = doc({ events: [ev(EVENTS.refundStarted)] }).value;
+    expect(refundProgress(started)).toMatchObject({ refund: 'in-doubt', refundStartedAt: NOW.toISOString() });
+    expect(refundProgress({ ...started, events: [...(started.events ?? []), ev(EVENTS.refundReleased)] }).refund).toBe('todo');
+    expect(refundProgress({ ...started, events: [...(started.events ?? []), ev(EVENTS.refundConfirmed)] }).refund).toBe('done');
+    expect(refundProgress({ ...started, refundedAt: NOW.toISOString() }).refund).toBe('done');
+  });
+
+  it('keeps the balance read before the fees', () => {
+    expect(refundProgress(doc({ events: [ev(EVENTS.feeStarted, { amount: 15, balance: 4 })] }).value)).toMatchObject({ balanceBeforeFee: 4, feeStartedAt: NOW.toISOString() });
+  });
+
+  it('offers to resume a refund in doubt', () => {
+    const state = doc({ chargeStartedAt: NOW.toISOString(), invoiceId: 'i-1', events: [ev(EVENTS.refundStarted)] });
+    expect(rowActions(row({ tab: 'cancelled', state }), NOW).primary).toBe('resume-refund');
+  });
+});
+
+describe('chargeAcceptedSinceClaim', () => {
+  it('is true only for an acceptance after the last claim', () => {
+    expect(chargeAcceptedSinceClaim(doc({ events: [ev('charge-started'), ev(EVENTS.chargeAccepted)] }).value)).toBe(true);
+    expect(chargeAcceptedSinceClaim(doc({ events: [ev('charge-started'), ev(EVENTS.chargeAccepted), ev('charge-released'), ev('charge-started')] }).value)).toBe(false);
+    expect(chargeAcceptedSinceClaim(doc().value)).toBe(false);
+  });
+});
+
+describe('EVENTS', () => {
+  it('keeps every money step of the feature when the journal is full', () => {
+    const notMoney = new Set<string>([EVENTS.paymentRetried, EVENTS.regularized, EVENTS.regularizationUndone, EVENTS.notesSaved]);
+    for (const type of Object.values(EVENTS)) {
+      if (!notMoney.has(type)) expect(MONEY_EVENT_TYPES.has(type)).toBe(true);
+    }
   });
 });
 

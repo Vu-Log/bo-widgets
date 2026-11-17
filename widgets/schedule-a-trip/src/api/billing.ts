@@ -27,6 +27,10 @@ const invoiceSchema = z.object({
     .string()
     .nullish()
     .transform((value) => value ?? null),
+  refundInProgress: z
+    .boolean()
+    .nullish()
+    .transform((value) => value ?? false),
 });
 
 /** An invoice, reduced to its status and amount. A payment status: never persisted. */
@@ -40,6 +44,8 @@ export interface Invoice {
   readonly entityId: string | null;
   readonly productId: string | null;
   readonly invoiceDate: string | null;
+  /** A refund of the invoice is in progress (the refund is asynchronous). */
+  readonly refundInProgress: boolean;
 }
 
 /**
@@ -67,6 +73,11 @@ export async function getInvoice(
   const { invoicesStatus, ...rest } = result.data.body;
   return { ok: true, data: { ...rest, status: invoicesStatus } };
 }
+
+const isPositiveAmount = (amount: number): boolean => Number.isFinite(amount) && amount > 0;
+
+const invalidAmount = (amount: number) =>
+  ({ ok: false, error: { kind: 'invalid-request', message: `Invalid amount: ${amount}` } }) as const;
 
 const billing = (fleetId: string) => `user/billing/fleets/${segment(fleetId)}`;
 
@@ -104,7 +115,8 @@ const chargedObjectSchema = z.looseObject({
   billingStatus: z.string().optional(),
 });
 
-const BARE_ID = /^[\w-]{1,128}$/;
+/** A bare invoice id: letters, digits and dashes, with at least one digit (never `OK` or `Created`). */
+const BARE_ID = /^(?=.*\d)[\w-]{8,128}$/;
 
 /**
  * Reads the answer of a charge, which the reference gives as a `string` and some versions as an
@@ -142,7 +154,8 @@ export function readChargedInvoice(body: string): ChargedInvoice {
  * @param fleetId - The fleet.
  * @param input - Product, amount, customer, entity, operator and notes.
  * @param signal - Aborts the call.
- * @returns The invoice created (its id may be unknown), or why the call failed. A 4xx means that
+ * @returns The invoice created (its id may be unknown), or why the call failed (`invalid-request`
+ *   without a call for an amount that is not a positive number). A 400/401/403/404/422 means that
  *   no invoice was created; a `network`, `aborted`, 5xx or `back-office` failure does not tell.
  */
 export async function chargeProduct(
@@ -151,6 +164,7 @@ export async function chargeProduct(
   input: ChargeProductInput,
   signal?: AbortSignal,
 ): Promise<ApiResult<ChargedInvoice>> {
+  if (!isPositiveAmount(input.amount)) return invalidAmount(input.amount);
   const { bookingRequestId, ...body } = input;
   const result = await requestText(
     authFetch,
@@ -270,7 +284,9 @@ export const refundInvoice = (
   input: RefundInput,
   signal?: AbortSignal,
 ): Promise<ApiResult<{ readonly status: number }>> =>
-  requestStatus(
+  !isPositiveAmount(input.amount)
+    ? Promise.resolve(invalidAmount(input.amount))
+    : requestStatus(
     authFetch,
     `${billing(fleetId)}/invoices/${segment(invoiceId)}/refund`,
     jsonInit(

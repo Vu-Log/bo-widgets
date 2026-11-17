@@ -1,11 +1,11 @@
 import { Button, List, ListItem, ListItemText } from '@mui/material';
-import { useCallback, useEffect, useState } from 'react';
+import { useEffect, useState } from 'react';
 import type { BilledInvoice } from '../../../api/billing';
 import { readBookingState, type BookingStateDoc } from '../../../storage/booking-state';
 import type { BookingContext } from '../../extensions';
 import { attachInvoice, searchClaimedInvoice, unlockClaim, type SearchOutcome } from '../charge';
 import { actionErrorText, storageErrorText, type Text } from '../messages';
-import { canUnlockClaim } from '../rules';
+import { canUnlockClaim, chargeAcceptedSinceClaim } from '../rules';
 import { usePrepaymentEnv } from '../use-prepayment-env';
 import { DialogFrame, TextAlert } from './DialogFrame';
 
@@ -32,34 +32,34 @@ export function VerifyDialog({ ctx, onClose }: { readonly ctx: BookingContext; r
   const bookingId = ctx.booking.id;
   const [phase, setPhase] = useState<Phase>({ kind: 'searching' });
 
-  const attach = useCallback(
-    async (invoice: BilledInvoice) => {
-      if (!deps) return;
-      setPhase({ kind: 'writing' });
+  const unexpected: Phase = { kind: 'message', severity: 'error', text: { key: 'prepayment.error.unexpected' } };
+
+  const attachPhase = async (invoice: BilledInvoice): Promise<Phase> => {
+      if (!deps) return unexpected;
       const written = await attachInvoice(deps, bookingId, invoice);
       await env.refresh(bookingId, written.ok ? written.value : null);
-      setPhase(
-        written.ok
-          ? { kind: 'message', severity: 'success', text: { key: 'prepayment.verify.attached', params: { invoiceId: invoice.id } } }
-          : { kind: 'message', severity: 'error', text: storageErrorText(written.error) },
-      );
-    },
-    [bookingId, deps, env],
-  );
+      if (!written.ok) {
+        const failed = { kind: 'attach-failed', failure: written.error };
+        env.logOutcome('verify', bookingId, failed);
+        return { kind: 'message', severity: 'error', text: storageErrorText(written.error) };
+      }
+      return { kind: 'message', severity: 'success', text: { key: 'prepayment.verify.attached', params: { invoiceId: invoice.id } } };
+  };
 
-  const search = useCallback(async () => {
-    if (!deps || !settings) return;
-    setPhase({ kind: 'searching' });
+  const attach = async (invoice: BilledInvoice) => {
+    setPhase({ kind: 'writing' });
+    const result = await env.guard('verify', bookingId, () => attachPhase(invoice));
+    setPhase(result.ok ? result.value : unexpected);
+  };
+
+  const searchPhase = async (): Promise<Phase> => {
+    if (!deps || !settings) return unexpected;
     const read = await readBookingState(deps.collection, bookingId);
-    if (!read.ok) {
-      setPhase({ kind: 'message', severity: 'error', text: storageErrorText(read.error) });
-      return;
-    }
+    if (!read.ok) return { kind: 'message', severity: 'error', text: storageErrorText(read.error) };
     const doc = read.value;
     if (!doc?.value.chargeStartedAt || doc.value.invoiceId) {
       await env.refresh(bookingId, doc);
-      setPhase({ kind: 'message', severity: 'success', text: { key: 'prepayment.verify.nothingToVerify' } });
-      return;
+      return { kind: 'message', severity: 'success', text: { key: 'prepayment.verify.nothingToVerify' } };
     }
     const outcome = await searchClaimedInvoice(deps, {
       booking: ctx.booking,
@@ -67,18 +67,27 @@ export function VerifyDialog({ ctx, onClose }: { readonly ctx: BookingContext; r
       productId: settings.prepaymentProductId,
     });
     const [single] = outcome.kind === 'found' ? outcome.invoices : [];
-    if (outcome.kind === 'found' && outcome.invoices.length === 1 && single) {
-      await attach(single);
-      return;
-    }
-    setPhase({ kind: 'result', doc, search: outcome });
-  }, [attach, bookingId, ctx.booking, deps, env, settings]);
+    if (outcome.kind === 'found' && outcome.invoices.length === 1 && single) return attachPhase(single);
+    if (outcome.kind === 'failed' || outcome.kind === 'incomplete') env.logOutcome('verify', bookingId, outcome);
+    return { kind: 'result', doc, search: outcome };
+  };
 
-  const unlock = async () => {
+  const search = async () => {
+    setPhase({ kind: 'searching' });
+    const result = await env.guard('verify', bookingId, searchPhase);
+    setPhase(result.ok ? result.value : unexpected);
+  };
+
+  const unlock = async (searchedClaimAt: string) => {
     if (!deps) return;
     setPhase({ kind: 'writing' });
-    const released = await unlockClaim(deps, bookingId);
-    await env.refresh(bookingId, released.ok ? released.value : null);
+    const result = await env.guard('unlock', bookingId, () => unlockClaim(deps, bookingId, searchedClaimAt));
+    await env.refresh(bookingId, result.ok && result.value.ok ? result.value.value : null);
+    if (!result.ok) {
+      setPhase(unexpected);
+      return;
+    }
+    const released = result.value;
     setPhase(
       released.ok
         ? { kind: 'message', severity: 'success', text: { key: 'prepayment.verify.unlocked' } }
@@ -121,7 +130,11 @@ export function VerifyDialog({ ctx, onClose }: { readonly ctx: BookingContext; r
         onClose={onClose}
         i18n={i18n}
         actions={
-          <Button variant="contained" color="warning" onClick={() => void unlock()}>
+          <Button
+            variant="contained"
+            color="warning"
+            onClick={() => void unlock(phase.doc.value.chargeStartedAt ?? '')}
+          >
             {i18n.t('prepayment.verify.unlockConfirm')}
           </Button>
         }
@@ -167,7 +180,8 @@ export function VerifyDialog({ ctx, onClose }: { readonly ctx: BookingContext; r
   }
   if (outcome.kind === 'none') {
     const claimedAt = doc.value.chargeStartedAt ?? '';
-    const canUnlock = canUnlockClaim(claimedAt, new Date());
+    const accepted = chargeAcceptedSinceClaim(doc.value);
+    const canUnlock = !accepted && canUnlockClaim(claimedAt, new Date());
     return (
       <DialogFrame
         title={title}
@@ -188,7 +202,10 @@ export function VerifyDialog({ ctx, onClose }: { readonly ctx: BookingContext; r
         }
       >
         <TextAlert severity="info" text={{ key: 'prepayment.verify.none' }} i18n={i18n} />
-        {!canUnlock && <TextAlert severity="warning" text={{ key: 'prepayment.verify.tooRecent' }} i18n={i18n} />}
+        {accepted && <TextAlert severity="warning" text={{ key: 'prepayment.verify.accepted' }} i18n={i18n} />}
+        {!accepted && !canUnlock && (
+          <TextAlert severity="warning" text={{ key: 'prepayment.verify.tooRecent' }} i18n={i18n} />
+        )}
       </DialogFrame>
     );
   }

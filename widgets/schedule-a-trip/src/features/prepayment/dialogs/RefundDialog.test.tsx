@@ -58,7 +58,7 @@ describe('RefundDialog', () => {
     await vi.waitFor(() => expect(bodyText()).toContain('Cancellation fees of €15.00 not covered by the credits left: €10.00 to regularize.'));
   });
 
-  it('asks whether a fee with a lost answer was charged before going on', async () => {
+  it('asks whether a fee with a lost answer was charged, once it is old enough', async () => {
     const { aima } = await open(10);
     aima.failNext('charge', { reject: new TypeError('Failed to fetch') });
     await vi.waitFor(() => expect(button('Refund')).toBeDefined());
@@ -66,14 +66,30 @@ describe('RefundDialog', () => {
     await vi.waitFor(() => expect(button('Confirm the refund')).toBeDefined());
     click('Confirm the refund');
     await vi.waitFor(() => expect(bodyText()).toContain('The answer of the cancellation fees was lost'));
+    expect(bodyText()).toContain('The Vulog API could not be reached.');
 
     click('Read again');
     await vi.waitFor(() => expect(button('The fees were charged')).toBeDefined());
+    expect(bodyText()).toContain('may still be in progress');
+    expect(button('The fees were charged')?.disabled).toBe(true);
+    expect(aima.callsTo('POST', '/invoices/product')).toHaveLength(1);
+  });
+
+  it('lets the operator answer about fees in doubt for long enough', async () => {
+    const stored = { ...prepaid, refundedAt: '2026-03-01T09:00:00.000Z', events: [{ at: '2026-03-01T09:00:00.000Z', by: 'user-1', type: 'cancellation-fee-started', details: { amount: 15 } }] };
+    const rendered = await renderWithBilling(
+      <RefundDialog ctx={row({ tab: 'cancelled', booking: cancelledBefore(10), state: doc(stored) })} onClose={() => undefined} />,
+      { stored, aima: { invoices: [fakeInvoice({ status: 'REFUNDED', refundable: 0 })], productPrice: 15 } },
+    );
+    unmount = rendered.view.unmount;
+    await vi.waitFor(() => expect(button('The fees were charged')?.disabled).toBe(false));
     click('The fees were charged');
     await vi.waitFor(() => expect(bodyText()).toContain('will not be charged again'));
-    click('Confirm and go on');
+    click('Resume the refund');
+    await vi.waitFor(() => expect(button('Confirm the refund')).toBeDefined());
+    click('Confirm the refund');
     await vi.waitFor(() => expect(bodyText()).toContain('The refund is done.'));
-    expect(aima.callsTo('POST', '/invoices/product')).toHaveLength(1);
+    expect(rendered.aima.callsTo('POST', '/invoices/product')).toEqual([]);
   });
 
   it('explains why there is nothing to refund', async () => {
@@ -89,7 +105,7 @@ describe('RefundDialog', () => {
 describe('planFailureText and refundOutcomeText', () => {
   it('names the action on a 403', () => {
     expect(planFailureText({ kind: 'api', error: { kind: 'not-allowed', status: 403 } })).toEqual({ key: 'prepayment.notAllowed.refund' });
-    expect(refundOutcomeText({ kind: 'refund-refused', error: { kind: 'not-allowed', status: 403 } }, String).text).toEqual({ key: 'prepayment.notAllowed.refund' });
+    expect(refundOutcomeText({ kind: 'refund-refused', error: { kind: 'not-allowed', status: 403 }, releaseFailure: null }, String).text).toEqual({ key: 'prepayment.notAllowed.refund' });
   });
 
   it('has a message for every failure', () => {
@@ -97,8 +113,14 @@ describe('planFailureText and refundOutcomeText', () => {
       expect(planFailureText({ kind }).key).toMatch(/^prepayment\./);
     }
     expect(refundOutcomeText({ kind: 'credits-failed', error: { kind: 'aborted' } }, String).severity).toBe('error');
-    expect(refundOutcomeText({ kind: 'write-failed', step: 'end', failure: { kind: 'conflict' } }, String).text.key).toBe('prepayment.refund.writeFailed');
-    expect(refundOutcomeText({ kind: 'fee-refused', error: { kind: 'http', status: 400 } }, String).text.key).toBe('prepayment.refund.feeRefused');
+    expect(refundOutcomeText({ kind: 'write-failed', step: 'end', failure: { kind: 'conflict' } }, String)).toMatchObject({ text: { key: 'prepayment.refund.writeFailed' }, detail: { key: 'prepayment.storage.changed' } });
+    expect(refundOutcomeText({ kind: 'fee-charged-unrecorded', invoiceId: 'i-9', amount: 15, failure: { kind: 'rate-limited' } }, String).text).toEqual({ key: 'prepayment.refund.feeChargedUnrecorded', params: { amount: '15', invoiceId: 'i-9' } });
+    expect(refundOutcomeText({ kind: 'needs-decision', step: 'fee', tooRecent: true }, String).text.key).toBe('prepayment.refund.decisionTooRecent');
+    expect(refundOutcomeText({ kind: 'refund-refused', error: { kind: 'http', status: 400 }, releaseFailure: { kind: 'conflict' } }, String).detail).toEqual({ key: 'prepayment.storage.changed' });
+    for (const kind of ['invalid-fee-price', 'wallet-balance-unknown'] as const) {
+      expect(planFailureText(kind === 'invalid-fee-price' ? { kind, price: -1 } : { kind }).key).toMatch(/^prepayment\.refund\./);
+    }
+    expect(refundOutcomeText({ kind: 'fee-refused', error: { kind: 'http', status: 400 }, releaseFailure: null }, String).text.key).toBe('prepayment.refund.feeRefused');
     expect(refundOutcomeText({ kind: 'refund-unknown', error: { kind: 'aborted' } }, String).severity).toBe('warning');
   });
 });

@@ -17,6 +17,7 @@ import {
 } from '../../storage/booking-state';
 import {
   canUnlockClaim,
+  chargeAcceptedSinceClaim,
   EVENTS,
   invoiceSearchRange,
   isClearRefusal,
@@ -56,6 +57,9 @@ export interface ChargeRequest {
  *   stays, the booking shows "to verify" and the search finds the invoice.
  * - `refused`: the API refused the invoice (nothing billed); the claim is released, or not
  *   (`releaseFailure`, the booking then shows "to verify").
+ * - `charged-id-unknown`: the API accepted the invoice but its answer gave no id: the invoice
+ *   exists, the claim stays and is marked accepted (it cannot be unlocked), and the search
+ *   attaches it.
  * - `to-verify`: the outcome is unknown (lost answer, 5xx, unreadable answer): an invoice may
  *   exist. The claim stays.
  * - `not-claimed`: the claim was refused (already charged, in progress, storage failure): nothing
@@ -75,7 +79,8 @@ export type ChargeOutcome =
       readonly doc: BookingStateDoc | null;
       readonly releaseFailure: ClaimFailure | null;
     }
-  | { readonly kind: 'to-verify'; readonly error: ApiError | null }
+  | { readonly kind: 'charged-id-unknown'; readonly markFailure: WriteFailure | null }
+  | { readonly kind: 'to-verify'; readonly error: ApiError }
   | { readonly kind: 'not-claimed'; readonly failure: ClaimFailure }
   | { readonly kind: 'invalid'; readonly reason: 'amount' | 'customer' };
 
@@ -173,7 +178,17 @@ export async function chargePrepayment(
     };
   }
   const { invoiceId, status } = charged.data;
-  if (invoiceId === null) return { kind: 'to-verify', error: null };
+  if (invoiceId === null) {
+    const marked = await writeOver(deps, bookingId, (current) => ({
+      mode: 'update',
+      patch: {
+        events: withEvents(current.value.events, [
+          { at: deps.now().toISOString(), by: deps.userId, type: EVENTS.chargeAccepted, details: { amount: request.amount } },
+        ]),
+      },
+    }));
+    return { kind: 'charged-id-unknown', markFailure: marked.ok ? null : marked.error };
+  }
 
   const recorded = await recordInvoice(deps, bookingId, invoiceId, status, EVENTS.charged, {
     amount: request.amount,
@@ -182,7 +197,11 @@ export async function chargePrepayment(
   return { kind: 'charged', doc: recorded.value, invoiceId };
 }
 
-/** Writes the invoice of a claim, refusing when another invoice was recorded meanwhile. */
+/**
+ * Writes the invoice of a claim, refusing when another invoice was recorded meanwhile (a double
+ * charge). A claim released meanwhile (unlocked by another operator) is written again with the
+ * invoice: the invoice exists, the booking must never look unpaid.
+ */
 function recordInvoice(
   deps: MoneyDeps,
   bookingId: string,
@@ -194,11 +213,11 @@ function recordInvoice(
   return writeOver(deps, bookingId, (current) => {
     const value = current.value;
     if (value.invoiceId && value.invoiceId !== invoiceId) return refuse('other-invoice');
-    if (!value.chargeStartedAt) return refuse('no-claim');
     const at = deps.now().toISOString();
     return {
       mode: 'update',
       patch: {
+        ...(value.chargeStartedAt ? {} : { chargeStartedAt: at, chargeStartedBy: deps.userId }),
         invoiceId,
         ...(status === null ? {} : { invoiceStatus: status, invoiceStatusFetchedAt: at }),
         events: withEvents(value.events, [
@@ -282,7 +301,7 @@ export async function searchClaimedInvoice(
  * @param deps - Storage, operator and clock.
  * @param bookingId - The AIMA booking id.
  * @param invoice - The invoice found.
- * @returns The document written; refused (`other-invoice`, `no-claim`) when the document changed.
+ * @returns The document written; refused (`other-invoice`) when another invoice was recorded.
  */
 export const attachInvoice = (
   deps: MoneyDeps,
@@ -294,19 +313,29 @@ export const attachInvoice = (
   });
 
 /** Why an unlock was refused. */
-export type UnlockFailure = ClaimFailure | { readonly kind: 'too-recent' } | { readonly kind: 'no-claim' };
+export type UnlockFailure =
+  | ClaimFailure
+  | { readonly kind: 'too-recent' }
+  | { readonly kind: 'no-claim' }
+  /** The claim read is not the one the operator searched for: search again. */
+  | { readonly kind: 'other-claim' }
+  /** The API accepted the invoice of this claim: it exists, never unlock. */
+  | { readonly kind: 'charge-accepted' };
 
 /**
  * Releases a claim once an operator checked that no invoice exists ("no invoice found, unlock"):
- * only for a claim without an invoice, at least `UNLOCK_MIN_CLAIM_AGE_MINUTES` old.
+ * only the claim that was searched, without an invoice, never accepted by the API, at least
+ * `UNLOCK_MIN_CLAIM_AGE_MINUTES` old.
  *
  * @param deps - Storage, operator and clock.
  * @param bookingId - The AIMA booking id.
+ * @param searchedClaimAt - `chargeStartedAt` of the claim the search covered.
  * @returns The document released, or why not.
  */
 export async function unlockClaim(
   deps: MoneyDeps,
   bookingId: string,
+  searchedClaimAt: string,
 ): Promise<StorageResult<BookingStateDoc, UnlockFailure>> {
   const read = await readBookingState(deps.collection, bookingId);
   if (!read.ok) return read;
@@ -314,6 +343,10 @@ export async function unlockClaim(
   if (!read.value || !claimedAt) return { ok: false, error: { kind: 'no-claim' } };
   if (read.value.value.invoiceId) {
     return { ok: false, error: { kind: 'already-charged', invoiceId: read.value.value.invoiceId } };
+  }
+  if (claimedAt !== searchedClaimAt) return { ok: false, error: { kind: 'other-claim' } };
+  if (chargeAcceptedSinceClaim(read.value.value)) {
+    return { ok: false, error: { kind: 'charge-accepted' } };
   }
   if (!canUnlockClaim(claimedAt, deps.now())) return { ok: false, error: { kind: 'too-recent' } };
   return releaseOwnClaim(deps, bookingId, claimedAt);

@@ -25,14 +25,34 @@ export type WritePlan =
   | { readonly mode: 'end'; readonly patch: EndOfCyclePatch }
   | { readonly mode: 'reopen'; readonly patch: ReopenPatch };
 
-/** A write the builder refused on the fresh document, with why (a key of the caller). */
+/** Why a builder refused a write: the step is no longer to do on the fresh document. */
+export type RefusalReason =
+  | 'other-invoice'
+  | 'already-refunded'
+  | 'refund-in-progress'
+  | 'refund-not-in-doubt'
+  | 'fee-started'
+  | 'fee-not-in-doubt'
+  | 'credits-done'
+  | 'not-refunded'
+  | 'not-pending'
+  | 'not-regularized'
+  | 'changed';
+
+/** A write the builder refused on the fresh document, with why. */
 export interface RefusedWrite {
   readonly kind: 'refused';
-  readonly reason: string;
+  readonly reason: RefusalReason;
 }
 
-/** Why {@link writeOver} did not write. */
-export type WriteFailure = StorageFailure | RefusedWrite;
+/** A value typed by the operator that breaks a limit (a note too long): nothing was read nor written. */
+export interface InvalidInput {
+  readonly kind: 'invalid-input';
+  readonly reason: 'too-long';
+}
+
+/** Why {@link writeOver} (or a workflow around it) did not write. */
+export type WriteFailure = StorageFailure | RefusedWrite | InvalidInput;
 
 /** Builds the write from the fresh document, or refuses it (the step is no longer to do). */
 export type WriteBuilder = (current: BookingStateDoc) => WritePlan | RefusedWrite;
@@ -76,16 +96,16 @@ export async function writeOver(
   deps: WriteDeps,
   bookingId: string,
   build: WriteBuilder,
-): Promise<StorageResult<BookingStateDoc, WriteFailure>> {
+): Promise<StorageResult<BookingStateDoc, StorageFailure | RefusedWrite>> {
   const sleep = deps.sleep ?? defaultSleep;
   let waited = false;
-  let failure: WriteFailure = { kind: 'conflict' };
+  let failure: StorageFailure | RefusedWrite = { kind: 'conflict' };
   for (let tries = 0; tries < WRITE_ATTEMPTS; tries++) {
     const read = await readBookingState(deps.collection, bookingId);
     if (!read.ok) return read;
     if (read.value === null) return { ok: false, error: { kind: 'not-found' } };
     const plan = build(read.value);
-    if ('kind' in plan) return { ok: false, error: plan };
+    if (!('mode' in plan)) return { ok: false, error: plan };
     const written = await write(deps.collection, read.value, plan);
     if (written.ok) return written;
     failure = written.error;
@@ -119,4 +139,15 @@ export const withEvents = (
  * @param reason - Why the step is no longer to do.
  * @returns The refusal.
  */
-export const refuse = (reason: string): RefusedWrite => ({ kind: 'refused', reason });
+export const refuse = (reason: RefusalReason): RefusedWrite => ({ kind: 'refused', reason });
+
+/**
+ * A value typed by the operator that breaks a limit.
+ *
+ * @param reason - The limit broken.
+ * @returns The failure.
+ */
+export const invalidInput = (reason: InvalidInput['reason']): InvalidInput => ({
+  kind: 'invalid-input',
+  reason,
+});

@@ -153,10 +153,13 @@ export function InternalNotesCard({ ctx }: { readonly ctx: BookingContext }) {
 const EVENT_KEYS: Readonly<Record<string, MessageKey>> = {
   'charge-started': 'prepayment.event.chargeStarted',
   'charge-released': 'prepayment.event.chargeReleased',
+  [EVENTS.chargeAccepted]: 'prepayment.event.chargeAccepted',
   [EVENTS.charged]: 'prepayment.event.charged',
   [EVENTS.chargeAttached]: 'prepayment.event.chargeAttached',
   [EVENTS.paymentRetried]: 'prepayment.event.paymentRetried',
   [EVENTS.refundStarted]: 'prepayment.event.refundStarted',
+  [EVENTS.refundReleased]: 'prepayment.event.refundReleased',
+  [EVENTS.refundConfirmed]: 'prepayment.event.refundConfirmed',
   [EVENTS.refunded]: 'prepayment.event.refunded',
   [EVENTS.feeStarted]: 'prepayment.event.feeStarted',
   [EVENTS.feeCharged]: 'prepayment.event.feeCharged',

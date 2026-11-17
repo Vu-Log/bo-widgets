@@ -69,7 +69,7 @@ describe('writeOver', () => {
   it('gives the refusal of the builder without writing', async () => {
     setup = await moneySetup();
     await setup.seed({});
-    expect(await writeOver(setup.deps, BOOKING_ID, () => refuse('done'))).toEqual({ ok: false, error: { kind: 'refused', reason: 'done' } });
+    expect(await writeOver(setup.deps, BOOKING_ID, () => refuse('changed'))).toEqual({ ok: false, error: { kind: 'refused', reason: 'changed' } });
     expect(setup.bo.storage.api.update).not.toHaveBeenCalled();
   });
 

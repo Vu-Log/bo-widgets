@@ -99,12 +99,76 @@ describe('chargePrepayment', () => {
     expect(setup.stored()?.value.invoiceId).toBeUndefined();
   });
 
-  it('keeps the claim when the answer gives no invoice id', async () => {
+  it('marks the claim accepted when the answer gives no invoice id: it can never be unlocked', async () => {
     setup = await moneySetup();
     setup.aima.authFetch.mockResolvedValueOnce(new Response('', { status: 201 }));
 
-    expect(await chargePrepayment(setup.deps, request())).toEqual({ kind: 'to-verify', error: null });
+    expect(await chargePrepayment(setup.deps, request())).toEqual({ kind: 'charged-id-unknown', markFailure: null });
     expect(setup.stored()?.value.chargeStartedAt).toBe(NOW.toISOString());
+    setup.setNow(new Date(NOW.getTime() + 60 * 60_000));
+    expect(await unlockClaim(setup.deps, BOOKING_ID, NOW.toISOString())).toEqual({ ok: false, error: { kind: 'charge-accepted' } });
+  });
+
+  it('records the invoice with a new claim when the claim was unlocked meanwhile', async () => {
+    setup = await moneySetup();
+    // Another operator unlocks the claim while the invoice call runs.
+    const original = setup.aima.authFetch.getMockImplementation();
+    setup.aima.authFetch.mockImplementationOnce(async (input, init) => {
+      setup.bo.storage.docs('bookings').get(BOOKING_ID)!.value.chargeStartedAt = null;
+      return original!(input, init);
+    });
+
+    const outcome = await chargePrepayment(setup.deps, request());
+
+    expect(outcome.kind).toBe('charged');
+    expect(setup.stored()?.value).toMatchObject({ invoiceId: 'invoice-new-1', chargeStartedAt: NOW.toISOString() });
+  });
+
+  it('says charged-unrecorded with other-invoice when another invoice was recorded meanwhile', async () => {
+    setup = await moneySetup();
+    const original = setup.aima.authFetch.getMockImplementation();
+    setup.aima.authFetch.mockImplementationOnce(async (input, init) => {
+      setup.bo.storage.docs('bookings').get(BOOKING_ID)!.value.invoiceId = 'invoice-other';
+      return original!(input, init);
+    });
+
+    expect(await chargePrepayment(setup.deps, request())).toMatchObject({
+      kind: 'charged-unrecorded',
+      invoiceId: 'invoice-new-1',
+      failure: { kind: 'refused', reason: 'other-invoice' },
+    });
+  });
+
+  it('never releases the claim of another operator after a refusal', async () => {
+    setup = await moneySetup();
+    setup.aima.failNext('charge', { status: 400 });
+    const original = setup.aima.authFetch.getMockImplementation();
+    setup.aima.authFetch.mockImplementationOnce(async (input, init) => {
+      setup.bo.storage.docs('bookings').get(BOOKING_ID)!.value.chargeStartedAt = '2026-03-10T08:05:00.000Z';
+      return original!(input, init);
+    });
+
+    const outcome = await chargePrepayment(setup.deps, request());
+
+    expect(outcome).toMatchObject({ kind: 'refused', releaseFailure: { kind: 'already-in-progress' } });
+    expect(setup.stored()?.value.chargeStartedAt).toBe('2026-03-10T08:05:00.000Z');
+  });
+
+  it.each([408, 409, 429])('keeps the claim after an ambiguous %s', async (status) => {
+    setup = await moneySetup();
+    setup.aima.failNext('charge', { status });
+    expect((await chargePrepayment(setup.deps, request())).kind).toBe('to-verify');
+    expect(setup.stored()?.value.chargeStartedAt).toBe(NOW.toISOString());
+  });
+
+  it('charges once when two charges start at the same time', async () => {
+    setup = await moneySetup();
+    const [first, second] = await Promise.all([
+      chargePrepayment(setup.deps, request()),
+      chargePrepayment(setup.deps, request()),
+    ]);
+    expect([first.kind, second.kind].sort()).toEqual(['charged', 'not-claimed']);
+    expect(setup.aima.callsTo('POST', '/invoices/product')).toHaveLength(1);
   });
 
   it('sends nothing when the booking is already claimed', async () => {
@@ -302,7 +366,7 @@ describe('unlockClaim', () => {
     await setup.seed({ chargeStartedAt: NOW.toISOString(), chargeAmount: 50 });
     setup.setNow(new Date(NOW.getTime() + 9 * 60_000));
 
-    expect(await unlockClaim(setup.deps, BOOKING_ID)).toEqual({ ok: false, error: { kind: 'too-recent' } });
+    expect(await unlockClaim(setup.deps, BOOKING_ID, NOW.toISOString())).toEqual({ ok: false, error: { kind: 'too-recent' } });
     expect(setup.stored()?.value.chargeStartedAt).toBe(NOW.toISOString());
   });
 
@@ -311,15 +375,22 @@ describe('unlockClaim', () => {
     await setup.seed({ chargeStartedAt: NOW.toISOString(), chargeStartedBy: 'operator-2', chargeAmount: 50 });
     setup.setNow(new Date(NOW.getTime() + 10 * 60_000));
 
-    const released = await unlockClaim(setup.deps, BOOKING_ID);
+    const released = await unlockClaim(setup.deps, BOOKING_ID, NOW.toISOString());
 
     expect(released.ok && released.value.value).toMatchObject({ chargeStartedAt: null, chargeAmount: null });
   });
 
   it('refuses without a claim, or once an invoice is known', async () => {
     setup = await moneySetup();
-    expect(await unlockClaim(setup.deps, BOOKING_ID)).toEqual({ ok: false, error: { kind: 'no-claim' } });
+    expect(await unlockClaim(setup.deps, BOOKING_ID, NOW.toISOString())).toEqual({ ok: false, error: { kind: 'no-claim' } });
     await setup.seed({ chargeStartedAt: NOW.toISOString(), invoiceId: 'invoice-1' });
-    expect(await unlockClaim(setup.deps, BOOKING_ID)).toMatchObject({ ok: false, error: { kind: 'already-charged' } });
+    expect(await unlockClaim(setup.deps, BOOKING_ID, NOW.toISOString())).toMatchObject({ ok: false, error: { kind: 'already-charged' } });
+  });
+
+  it('refuses a claim other than the one searched', async () => {
+    setup = await moneySetup();
+    await setup.seed({ chargeStartedAt: NOW.toISOString(), chargeAmount: 50 });
+    setup.setNow(new Date(NOW.getTime() + 60 * 60_000));
+    expect(await unlockClaim(setup.deps, BOOKING_ID, '2026-03-10T07:00:00.000Z')).toEqual({ ok: false, error: { kind: 'other-claim' } });
   });
 });

@@ -1,9 +1,10 @@
 import { afterEach, describe, expect, it } from 'vitest';
 import { fakeInvoice } from '../../test/fake-aima';
-import { BOOKING_ID, booking, moneySetup, settings } from '../../test/prepayment-fixtures';
+import { BOOKING_ID, booking, moneySetup, NOW, settings } from '../../test/prepayment-fixtures';
 import type { BookingState } from '../../storage/booking-state';
 import { readBookingState } from '../../storage/booking-state';
-import { executeRefund, planRefund, type RefundPlan } from './refund';
+import { saveInternalNotes } from './notes';
+import { executeRefund, planRefund, refundAmounts, type RefundPlan } from './refund';
 
 let setup: Awaited<ReturnType<typeof moneySetup>>;
 afterEach(() => setup?.disconnect());
@@ -58,13 +59,13 @@ describe('planRefund', () => {
     const planned = await plan(0.5);
 
     expect(planned).toMatchObject({
-      refund: { amount: 50, pspReference: 'psp-1' },
+      refund: { kind: 'call', amount: 50, pspReference: 'psp-1' },
       policy: { kind: 'refund-with-fee-and-credits-revocation', hoursBeforeStart: 0.5 },
-      fee: { amount: 15, userId: 'customer-1', entityId: 'entity-1' },
+      fee: { kind: 'charge', amount: 15, userId: 'customer-1', entityId: 'entity-1' },
       credits: { kind: 'revoke', walletId: 'wallet-1', balance: 5 },
-      missingAmount: 10,
-      feeInDoubt: false,
+      balance: 5,
     });
+    expect(refundAmounts(planned)).toEqual({ fee: 15, missing: 10 });
     expect(setup.bo.storage.api.update).not.toHaveBeenCalled();
     expect(setup.aima.calls.every((call) => call.method === 'GET')).toBe(true);
   });
@@ -72,7 +73,8 @@ describe('planRefund', () => {
   it('plans a full refund without fees nor wallet calls when cancelled early', async () => {
     await start();
     const planned = await plan(48);
-    expect(planned).toMatchObject({ fee: null, credits: { kind: 'none' }, missingAmount: 0 });
+    expect(planned).toMatchObject({ fee: { kind: 'none' }, credits: { kind: 'none' }, balance: null });
+    expect(refundAmounts(planned)).toEqual({ fee: 0, missing: 0 });
     expect(setup.aima.calls.map((call) => call.path.split('/').at(-1))).toEqual(['invoice-1', 'refundableAmount']);
   });
 
@@ -239,20 +241,83 @@ describe('executeRefund', () => {
     }
 
     const resumed = await plan(10);
-    expect(resumed).toMatchObject({ refund: null, recordRefundOnly: true });
+    expect(resumed.refund).toEqual({ kind: 'record-only' });
     expect(await executeRefund(setup.deps, resumed)).toMatchObject({ kind: 'done', feeAmount: 15 });
     expect(setup.aima.callsTo('POST', '/refund')).toHaveLength(1);
     expect(feeCharges()).toHaveLength(1);
   });
 
+  it('records a lost refund when the invoice is still PAID but has nothing left to refund', async () => {
+    await start();
+    setup.aima.failNext('refund', { status: 504 });
+    await executeRefund(setup.deps, await plan(48));
+    const invoice = setup.aima.invoices.get('invoice-1');
+    if (invoice) invoice.refundable = 0;
+
+    expect((await plan(48)).refund).toEqual({ kind: 'record-only' });
+  });
+
+  it('asks the operator about a lost refund the invoice does not show, never refunding on its own', async () => {
+    await start();
+    setup.aima.failNext('refund', { reject: new TypeError('Failed to fetch') });
+    await executeRefund(setup.deps, await plan(48));
+
+    const recent = await plan(48);
+    expect(recent.refund).toMatchObject({ kind: 'in-doubt', canDecide: false });
+    expect(await executeRefund(setup.deps, recent, { refund: 'not-refunded' })).toEqual({ kind: 'needs-decision', step: 'refund', tooRecent: true });
+    expect(setup.aima.callsTo('POST', '/refund')).toHaveLength(1);
+
+    setup.setNow(new Date(NOW.getTime() + 11 * 60_000));
+    const old = await plan(48);
+    expect(await executeRefund(setup.deps, old)).toEqual({ kind: 'needs-decision', step: 'refund', tooRecent: false });
+    expect(await executeRefund(setup.deps, old, { refund: 'refunded' })).toMatchObject({ kind: 'done' });
+    expect(setup.aima.callsTo('POST', '/refund')).toHaveLength(1);
+    expect(eventTypes()).toContain('refund-confirmed');
+  });
+
+  it('refunds again only when the operator says the lost refund was not done', async () => {
+    await start();
+    setup.aima.failNext('refund', { status: 502 });
+    await executeRefund(setup.deps, await plan(48));
+    setup.setNow(new Date(NOW.getTime() + 11 * 60_000));
+
+    expect(await executeRefund(setup.deps, await plan(48), { refund: 'not-refunded' })).toMatchObject({ kind: 'done' });
+    expect(setup.aima.callsTo('POST', '/refund')).toHaveLength(2);
+    expect(eventTypes()).toContain('refund-released');
+  });
+
+  it('refuses a second refund while another one is started and not recorded', async () => {
+    await start();
+    const first = await plan(48);
+    const second = await plan(48);
+    setup.aima.failNext('refund', { reject: new TypeError('Failed to fetch') });
+    expect(await executeRefund(setup.deps, first)).toMatchObject({ kind: 'refund-unknown' });
+
+    expect(await executeRefund(setup.deps, second)).toEqual({
+      kind: 'write-failed',
+      step: 'refund',
+      failure: { kind: 'refused', reason: 'refund-in-progress' },
+    });
+    expect(setup.aima.callsTo('POST', '/refund')).toHaveLength(1);
+  });
+
+  it('refunds the refundable amount when part was refunded elsewhere', async () => {
+    await start();
+    const invoice = setup.aima.invoices.get('invoice-1');
+    if (invoice) invoice.refundable = 30;
+    expect((await plan(48)).refund).toMatchObject({ kind: 'call', amount: 30 });
+    await executeRefund(setup.deps, await plan(48));
+    expect(setup.aima.callsTo('POST', '/refund')[0]?.body).toMatchObject({ amount: 30 });
+  });
+
   it('resumes after the fees were refused: charges them once', async () => {
     await start();
     setup.aima.failNext('charge', { status: 400 });
-    expect(await executeRefund(setup.deps, await plan(10))).toMatchObject({ kind: 'fee-refused' });
+    expect(await executeRefund(setup.deps, await plan(10))).toMatchObject({ kind: 'fee-refused', releaseFailure: null });
     expect(setup.stored()?.value.refundedAt).toBeTruthy();
 
     const resumed = await plan(10);
-    expect(resumed.refund).toBeNull();
+    expect(resumed.refund).toEqual({ kind: 'done' });
     expect(await executeRefund(setup.deps, resumed)).toMatchObject({ kind: 'done' });
     expect(setup.aima.callsTo('POST', '/refund')).toHaveLength(1);
     expect(feeCharges()).toHaveLength(2);
@@ -264,12 +329,16 @@ describe('executeRefund', () => {
     setup.aima.failNext('charge', { reject: new TypeError('Failed to fetch') });
     expect(await executeRefund(setup.deps, await plan(10))).toMatchObject({ kind: 'fee-unknown' });
 
+    const recent = await plan(10);
+    expect(recent.fee).toMatchObject({ kind: 'in-doubt', canDecide: false, previousAmount: 15 });
+    expect(await executeRefund(setup.deps, recent, { fee: 'charged' })).toEqual({ kind: 'needs-decision', step: 'fee', tooRecent: true });
+
+    setup.setNow(new Date(NOW.getTime() + 11 * 60_000));
     const resumed = await plan(10);
-    expect(resumed.feeInDoubt).toBe(true);
-    expect(await executeRefund(setup.deps, resumed)).toEqual({ kind: 'fee-in-doubt' });
+    expect(await executeRefund(setup.deps, resumed)).toEqual({ kind: 'needs-decision', step: 'fee', tooRecent: false });
     expect(feeCharges()).toHaveLength(1);
 
-    expect(await executeRefund(setup.deps, resumed, 'charged')).toMatchObject({ kind: 'done', feeAmount: 15 });
+    expect(await executeRefund(setup.deps, resumed, { fee: 'charged' })).toMatchObject({ kind: 'done', feeAmount: 15 });
     expect(feeCharges()).toHaveLength(1);
     expect(eventTypes()).toContain('cancellation-fee-confirmed');
   });
@@ -278,10 +347,104 @@ describe('executeRefund', () => {
     await start();
     setup.aima.failNext('charge', { status: 503 });
     expect(await executeRefund(setup.deps, await plan(10))).toMatchObject({ kind: 'fee-unknown' });
+    setup.setNow(new Date(NOW.getTime() + 11 * 60_000));
 
-    expect(await executeRefund(setup.deps, await plan(10), 'not-charged')).toMatchObject({ kind: 'done' });
+    expect(await executeRefund(setup.deps, await plan(10), { fee: 'not-charged' })).toMatchObject({ kind: 'done' });
     expect(feeCharges()).toHaveLength(2);
     expect(eventTypes()).toContain('cancellation-fee-released');
+  });
+
+  it('refuses a decision taken on a stale plan', async () => {
+    await start();
+    setup.aima.failNext('charge', { status: 503 });
+    await executeRefund(setup.deps, await plan(10));
+    setup.setNow(new Date(NOW.getTime() + 11 * 60_000));
+    const first = await plan(10);
+    const stale = await plan(10);
+
+    expect(await executeRefund(setup.deps, first, { fee: 'not-charged' })).toMatchObject({ kind: 'done' });
+    expect(await executeRefund(setup.deps, stale, { fee: 'not-charged' })).toEqual({
+      kind: 'write-failed',
+      step: 'decision',
+      failure: { kind: 'refused', reason: 'fee-not-in-doubt' },
+    });
+    expect(feeCharges()).toHaveLength(2);
+  });
+
+  it('refuses the fee step to the second of two operators resuming at the same time', async () => {
+    await start();
+    setup.aima.failNext('charge', { status: 400 });
+    await executeRefund(setup.deps, await plan(10));
+    const first = await plan(10);
+    const second = await plan(10);
+
+    expect(await executeRefund(setup.deps, first)).toMatchObject({ kind: 'done' });
+    expect(await executeRefund(setup.deps, second)).toEqual({
+      kind: 'write-failed',
+      step: 'fee',
+      failure: { kind: 'refused', reason: 'fee-started' },
+    });
+    expect(feeCharges()).toHaveLength(2);
+  });
+
+  it('says the fees were charged when they cannot be recorded, and never charges them again', async () => {
+    await start();
+    const original = setup.aima.authFetch.getMockImplementation();
+    setup.aima.authFetch.mockImplementation(async (input, init) => {
+      const response = await original!(input, init);
+      if (String(input).endsWith('/invoices/product')) {
+        setup.bo.storage.api.update.mockRejectedValue(Object.assign(new Error('quota'), { code: 'quota-exceeded', status: 507 }));
+      }
+      return response;
+    });
+
+    expect(await executeRefund(setup.deps, await plan(10))).toMatchObject({
+      kind: 'fee-charged-unrecorded',
+      invoiceId: 'invoice-new-1',
+      amount: 15,
+      failure: { kind: 'quota-exceeded' },
+    });
+  });
+
+  it('keeps the money steps when the journal fills up', async () => {
+    await start();
+    setup.aima.failNext('charge', { status: 503 });
+    await executeRefund(setup.deps, await plan(10));
+    for (let index = 0; index < 60; index++) {
+      const notes = setup.stored()?.value.internalNotes as string | undefined;
+      await saveInternalNotes(setup.deps, BOOKING_ID, `note ${index}`, notes ?? '');
+    }
+    expect((setup.stored()?.value.events as unknown[]).length).toBe(50);
+
+    const resumed = await plan(10);
+    expect(resumed.fee.kind).toBe('in-doubt');
+    expect(resumed.refund).toEqual({ kind: 'done' });
+  });
+
+  it('stays complete when the journal fills up after the refund', async () => {
+    await start();
+    await executeRefund(setup.deps, await plan(10));
+    for (let index = 0; index < 60; index++) {
+      const notes = setup.stored()?.value.internalNotes as string | undefined;
+      await saveInternalNotes(setup.deps, BOOKING_ID, `note ${index}`, notes ?? '');
+    }
+    const read = await readBookingState(setup.collection, BOOKING_ID);
+    const planned = await planRefund(setup.deps, { booking: cancelledBefore(10), doc: read.ok ? read.value : null, settings: refundSettings() });
+    expect(planned).toEqual({ ok: false, error: { kind: 'complete' } });
+  });
+
+  it('computes the regularization from the balance read before the fees', async () => {
+    await start({ balance: 5 });
+    setup.aima.failNext('charge', { status: 503 });
+    expect(await executeRefund(setup.deps, await plan(0.5))).toMatchObject({ kind: 'fee-unknown' });
+    // The fees were paid with the credits meanwhile.
+    const wallet = setup.aima.wallets.get('wallet-1');
+    if (wallet) wallet.availableAmount = 0;
+    setup.setNow(new Date(NOW.getTime() + 11 * 60_000));
+
+    const resumed = await plan(0.5);
+    expect(resumed.credits).toEqual({ kind: 'revoke', walletId: 'wallet-1', balance: 5 });
+    expect(await executeRefund(setup.deps, resumed, { fee: 'charged' })).toMatchObject({ kind: 'done', missingAmount: 10 });
   });
 
   it('resumes a failed revocation with the balance read before it', async () => {
@@ -318,6 +481,17 @@ describe('executeRefund', () => {
     const read = await readBookingState(setup.collection, BOOKING_ID);
     const planned = await planRefund(setup.deps, { booking: cancelledBefore(48), doc: read.ok ? read.value : null, settings: refundSettings() });
     expect(planned).toEqual({ ok: false, error: { kind: 'complete' } });
+  });
+
+  it('refuses a wallet without a balance and a negative fee price', async () => {
+    await start();
+    const wallet = setup.aima.wallets.get('wallet-1') as { availableAmount: unknown } | undefined;
+    if (wallet) wallet.availableAmount = null;
+    const read = await readBookingState(setup.collection, BOOKING_ID);
+    const doc = read.ok ? read.value : null;
+    expect(await planRefund(setup.deps, { booking: cancelledBefore(0.5), doc, settings: refundSettings() })).toEqual({ ok: false, error: { kind: 'wallet-balance-unknown' } });
+    setup.aima.setProductPrice(-1);
+    expect(await planRefund(setup.deps, { booking: cancelledBefore(10), doc, settings: refundSettings() })).toEqual({ ok: false, error: { kind: 'invalid-fee-price', price: -1 } });
   });
 
   it('skips a fee product priced 0', async () => {

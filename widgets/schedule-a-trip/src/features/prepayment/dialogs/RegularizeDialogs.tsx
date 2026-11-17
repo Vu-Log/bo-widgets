@@ -28,8 +28,14 @@ export function RegularizeDialog({ ctx, onClose }: { readonly ctx: BookingContex
   const run = async () => {
     if (!deps) return;
     setBusy(true);
-    const written = await markRegularized(deps, ctx.booking.id, note);
+    const guarded = await env.guard('regularize', ctx.booking.id, () => markRegularized(deps, ctx.booking.id, note));
     setBusy(false);
+    if (!guarded.ok) {
+      setResult({ severity: 'error', text: { key: 'prepayment.error.unexpected' } });
+      await env.refresh(ctx.booking.id);
+      return;
+    }
+    const written = guarded.value;
     setResult(
       written.ok
         ? { severity: 'success', text: { key: 'prepayment.regularize.done' } }
@@ -107,8 +113,14 @@ export function UndoRegularizationDialog({
   const run = async () => {
     if (!deps) return;
     setBusy(true);
-    const written = await undoRegularization(deps, ctx.booking.id);
+    const guarded = await env.guard('undo-regularization', ctx.booking.id, () => undoRegularization(deps, ctx.booking.id));
     setBusy(false);
+    if (!guarded.ok) {
+      setResult({ severity: 'error', text: { key: 'prepayment.error.unexpected' } });
+      await env.refresh(ctx.booking.id);
+      return;
+    }
+    const written = guarded.value;
     setResult(
       written.ok
         ? { severity: 'success', text: { key: 'prepayment.undoRegularization.done' } }

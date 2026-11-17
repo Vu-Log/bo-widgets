@@ -6,7 +6,7 @@ import { booking, customer, row } from '../../../test/prepayment-fixtures';
 import { renderInWidget } from '../../../test/render';
 import { BOOKINGS_COLLECTION } from '../../../storage/booking-state';
 import type { BookingContext } from '../../extensions';
-import { ChargeDialog, parseAmount } from './ChargeDialog';
+import { ChargeDialog, chargeOutcomeText, parseAmount } from './ChargeDialog';
 
 let view: Awaited<ReturnType<typeof renderInWidget>> | undefined;
 afterEach(() => {
@@ -127,5 +127,16 @@ describe('ChargeDialog', () => {
     await vi.waitFor(() => expect(button('Close')).toBeDefined());
     click('Close');
     expect(onClose).toHaveBeenCalled();
+  });
+});
+
+describe('chargeOutcomeText', () => {
+  it('has a message for each outcome', () => {
+    expect(chargeOutcomeText({ kind: 'charged-unrecorded', invoiceId: 'i-1', failure: { kind: 'rate-limited' } }).text).toEqual({ key: 'prepayment.charge.unrecorded', params: { invoiceId: 'i-1' } });
+    expect(chargeOutcomeText({ kind: 'charged-unrecorded', invoiceId: 'i-1', failure: { kind: 'refused', reason: 'other-invoice' } })).toMatchObject({ severity: 'error', text: { key: 'prepayment.charge.otherInvoice' } });
+    expect(chargeOutcomeText({ kind: 'charged-id-unknown', markFailure: null }).text.key).toBe('prepayment.charge.idUnknown');
+    expect(chargeOutcomeText({ kind: 'refused', error: { kind: 'http', status: 400 }, doc: null, releaseFailure: { kind: 'conflict' } }).text.key).toBe('prepayment.charge.refusedLocked');
+    expect(chargeOutcomeText({ kind: 'not-claimed', failure: { kind: 'already-charged', invoiceId: 'i' } }).text.key).toBe('prepayment.charge.alreadyCharged');
+    expect(chargeOutcomeText({ kind: 'invalid', reason: 'customer' }).text.key).toBe('prepayment.charge.noCustomer');
   });
 });

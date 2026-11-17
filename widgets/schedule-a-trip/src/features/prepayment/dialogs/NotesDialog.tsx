@@ -26,8 +26,16 @@ export function NotesDialog({ ctx, onClose }: { readonly ctx: BookingContext; re
     if (!deps) return;
     setBusy(true);
     setError(null);
-    const written = await saveInternalNotes(deps, ctx.booking.id, notes, Boolean(ctx.state));
+    const guarded = await env.guard('notes', ctx.booking.id, () =>
+      saveInternalNotes(deps, ctx.booking.id, notes, ctx.state ? (ctx.state.value.internalNotes ?? '') : null),
+    );
     setBusy(false);
+    if (!guarded.ok) {
+      setError({ key: 'prepayment.error.unexpected' });
+      await env.refresh(ctx.booking.id);
+      return;
+    }
+    const written = guarded.value;
     await env.refresh(ctx.booking.id, written.ok ? written.value : null);
     if (written.ok) onClose();
     else setError(storageErrorText(written.error));

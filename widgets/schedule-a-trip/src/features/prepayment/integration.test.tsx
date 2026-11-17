@@ -80,6 +80,32 @@ describe('the prepayment feature in a host', () => {
     expect(rendered.aima.callsTo('POST', '/refund')).toHaveLength(1);
   });
 
+  it('recovers a charge whose answer was lost: to verify, then the invoice found and attached', async () => {
+    const rendered = await renderWithBilling(
+      <FeatureHost feature={prepaymentFeature} booking={booking()} tab="upcoming" customer={customer()} />,
+    );
+    unmount = rendered.view.unmount;
+    rendered.aima.loseNextChargeAnswer();
+    await vi.waitFor(() => expect(actionButton('Prepay')).toBeDefined());
+    actionButton('Prepay')?.click();
+    await dialogShown();
+    await vi.waitFor(() => expect(button('Prepay')?.disabled).toBe(false));
+    [...document.body.querySelectorAll<HTMLButtonElement>('[role="dialog"] button')].find((candidate) => candidate.textContent === 'Prepay')?.click();
+    await vi.waitFor(() => expect(button('Charge €50.00')).toBeDefined());
+    click('Charge €50.00');
+    await vi.waitFor(() => expect(bodyText()).toContain('The answer of the Vulog API was lost'));
+    click('Close');
+
+    await vi.waitFor(() => expect(cell('status')).toBe('Prepayment to verify'));
+    actionButton('Verify the prepayment')?.click();
+    await vi.waitFor(() => expect(bodyText()).toContain('The invoice invoice-new-1 is attached to the booking.'));
+    click('Close');
+
+    await vi.waitFor(() => expect(cell('status')).toBe('Payment in progress'));
+    expect(rendered.aima.callsTo('POST', '/invoices/product')).toHaveLength(1);
+    expect(rendered.stored()?.value.invoiceId).toBe('invoice-new-1');
+  });
+
   it('offers no money action on a cancelled booking the widget never wrote', async () => {
     const rendered = await renderWithBilling(
       <FeatureHost feature={prepaymentFeature} booking={booking({ status: 'CANCELLED' })} tab="cancelled" customer={customer()} />,

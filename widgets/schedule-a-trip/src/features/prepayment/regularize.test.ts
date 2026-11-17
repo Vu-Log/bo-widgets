@@ -41,7 +41,7 @@ describe('markRegularized', () => {
     setup = await moneySetup();
     await setup.seed({});
     expect(await markRegularized(setup.deps, BOOKING_ID, '')).toEqual({ ok: false, error: { kind: 'refused', reason: 'not-pending' } });
-    expect(await markRegularized(setup.deps, BOOKING_ID, 'x'.repeat(MAX_NOTE_LENGTH + 1))).toEqual({ ok: false, error: { kind: 'refused', reason: 'note-too-long' } });
+    expect(await markRegularized(setup.deps, BOOKING_ID, 'x'.repeat(MAX_NOTE_LENGTH + 1))).toEqual({ ok: false, error: { kind: 'invalid-input', reason: 'too-long' } });
   });
 
   it('says not-found when the document is gone', async () => {

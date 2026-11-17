@@ -39,16 +39,28 @@ const ELIGIBILITY_TEXT: Record<Exclude<Eligibility['kind'], 'eligible' | 'loadin
   'no-entity': { key: 'prepayment.charge.noEntity' },
 };
 
-/** What the dialog shows after a charge. */
-function outcomeText(outcome: ChargeOutcome): { severity: 'success' | 'warning' | 'error'; text: Text } {
+/**
+ * What the dialog shows after a charge.
+ *
+ * @param outcome - The outcome of the charge.
+ * @returns The severity and the message.
+ */
+export function chargeOutcomeText(outcome: ChargeOutcome): { severity: 'success' | 'warning' | 'error'; text: Text } {
   switch (outcome.kind) {
     case 'charged':
       return { severity: 'success', text: { key: 'prepayment.charge.done' } };
     case 'charged-unrecorded':
-      return {
-        severity: 'warning',
-        text: { key: 'prepayment.charge.unrecorded', params: { invoiceId: outcome.invoiceId } },
-      };
+      return outcome.failure.kind === 'refused'
+        ? {
+            severity: 'error',
+            text: { key: 'prepayment.charge.otherInvoice', params: { invoiceId: outcome.invoiceId } },
+          }
+        : {
+            severity: 'warning',
+            text: { key: 'prepayment.charge.unrecorded', params: { invoiceId: outcome.invoiceId } },
+          };
+    case 'charged-id-unknown':
+      return { severity: 'warning', text: { key: 'prepayment.charge.idUnknown' } };
     case 'refused':
       return outcome.releaseFailure
         ? { severity: 'error', text: { key: 'prepayment.charge.refusedLocked' } }
@@ -71,7 +83,8 @@ type Step =
   | { readonly kind: 'form' }
   | { readonly kind: 'confirm' }
   | { readonly kind: 'running' }
-  | { readonly kind: 'outcome'; readonly outcome: ChargeOutcome };
+  | { readonly kind: 'outcome'; readonly outcome: ChargeOutcome }
+  | { readonly kind: 'crashed' };
 
 /**
  * The prepayment dialog. With a planned return date, the amount is prefilled with the computed
@@ -108,15 +121,25 @@ export function ChargeDialog({ ctx, onClose }: { readonly ctx: BookingContext; r
   const run = async () => {
     if (!env.deps || !settings || eligibility.kind !== 'eligible' || !check.valid) return;
     setStep({ kind: 'running' });
-    const outcome = await chargePrepayment(env.deps, {
-      booking,
-      entityId: eligibility.entityId,
-      amount,
-      computedAmount: computed,
-      warnings,
-      productId: settings.prepaymentProductId,
-      settings,
-    });
+    const deps = env.deps;
+    const result = await env.guard('charge', booking.id, () =>
+      chargePrepayment(deps, {
+        booking,
+        entityId: eligibility.entityId,
+        amount,
+        computedAmount: computed,
+        warnings,
+        productId: settings.prepaymentProductId,
+        settings,
+      }),
+    );
+    if (!result.ok) {
+      setStep({ kind: 'crashed' });
+      await env.refresh(booking.id);
+      return;
+    }
+    const outcome = result.value;
+    if (outcome.kind !== 'charged') env.logOutcome('charge', booking.id, outcome);
     setStep({ kind: 'outcome', outcome });
     await env.refresh(booking.id, outcome.kind === 'charged' ? outcome.doc : null);
   };
@@ -137,8 +160,15 @@ export function ChargeDialog({ ctx, onClose }: { readonly ctx: BookingContext; r
         },
   );
 
+  if (step.kind === 'crashed') {
+    return (
+      <DialogFrame title={i18n.t('prepayment.charge.title')} onClose={onClose} i18n={i18n}>
+        <TextAlert severity="error" text={{ key: 'prepayment.error.unexpected' }} i18n={i18n} />
+      </DialogFrame>
+    );
+  }
   if (step.kind === 'outcome') {
-    const { severity, text: message } = outcomeText(step.outcome);
+    const { severity, text: message } = chargeOutcomeText(step.outcome);
     return (
       <DialogFrame title={i18n.t('prepayment.charge.title')} onClose={onClose} i18n={i18n}>
         <TextAlert severity={severity} text={message} i18n={i18n} />

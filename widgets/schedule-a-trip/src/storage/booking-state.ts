@@ -78,7 +78,10 @@ const fields = {
   chargeStartedBy: z.string().nullable(),
   /** The prepayment invoice. */
   invoiceId: z.string().min(1).nullable(),
-  /** Amount charged, and so of the credits granted. */
+  /**
+   * Amount charged, and so of the credits granted. Written with the charge claim, before the
+   * invoice exists: credits are only due once `invoiceId` is set and the invoice is paid.
+   */
   chargeAmount: z.number().positive().nullable(),
   /** Amount computed by the formula, `null` without a planned return date. */
   computedAmount: z.number().nullable(),
@@ -455,16 +458,51 @@ export async function readBookingState(
 }
 
 /**
- * Appends an entry to a journal, keeping the {@link MAX_EVENTS} newest.
+ * Journal entries that record a step of a money action (a charge, a refund, the fees, the
+ * credits): the widget reads them back to resume an action without paying or charging twice, so
+ * they are the last ones dropped when the journal is full.
+ */
+export const MONEY_EVENT_TYPES: ReadonlySet<string> = new Set([
+  'charge-started',
+  'charge-accepted',
+  'charge-released',
+  'charged',
+  'charge-attached',
+  'refund-started',
+  'refund-released',
+  'refund-confirmed',
+  'refunded',
+  'cancellation-fee-started',
+  'cancellation-fee-charged',
+  'cancellation-fee-released',
+  'cancellation-fee-confirmed',
+  'cancellation-fee-skipped',
+  'credits-revocation-started',
+  'credits-revocation-skipped',
+  'credits-revoked',
+  'refund-completed',
+]);
+
+/**
+ * Appends an entry to a journal of at most {@link MAX_EVENTS} entries. When it is full, the oldest
+ * entry that is not a {@link MONEY_EVENT_TYPES} one is dropped first; the oldest money entry only
+ * when the journal holds nothing else.
  *
  * @param events - The current journal, if any.
  * @param event - The new entry.
- * @returns A new array; `events` is not changed.
+ * @returns A new array, in order; `events` is not changed.
  */
-export const withEvent = (
+export function withEvent(
   events: readonly BookingEvent[] | undefined,
   event: BookingEvent,
-): BookingEvent[] => [...(events ?? []), event].slice(-MAX_EVENTS);
+): BookingEvent[] {
+  const all = [...(events ?? []), event];
+  while (all.length > MAX_EVENTS) {
+    const droppable = all.findIndex((entry) => !MONEY_EVENT_TYPES.has(entry.type));
+    all.splice(droppable === -1 || droppable === all.length - 1 ? 0 : droppable, 1);
+  }
+  return all;
+}
 
 /** What a new document holds besides the fields always written. */
 export interface CreateBookingStateInput {
@@ -569,18 +607,19 @@ export interface ClaimChargeInput {
   readonly now: Date;
 }
 
-/** The fields {@link claimCharge} may write with the claim: what the charge is about to bill. */
-export type ClaimPatch = Pick<
-  BookingStatePatch,
-  'chargeAmount' | 'computedAmount' | 'amountWarnings' | 'entityId' | 'isB2B'
->;
+/** What a charge is about to bill, written with its claim (the amount is required: the search of a
+ * lost invoice needs it). */
+export interface ClaimPatch {
+  readonly chargeAmount: number;
+  readonly computedAmount: number | null;
+  readonly amountWarnings: readonly StoredAmountWarning[];
+  readonly entityId: string;
+  readonly isB2B: boolean;
+}
 
 /** A charge claim, with what the charge is about to bill (written in the same call). */
 export interface ClaimChargeWithInput extends ClaimChargeInput {
-  /**
-   * Amounts and entity of the charge, written with the claim: after a lost answer, the search of
-   * the invoice needs the amount that was billed.
-   */
+  /** Amounts and entity of the charge, written with the claim. */
   readonly patch?: ClaimPatch;
 }
 
@@ -629,8 +668,17 @@ export async function claimCharge(
     const claimed = existingClaim(current);
     if (claimed) return { ok: false, error: claimed };
 
+    const billed = input.patch;
     const patch: BookingStatePatch = {
-      ...input.patch,
+      ...(billed
+        ? {
+            chargeAmount: billed.chargeAmount,
+            computedAmount: billed.computedAmount,
+            amountWarnings: [...billed.amountWarnings],
+            entityId: billed.entityId,
+            isB2B: billed.isB2B,
+          }
+        : {}),
       chargeStartedAt: at,
       chargeStartedBy: input.userId,
       events: withEvent(current?.value.events, { at, by: input.userId, type: 'charge-started' }),
