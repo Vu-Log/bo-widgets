@@ -219,6 +219,7 @@
   "prepayment.blocked.settings": "Geldacties zijn uitgeschakeld: de instellingen van de widget zijn onvolledig ({keys}). Een beheerder moet ze aanpassen in Configuration > Widgets.",
   "prepayment.blocked.noUser": "Uw gebruikers-ID is onbekend: laad de backoffice opnieuw.",
   "prepayment.column.amount": "Bedrag",
+  "prepayment.amount.estimated": "Geschat bedrag: nog niets afgeschreven",
   "prepayment.column.status": "Vooruitbetaling",
   "prepayment.column.credits": "Tegoeden",
   "prepayment.column.notes": "Interne notities",

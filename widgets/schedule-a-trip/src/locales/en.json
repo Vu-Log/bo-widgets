@@ -219,6 +219,7 @@
   "prepayment.blocked.settings": "Money actions are disabled: the settings of the widget are incomplete ({keys}). An administrator must fix them in Configuration > Widgets.",
   "prepayment.blocked.noUser": "Your user id is unknown: reload the back office.",
   "prepayment.column.amount": "Amount",
+  "prepayment.amount.estimated": "Estimated amount: nothing charged yet",
   "prepayment.column.status": "Prepayment",
   "prepayment.column.credits": "Credits",
   "prepayment.column.notes": "Internal notes",

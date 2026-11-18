@@ -219,6 +219,7 @@
   "prepayment.blocked.settings": "Geldaktionen sind deaktiviert: Die Einstellungen des Widgets sind unvollständig ({keys}). Ein Administrator muss sie unter Configuration > Widgets korrigieren.",
   "prepayment.blocked.noUser": "Ihre Benutzer-ID ist unbekannt: Laden Sie das Backoffice neu.",
   "prepayment.column.amount": "Betrag",
+  "prepayment.amount.estimated": "Geschätzter Betrag: noch nichts belastet",
   "prepayment.column.status": "Vorauszahlung",
   "prepayment.column.credits": "Guthaben",
   "prepayment.column.notes": "Interne Notizen",

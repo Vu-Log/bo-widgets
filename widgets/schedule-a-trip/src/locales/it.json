@@ -219,6 +219,7 @@
   "prepayment.blocked.settings": "Le azioni di denaro sono disattivate: le impostazioni del widget sono incomplete ({keys}). Un amministratore deve correggerle in Configuration > Widgets.",
   "prepayment.blocked.noUser": "Il tuo ID utente è sconosciuto: ricarica il back office.",
   "prepayment.column.amount": "Importo",
+  "prepayment.amount.estimated": "Importo stimato: ancora nessun addebito",
   "prepayment.column.status": "Prepagamento",
   "prepayment.column.credits": "Crediti",
   "prepayment.column.notes": "Note interne",

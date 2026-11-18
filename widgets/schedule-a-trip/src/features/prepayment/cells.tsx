@@ -1,17 +1,19 @@
-import { Box, Chip, Tooltip, Typography, type ChipProps } from '@mui/material';
+import { Box, Tooltip, Typography } from '@mui/material';
 import { useQuery } from '@tanstack/react-query';
 import { useAuthFetch } from '@vulog/bo-widget-react';
 import type { Invoice } from '../../api/billing';
+import { computeChargeAmount, type ChargeSettings } from '../../domain/charge-amount';
 import { creditsStatus, type CreditsStatus } from '../../domain/statuses';
 import type { MessageKey } from '../../i18n';
 import { invoiceQueryOptions } from '../../query/queries';
 import { SkeletonCell } from '../../ui/SkeletonCell';
+import { StatusChip, type StatusTone } from '../../ui/StatusChip';
 import type { BookingContext } from '../extensions';
 import { useInvoiceStatusSync } from './invoice-status';
 import { prepaymentDisplay, schedulerErrorNames, type PrepaymentDisplay } from './rules';
 import { usePrepaymentEnv } from './use-prepayment-env';
 
-type Tone = ChipProps['color'];
+type Tone = StatusTone;
 
 /** Label and colour of each prepayment status. */
 export const PREPAYMENT_CHIPS: Readonly<
@@ -80,7 +82,7 @@ export function PrepaymentStatusCell({ ctx }: { readonly ctx: BookingContext }) 
   const display = prepaymentDisplay(ctx, liveStatus(invoice.data), new Date());
   if (display === 'LOADING') return <SkeletonCell />;
   const chip = PREPAYMENT_CHIPS[display];
-  const label = <Chip size="small" color={chip.color} label={i18n.t(chip.key)} />;
+  const label = <StatusChip tone={chip.color} label={i18n.t(chip.key)} />;
   const tooltip = TOOLTIPS[display];
   return tooltip ? (
     <Tooltip title={i18n.t(tooltip)}>
@@ -92,8 +94,9 @@ export function PrepaymentStatusCell({ ctx }: { readonly ctx: BookingContext }) 
 }
 
 /**
- * The credits status of a row, as a chip; empty without a document or for a cancelled booking
- * without credits.
+ * The credits status of a row, as a chip: "Awaiting prepayment" for a booking to prepay that has
+ * no document yet; a dash for a business booking, a cancelled booking without credits, or a
+ * booking the widget has no data for.
  *
  * @param props - The row.
  * @returns The cell.
@@ -102,7 +105,15 @@ export function CreditsCell({ ctx }: { readonly ctx: BookingContext }) {
   const { i18n } = usePrepaymentEnv();
   const invoice = useRowInvoice(ctx);
   if (ctx.state === undefined) return <SkeletonCell />;
-  if (ctx.state === null || ctx.state.value.isB2B === true) return <span>–</span>;
+  if (ctx.state === null) {
+    // No document: the credits wait for the prepayment of a booking still to prepay.
+    const display = prepaymentDisplay(ctx, null, new Date());
+    if (display === 'LOADING') return <SkeletonCell />;
+    if (display !== 'NOT_CHARGED') return <span>–</span>;
+    const chip = CREDITS_CHIPS.PENDING_PREPAYMENT;
+    return <StatusChip tone={chip.color} label={i18n.t(chip.key)} />;
+  }
+  if (ctx.state.value.isB2B === true) return <span>–</span>;
   const value = ctx.state.value;
   const status = creditsStatus({
     creditsAdded: value.creditsAdded,
@@ -112,20 +123,51 @@ export function CreditsCell({ ctx }: { readonly ctx: BookingContext }) {
   });
   if (status === null) return <span>–</span>;
   const chip = CREDITS_CHIPS[status];
-  return <Chip size="small" variant="outlined" color={chip.color} label={i18n.t(chip.key)} />;
+  return <StatusChip tone={chip.color} label={i18n.t(chip.key)} />;
 }
 
 /**
- * The amount charged, in the currency of the fleet, with the warnings accepted in a tooltip.
+ * The estimated prepayment of a row with nothing charged yet: the amount the charge dialog would
+ * propose ({@link computeChargeAmount}), `null` when there is none (a charge or a claim already, a
+ * business booking, no planned return, settings missing or invalid).
+ *
+ * @param ctx - The row.
+ * @param settings - The valid settings, `null` otherwise.
+ * @param now - The current date.
+ * @returns The amount, or `null`.
+ */
+export function estimatedAmount(
+  ctx: BookingContext,
+  settings: ChargeSettings | null,
+  now: Date,
+): number | null {
+  if (settings === null || ctx.booking.plannedReturnDate === null) return null;
+  if (prepaymentDisplay(ctx, null, now) !== 'NOT_CHARGED') return null;
+  return computeChargeAmount(new Date(ctx.booking.startDate), new Date(ctx.booking.plannedReturnDate), settings);
+}
+
+/**
+ * The amount charged, in the currency of the fleet, with the warnings accepted in a tooltip. With
+ * nothing charged yet, the estimated amount ({@link estimatedAmount}), muted and marked "≈".
  *
  * @param props - The row.
  * @returns The cell.
  */
 export function AmountCell({ ctx }: { readonly ctx: BookingContext }) {
-  const { i18n, formatAmount } = usePrepaymentEnv();
+  const { i18n, formatAmount, settings } = usePrepaymentEnv();
   if (ctx.state === undefined) return <SkeletonCell />;
   const amount = ctx.state?.value.chargeAmount;
-  if (!amount) return <span>–</span>;
+  if (!amount) {
+    const estimate = estimatedAmount(ctx, settings, new Date());
+    if (estimate === null) return <span>–</span>;
+    return (
+      <Tooltip title={i18n.t('prepayment.amount.estimated')}>
+        <Box component="span" data-estimated="" sx={{ color: 'text.secondary' }}>
+          ≈ {formatAmount(estimate)}
+        </Box>
+      </Tooltip>
+    );
+  }
   const warnings = ctx.state?.value.amountWarnings ?? [];
   const text = <span>{formatAmount(amount)}</span>;
   if (warnings.length === 0) return text;
@@ -156,9 +198,8 @@ export function RegularizationCell({ ctx }: { readonly ctx: BookingContext }) {
   if (!value?.toRegularize) return <span>–</span>;
   if (value.regularizationPending === true) {
     return (
-      <Chip
-        size="small"
-        color="error"
+      <StatusChip
+        tone="error"
         label={i18n.t('prepayment.regularization.pending', {
           amount: formatAmount(value.toRegularize.missingAmount),
         })}
@@ -174,13 +215,14 @@ export function RegularizationCell({ ctx }: { readonly ctx: BookingContext }) {
     .join(' · ');
   return (
     <Tooltip title={tooltip}>
-      <Chip
-        size="small"
-        color="success"
-        label={i18n.t('prepayment.regularization.done', {
-          date: i18n.formatDate(new Date(value.regularizedAt), 'P'),
-        })}
-      />
+      <span>
+        <StatusChip
+          tone="success"
+          label={i18n.t('prepayment.regularization.done', {
+            date: i18n.formatDate(new Date(value.regularizedAt), 'P'),
+          })}
+        />
+      </span>
     </Tooltip>
   );
 }
@@ -214,12 +256,9 @@ export function SchedulerErrorsCell({ ctx }: { readonly ctx: BookingContext }) {
             key={name}
             title={typeof at === 'string' ? i18n.formatDate(new Date(at), 'Pp') : ''}
           >
-            <Chip
-              size="small"
-              color="error"
-              variant="outlined"
-              label={key ? i18n.t(key) : name}
-            />
+            <span>
+              <StatusChip tone="error" label={key ? i18n.t(key) : name} />
+            </span>
           </Tooltip>
         );
       })}

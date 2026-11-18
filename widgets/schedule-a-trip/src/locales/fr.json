@@ -219,6 +219,7 @@
   "prepayment.blocked.settings": "Les actions financières sont désactivées : les réglages du widget sont incomplets ({keys}). Un administrateur doit les corriger dans Configuration > Widgets.",
   "prepayment.blocked.noUser": "Votre identifiant utilisateur est inconnu : rechargez le back-office.",
   "prepayment.column.amount": "Montant",
+  "prepayment.amount.estimated": "Montant estimé : rien n'est encore débité",
   "prepayment.column.status": "Prépaiement",
   "prepayment.column.credits": "Crédits",
   "prepayment.column.notes": "Notes internes",

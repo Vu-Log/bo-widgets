@@ -219,6 +219,7 @@
   "prepayment.blocked.settings": "A pénzügyi műveletek le vannak tiltva: a widget beállításai hiányosak ({keys}). Egy rendszergazdának ki kell javítania őket a Configuration > Widgets menüben.",
   "prepayment.blocked.noUser": "A felhasználói azonosítója ismeretlen: töltse újra a back office-t.",
   "prepayment.column.amount": "Összeg",
+  "prepayment.amount.estimated": "Becsült összeg: még nincs terhelés",
   "prepayment.column.status": "Előrefizetés",
   "prepayment.column.credits": "Jóváírások",
   "prepayment.column.notes": "Belső jegyzetek",

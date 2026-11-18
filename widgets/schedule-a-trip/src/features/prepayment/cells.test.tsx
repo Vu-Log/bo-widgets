@@ -1,11 +1,12 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { bodyText } from '../../test/dom';
 import { fakeInvoice } from '../../test/fake-aima';
-import { booking, customer, doc, NOW, renderWithBilling, row } from '../../test/prepayment-fixtures';
+import { booking, customer, doc, NOW, renderWithBilling, row, settings } from '../../test/prepayment-fixtures';
 import type { BookingContext } from '../extensions';
 import {
   AmountCell,
   CreditsCell,
+  estimatedAmount,
   InternalNotesCell,
   PrepaymentStatusCell,
   RegularizationCell,
@@ -61,9 +62,25 @@ describe('CreditsCell', () => {
     await vi.waitFor(() => expect(bodyText()).toBe('Revoked'));
   });
 
-  it('shows nothing without a document, and a skeleton while it loads', async () => {
+  it('shows "Awaiting prepayment" for a booking to prepay without a document', async () => {
     await show(<CreditsCell ctx={row({ state: null })} />);
+    await vi.waitFor(() => expect(bodyText()).toBe('Awaiting prepayment'));
+    expect(document.body.querySelector('[data-status-chip="default"]')).not.toBeNull();
+  });
+
+  it.each<[string, Partial<BookingContext>]>([
+    ['a business booking', { state: null, customer: customer('Business') }],
+    ['a business document', { state: doc({ isB2B: true }) }],
+    ['a cancelled booking without a document', { state: null, tab: 'cancelled' }],
+    ['a completed booking without a document', { state: null, tab: 'completed' }],
+  ])('shows a dash for %s', async (_, ctx) => {
+    await show(<CreditsCell ctx={row(ctx)} />);
     await vi.waitFor(() => expect(bodyText()).toBe('–'));
+  });
+
+  it('shows a skeleton while the document or the customer loads', async () => {
+    await show(<CreditsCell ctx={row({ state: null, customer: undefined })} />);
+    await vi.waitFor(() => expect(skeleton()).not.toBeNull());
   });
 });
 
@@ -74,9 +91,46 @@ describe('AmountCell', () => {
     await vi.waitFor(() => expect(document.body.querySelector('[aria-label="Below the minimum"]')).not.toBeNull());
   });
 
-  it('shows a dash without an amount', async () => {
-    await show(<AmountCell ctx={row({ state: doc() })} />);
+  it('shows the estimated amount, muted and marked, while nothing is charged', async () => {
+    // 12 hours at 100 a day: 50.
+    await show(<AmountCell ctx={row({ state: null })} />);
+    await vi.waitFor(() => expect(bodyText()).toBe('≈ €50.00'));
+    expect(document.body.querySelector('[data-estimated]')).not.toBeNull();
+    await vi.waitFor(() =>
+      expect(document.body.querySelector('[aria-label="Estimated amount: nothing charged yet"]')).not.toBeNull(),
+    );
+  });
+
+  it('shows a dash without an amount nor an estimate', async () => {
+    await show(<AmountCell ctx={row({ state: doc(), booking: booking({ plannedReturnDate: null }) })} />);
     await vi.waitFor(() => expect(bodyText()).toBe('–'));
+    expect(document.body.querySelector('[data-estimated]')).toBeNull();
+  });
+});
+
+describe('estimatedAmount', () => {
+  it('is the amount the charge dialog proposes, for a booking with nothing charged', () => {
+    expect(estimatedAmount(row({ state: null }), settings(), NOW)).toBe(50);
+    expect(estimatedAmount(row({ state: doc() }), settings(), NOW)).toBe(50);
+    // The minimum for a short trip.
+    const short = booking({ plannedReturnDate: '2026-03-12T08:30:00.000Z' });
+    expect(estimatedAmount(row({ booking: short }), settings(), NOW)).toBe(settings().minimumAmount);
+  });
+
+  it.each<[string, Partial<BookingContext>]>([
+    ['without a planned return', { booking: booking({ plannedReturnDate: null }) }],
+    ['for a business booking', { customer: customer('Business') }],
+    ['for a business document', { state: doc({ isB2B: true }) }],
+    ['once charged', { state: doc({ chargeStartedAt: NOW.toISOString(), invoiceId: 'invoice-1', chargeAmount: 40 }) }],
+    ['for a claim to verify', { state: doc({ chargeStartedAt: NOW.toISOString() }) }],
+    ['while the customer loads', { customer: undefined }],
+    ['on another tab', { tab: 'completed' }],
+  ])('is null %s', (_, ctx) => {
+    expect(estimatedAmount(row({ state: null, ...ctx }), settings(), NOW)).toBeNull();
+  });
+
+  it('is null without valid settings', () => {
+    expect(estimatedAmount(row(), null, NOW)).toBeNull();
   });
 });
 
