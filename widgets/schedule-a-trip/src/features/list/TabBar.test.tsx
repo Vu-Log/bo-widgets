@@ -83,6 +83,19 @@ describe('useTabCounts', () => {
     expect(countsOf(view).completed).toBeNull();
   });
 
+  it('leaves Completed unknown when a full read gives no total', async () => {
+    const full = Array.from({ length: 2000 }, (_, index) =>
+      apiBooking({ id: `b-${index}`, status: 'CONFIRMED', journeyId: `trip-${index}`, completed: true }),
+    );
+    stubVulogApi(
+      fleetApi({ trips: [] }, ({ path }) => (path.endsWith('/status/CONFIRMED') ? Response.json(full) : undefined)),
+    );
+    const view = await renderInWidget(<Probe />);
+    unmount = view.unmount;
+    await vi.waitFor(() => expect(countsOf(view).ongoing).toBe(0));
+    expect(countsOf(view).completed).toBeNull();
+  });
+
   it('leaves a count unknown when its call fails', async () => {
     stubVulogApi(() => new Response('', { status: 500 }));
     const view = await renderInWidget(<Probe />);

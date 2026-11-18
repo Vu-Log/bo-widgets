@@ -71,6 +71,7 @@ describe('CreditsCell', () => {
   it.each<[string, Partial<BookingContext>]>([
     ['a business booking', { state: null, customer: customer('Business') }],
     ['a business document', { state: doc({ isB2B: true }) }],
+    ['a business customer with a document', { state: doc(), customer: customer('Business') }],
     ['a cancelled booking without a document', { state: null, tab: 'cancelled' }],
     ['a completed booking without a document', { state: null, tab: 'completed' }],
   ])('shows a dash for %s', async (_, ctx) => {
@@ -121,6 +122,8 @@ describe('estimatedAmount', () => {
     ['without a planned return', { booking: booking({ plannedReturnDate: null }) }],
     ['for a business booking', { customer: customer('Business') }],
     ['for a business document', { state: doc({ isB2B: true }) }],
+    ['for a business customer with a document', { state: doc(), customer: customer('Business') }],
+    ['with a document while the customer loads', { state: doc(), customer: undefined }],
     ['once charged', { state: doc({ chargeStartedAt: NOW.toISOString(), invoiceId: 'invoice-1', chargeAmount: 40 }) }],
     ['for a claim to verify', { state: doc({ chargeStartedAt: NOW.toISOString() }) }],
     ['while the customer loads', { customer: undefined }],

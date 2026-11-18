@@ -2,6 +2,7 @@ import { Badge, Tab, Tabs } from '@mui/material';
 import { useQueries, useQuery } from '@tanstack/react-query';
 import { useAuthFetch } from '@vulog/bo-widget-react';
 import { useMemo } from 'react';
+import { MAX_BOOKING_PAGE_SIZE } from '../../api/schedule-a-trip';
 import { LIST_TABS, tabOfBooking, type ListTab } from '../../domain/statuses';
 import { useI18n } from '../../i18n';
 import {
@@ -39,7 +40,9 @@ export function useTabCounts(fleetId: string): Readonly<Record<ListTab, number |
     const ids = new Set(trips.data.map((trip) => trip.tripId));
     const tabs = confirmed.data.items.map((booking) => tabOfBooking(booking, ids));
     const total = confirmed.data.totalElements;
-    const whole = total === null || total <= confirmed.data.items.length;
+    // Without a total, a full page may hide more bookings.
+    const whole =
+      total === null ? confirmed.data.items.length < MAX_BOOKING_PAGE_SIZE : total <= confirmed.data.items.length;
     return {
       ongoing: tabs.filter((tab) => tab === 'ongoing').length,
       completed: whole ? tabs.filter((tab) => tab === 'completed').length : null,

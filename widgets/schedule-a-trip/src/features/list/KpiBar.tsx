@@ -39,7 +39,6 @@ export function KpiBar({
         const tone = TONES[kpi.tone];
         const tile = (
           <ButtonBase
-            key={kpi.id}
             aria-pressed={active}
             onClick={() => onSelect(kpi)}
             sx={{
@@ -67,13 +66,11 @@ export function KpiBar({
             </Typography>
           </ButtonBase>
         );
-        return count === undefined ? (
-          // A description, not the name of the tile: its name stays its label.
-          <Tooltip key={kpi.id} title={t('kpi.countUnknown')} describeChild>
+        // Always the same tree: a tile whose count arrives keeps its focus.
+        return (
+          <Tooltip key={kpi.id} title={count === undefined ? t('kpi.countUnknown') : ''} describeChild>
             {tile}
           </Tooltip>
-        ) : (
-          tile
         );
       })}
     </Box>

@@ -10,7 +10,7 @@ import { SkeletonCell } from '../../ui/SkeletonCell';
 import { StatusChip, type StatusTone } from '../../ui/StatusChip';
 import type { BookingContext } from '../extensions';
 import { useInvoiceStatusSync } from './invoice-status';
-import { prepaymentDisplay, schedulerErrorNames, type PrepaymentDisplay } from './rules';
+import { prepaymentDisplay, prepaymentEligibility, schedulerErrorNames, type PrepaymentDisplay } from './rules';
 import { usePrepaymentEnv } from './use-prepayment-env';
 
 type Tone = StatusTone;
@@ -114,6 +114,7 @@ export function CreditsCell({ ctx }: { readonly ctx: BookingContext }) {
     return <StatusChip tone={chip.color} label={i18n.t(chip.key)} />;
   }
   if (ctx.state.value.isB2B === true) return <span>–</span>;
+  if (prepaymentEligibility(ctx.booking, ctx.customer).kind === 'b2b') return <span>–</span>;
   const value = ctx.state.value;
   const status = creditsStatus({
     creditsAdded: value.creditsAdded,
@@ -143,6 +144,9 @@ export function estimatedAmount(
 ): number | null {
   if (settings === null || ctx.booking.plannedReturnDate === null) return null;
   if (prepaymentDisplay(ctx, null, now) !== 'NOT_CHARGED') return null;
+  // A document does not always say it is a business booking (a pre-allocation): ask the customer.
+  const eligibility = prepaymentEligibility(ctx.booking, ctx.customer).kind;
+  if (eligibility === 'b2b' || eligibility === 'loading') return null;
   return computeChargeAmount(new Date(ctx.booking.startDate), new Date(ctx.booking.plannedReturnDate), settings);
 }
 
