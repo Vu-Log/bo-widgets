@@ -189,7 +189,7 @@ export function createPrepaymentFeature(options: PrepaymentFeatureOptions): Book
   const notes = column('notes', 'prepayment.column.notes', 'minmax(120px, 1fr)', (ctx) => <InternalNotesCell ctx={ctx} />, {
     hiddenByDefault: true,
   });
-  const errors = column('scheduler-errors', 'prepayment.column.schedulerErrors', '160px', (ctx) => (
+  const errors = column('scheduler-errors', 'prepayment.column.schedulerErrors', '180px', (ctx) => (
     <SchedulerErrorsCell ctx={ctx} />
   ));
   const regularization = column('regularization', 'prepayment.column.regularization', '190px', (ctx) => (

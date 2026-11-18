@@ -53,7 +53,7 @@ const coreColumns = (tab: ListTab, deps: CoreFeatureDeps): BookingColumn[] => {
     {
       id: 'plannedReturn',
       header: sortHeader('plannedReturnDate', t('column.plannedReturn')),
-      width: '130px',
+      width: '150px',
       render: (ctx) => (
         <ShortDateCell value={ctx.booking.plannedReturnDate} empty={t('trip.noReturnDate')} />
       ),
