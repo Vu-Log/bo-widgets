@@ -46,8 +46,9 @@ export interface ToolbarProps {
 }
 
 /**
- * The toolbar of the list: search (`/` focuses it), filter chips of the tab, refresh with the age of
- * the rows, density and the column picker.
+ * The toolbar of the list, on one line while it fits: search (`/` focuses it, it shrinks first),
+ * filter chips of the tab, then at the right the age of the rows, refresh, density and the column
+ * picker, which wrap together on a narrow section.
  *
  * @param props - The values and their handlers.
  * @returns The toolbar.
@@ -86,13 +87,15 @@ export function Toolbar(props: ToolbarProps) {
             ),
           },
         }}
-        sx={{ minWidth: 260 }}
+        // The part that gives way: the toolbar stays on one line as long as it can.
+        sx={{ flex: '1 1 200px', minWidth: 160, maxWidth: 380 }}
       />
       {props.filters.map((filter) => {
         const active = props.activeFilters.has(filter.id);
         return (
           <Chip
             key={filter.id}
+            size="small"
             label={filter.label}
             color={active ? 'primary' : 'default'}
             variant={active ? 'filled' : 'outlined'}
@@ -101,43 +104,46 @@ export function Toolbar(props: ToolbarProps) {
           />
         );
       })}
-      <Box sx={{ flex: 1 }} />
-      <Typography variant="caption" color="text.secondary" aria-live="polite">
-        {props.updatedAt > 0 &&
-          t('toolbar.updated', { ago: formatRelative(new Date(props.updatedAt), props.now) })}
-      </Typography>
-      <Tooltip title={t('toolbar.refresh')}>
-        <span>
-          <IconButton
-            aria-label={t('toolbar.refresh')}
-            onClick={props.onRefresh}
-            disabled={props.refreshing}
-          >
-            ⟳
-          </IconButton>
-        </span>
-      </Tooltip>
-      <ToggleButtonGroup
-        size="small"
-        exclusive
-        value={props.density}
-        aria-label={t('toolbar.density')}
-        onChange={(_, value: Density | null) => value && props.onDensity(value)}
-      >
-        {(Object.keys(DENSITIES) as Density[]).map((density) => (
-          <ToggleButton key={density} value={density} sx={{ textTransform: 'none' }}>
-            {t(`toolbar.density.${density}`)}
-          </ToggleButton>
-        ))}
-      </ToggleButtonGroup>
-      <Button
-        size="small"
-        variant="outlined"
-        aria-haspopup="menu"
-        onClick={(event) => setColumnsAnchor(event.currentTarget)}
-      >
-        {t('toolbar.columns')}
-      </Button>
+      {/* Kept together at the right; on a narrow section, they wrap as one block. */}
+      <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, ml: 'auto', flex: 'none' }}>
+        <Typography variant="caption" color="text.secondary" aria-live="polite" noWrap>
+          {props.updatedAt > 0 &&
+            t('toolbar.updated', { ago: formatRelative(new Date(props.updatedAt), props.now) })}
+        </Typography>
+        <Tooltip title={t('toolbar.refresh')}>
+          <span>
+            <IconButton
+              size="small"
+              aria-label={t('toolbar.refresh')}
+              onClick={props.onRefresh}
+              disabled={props.refreshing}
+            >
+              ⟳
+            </IconButton>
+          </span>
+        </Tooltip>
+        <ToggleButtonGroup
+          size="small"
+          exclusive
+          value={props.density}
+          aria-label={t('toolbar.density')}
+          onChange={(_, value: Density | null) => value && props.onDensity(value)}
+        >
+          {(Object.keys(DENSITIES) as Density[]).map((density) => (
+            <ToggleButton key={density} value={density} sx={{ textTransform: 'none', py: 0.25 }}>
+              {t(`toolbar.density.${density}`)}
+            </ToggleButton>
+          ))}
+        </ToggleButtonGroup>
+        <Button
+          size="small"
+          variant="outlined"
+          aria-haspopup="menu"
+          onClick={(event) => setColumnsAnchor(event.currentTarget)}
+        >
+          {t('toolbar.columns')}
+        </Button>
+      </Box>
       <Menu anchorEl={columnsAnchor} open={columnsAnchor !== null} onClose={() => setColumnsAnchor(null)}>
         {props.columns.map((column) => (
           <MenuItem key={column.id} dense onClick={() => props.onToggleColumn(column.id, !column.shown)}>

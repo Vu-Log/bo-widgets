@@ -68,6 +68,7 @@
   "filter.noVehicle": "Senza veicolo",
   "filter.noVehicleSoon": "Senza veicolo < {hours} h",
   "kpi.label": "Filtri rapidi",
+  "kpi.countUnknown": "Conteggiato quando tutte le prenotazioni della scheda sono caricate",
   "lifecycle.label": "Ciclo di vita",
   "lifecycle.created": "Creata",
   "lifecycle.prepaid": "Prepagata",

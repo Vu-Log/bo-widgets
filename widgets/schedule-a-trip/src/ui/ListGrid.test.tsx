@@ -157,6 +157,9 @@ describe('ListGrid', () => {
     expect(declarationsOf(cells[0]!)).toContain('right:0');
     const header = [...view.container.querySelectorAll('[role="columnheader"]')].at(-1)!;
     expect(declarationsOf(header)).toContain('position:sticky');
+    // Small uppercase headers.
+    expect(declarationsOf(header)).toContain('text-transform:uppercase');
+    expect(declarationsOf(header)).toContain('font-size:12px');
     expect(view.container.querySelector('[data-row-id] [role="gridcell"]')?.hasAttribute('data-pinned')).toBe(false);
   });
 

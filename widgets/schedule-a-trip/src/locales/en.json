@@ -68,6 +68,7 @@
   "filter.noVehicle": "No vehicle",
   "filter.noVehicleSoon": "No vehicle < {hours} h",
   "kpi.label": "Quick filters",
+  "kpi.countUnknown": "Counted once every booking of its tab is loaded",
   "lifecycle.label": "Lifecycle",
   "lifecycle.created": "Created",
   "lifecycle.prepaid": "Prepaid",

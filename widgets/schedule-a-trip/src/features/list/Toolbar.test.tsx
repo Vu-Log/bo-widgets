@@ -86,4 +86,24 @@ describe('Toolbar', () => {
       ['model', false],
     ]);
   });
+
+  it('keeps the age, refresh, density and columns together at the right, the search shrinking first', async () => {
+    const { button, container } = await render();
+    const css = [...document.querySelectorAll('style')].map((style) => style.textContent).join('\n');
+    const rule = (element: Element | null | undefined) =>
+      [...(element?.classList ?? [])]
+        .filter((name) => name.startsWith('css-'))
+        .map((name) => new RegExp(`\\.${name}\\{([^}]*)\\}`).exec(css)?.[1] ?? '')
+        .join(';');
+
+    const right = button('Columns')?.parentElement;
+    expect(right?.contains(button('Refresh') ?? null)).toBe(true);
+    expect(right?.contains(container.querySelector('[aria-label="Density"]'))).toBe(true);
+    expect(right?.textContent).toContain('Updated 2 minutes ago');
+    expect(right?.contains(button('No vehicle') ?? null)).toBe(false);
+    expect(rule(right)).toContain('margin-left:auto');
+    expect(rule(right?.parentElement)).toContain('flex-wrap:wrap');
+    expect(rule(container.querySelector('input')?.closest('.MuiTextField-root'))).toContain('flex:1 1 200px');
+    expect(button('No vehicle')?.className).toContain('MuiChip-sizeSmall');
+  });
 });

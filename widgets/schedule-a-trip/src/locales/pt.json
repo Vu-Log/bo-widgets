@@ -68,6 +68,7 @@
   "filter.noVehicle": "Sem veículo",
   "filter.noVehicleSoon": "Sem veículo < {hours} h",
   "kpi.label": "Filtros rápidos",
+  "kpi.countUnknown": "Contado quando todas as reservas do separador estiverem carregadas",
   "lifecycle.label": "Ciclo de vida",
   "lifecycle.created": "Criada",
   "lifecycle.prepaid": "Pré-paga",

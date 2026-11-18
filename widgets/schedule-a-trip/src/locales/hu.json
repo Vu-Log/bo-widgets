@@ -68,6 +68,7 @@
   "filter.noVehicle": "Jármű nélkül",
   "filter.noVehicleSoon": "Jármű nélkül < {hours} óra",
   "kpi.label": "Gyorsszűrők",
+  "kpi.countUnknown": "Akkor számoljuk, ha a lap összes foglalása betöltődött",
   "lifecycle.label": "Életciklus",
   "lifecycle.created": "Létrehozva",
   "lifecycle.prepaid": "Előre fizetve",

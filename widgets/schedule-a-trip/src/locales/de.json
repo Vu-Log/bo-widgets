@@ -68,6 +68,7 @@
   "filter.noVehicle": "Ohne Fahrzeug",
   "filter.noVehicleSoon": "Ohne Fahrzeug < {hours} Std.",
   "kpi.label": "Schnellfilter",
+  "kpi.countUnknown": "Wird gezählt, sobald alle Buchungen des Tabs geladen sind",
   "lifecycle.label": "Ablauf",
   "lifecycle.created": "Erstellt",
   "lifecycle.prepaid": "Vorausbezahlt",

@@ -238,16 +238,19 @@ function FleetSection({
   );
 
   const kpis = useMemo(() => features.flatMap((feature) => feature.kpis ?? []), [features]);
+  const { customerStatus } = enrichment;
   const kpiCounts = useMemo(() => {
     const counts = new Map<string, number>();
-    // A filter that brings its own bookings counts them, whether the pages of the tab are read or not.
+    // A filter that brings its own bookings counts them, whatever the tab shown.
     const sources = features.flatMap((feature) => feature.filterSources ?? []);
     for (const kpi of kpis) {
       const ids = sources.find((source) => source.filterId === kpi.filterId)?.bookingIds;
-      if (kpi.tab === tab && ids) counts.set(kpi.id, new Set(ids).size);
+      if (ids) counts.set(kpi.id, new Set(ids).size);
     }
-    // Without every row, or without their stored states, a count would be wrong: none is shown.
+    // Without every row, their stored states or their customers, a count would be wrong: none is
+    // shown.
     if (!tabBookings.complete || enrichment.statesError) return counts;
+    if (enrichment.contexts.some((ctx) => customerStatus(ctx.booking.userId) === 'loading')) return counts;
     const allFilters = features.flatMap((feature) => feature.filters ?? []);
     for (const kpi of kpis) {
       const filter = allFilters.find((candidate) => candidate.id === kpi.filterId);
@@ -256,7 +259,7 @@ function FleetSection({
       }
     }
     return counts;
-  }, [kpis, features, tab, tabBookings.complete, enrichment.statesError, enrichment.contexts]);
+  }, [kpis, features, tab, tabBookings.complete, enrichment.statesError, enrichment.contexts, customerStatus]);
   const activeKpi =
     kpis.find(
       (kpi) => kpi.tab === tab && filters[tab].length === 1 && filters[tab][0] === kpi.filterId,
@@ -461,7 +464,20 @@ function FleetSection({
         aria-labelledby={tabId(tab)}
         onPointerOver={preloadDrawer}
         onFocus={preloadDrawer}
-        sx={{ flex: 1, minHeight: 0, display: 'flex', flexDirection: 'column' }}
+        // The list in a bordered card; its grid is the only part that scrolls.
+        sx={{
+          flex: 1,
+          minHeight: 0,
+          display: 'flex',
+          flexDirection: 'column',
+          mx: 2,
+          mb: 2,
+          border: 1,
+          borderColor: 'divider',
+          borderRadius: 2,
+          overflow: 'hidden',
+          bgcolor: 'background.paper',
+        }}
       >
         {tabBookings.error ? (
           <Alert

@@ -388,7 +388,7 @@ describe('the booking section', () => {
     expect(ran).toEqual(['booking-2', 'extra-booking-1']);
 
     // The KPI turns on its filter, which loads every page; its count shows once all are there.
-    view.button('Flagged bookings')?.click();
+    view.button('–Flagged bookings')?.click();
     await vi.waitFor(() => expect(view.row('booking-3')).not.toBeNull());
     expect(view.row('booking-1')).toBeNull();
     await vi.waitFor(() => expect(view.button('2Flagged bookings')).toBeDefined());
@@ -418,6 +418,11 @@ describe('the booking section', () => {
     expect(headers()).not.toContain('Internal notes');
     expect(headers()).toContain('Planned return');
     expect(view.row('booking-1')?.querySelector('[role="gridcell"]:last-child')?.hasAttribute('data-pinned')).toBe(true);
+    // The list sits in a bordered card.
+    const css = [...document.querySelectorAll('style')].map((style) => style.textContent).join('\n');
+    const panel = view.container.querySelector('[role="tabpanel"]');
+    const own = [...(panel?.classList ?? [])].find((name) => name.startsWith('css-'));
+    expect(new RegExp(`\\.${own}\\{[^}]*border:1px solid`).test(css)).toBe(true);
 
     view.button('Columns')?.click();
     await vi.waitFor(() => expect(document.body.querySelector('[role="menu"]')?.textContent).toContain('Alert reason'));
@@ -485,10 +490,13 @@ describe('the booking section', () => {
       regularizationPending: true,
     });
     const view = await render(bo.api);
-    await vi.waitFor(() => expect(view.tab('Cancelled')).toBeDefined());
-    view.tab('Cancelled')?.click();
-    // Counted from the storage, though the pages of Cancelled are not all read.
+    // Counted from the storage, though the pages of Cancelled are not read: on any tab.
     await vi.waitFor(() => expect(view.button('1To regularize')).toBeDefined());
+    expect(view.tab('Upcoming')?.getAttribute('aria-selected')).toBe('true');
+    view.tab('Cancelled')?.click();
+    // The refresh is disabled while the first page of the tab loads.
+    await vi.waitFor(() => expect(view.row('booking-9')).not.toBeNull());
+    await vi.waitFor(() => expect(view.button('Refresh', view.container)?.disabled).toBe(false));
 
     bo.storage.api.query.mockImplementation(async (_name: string, options: { where: Record<string, unknown> }) => {
       if (options.where.regularizationPending) throw hostError('unavailable', 503);
@@ -510,6 +518,27 @@ describe('the booking section', () => {
     );
   });
 
+  it('shows no KPI count while the customers of the tab load', async () => {
+    let release: (() => void) | undefined;
+    stubVulogApi(
+      fleetApi({ bookings: { PENDING: upcoming } }, async ({ path }) => {
+        if (!path.endsWith('users/list')) return undefined;
+        await new Promise<void>((resolve) => {
+          release = resolve;
+        });
+        return undefined;
+      }),
+    );
+    const view = await render(routedBo().api);
+    await vi.waitFor(() => expect(release).toBeDefined());
+    await vi.waitFor(() => expect(view.row('booking-1')?.textContent).toContain('City car'));
+    // Every row and state is there, not the customers: "To prepay" cannot be counted yet.
+    expect(view.button('–To prepay')).toBeDefined();
+
+    release?.();
+    await vi.waitFor(() => expect(view.button('1To prepay')).toBeDefined());
+  });
+
   it('shows no KPI count while the stored states cannot be read', async () => {
     stubVulogApi(fleetApi({ bookings: { PENDING: upcoming } }));
     const bo = routedBo();
@@ -517,7 +546,7 @@ describe('the booking section', () => {
     const view = await render(bo.api);
     await vi.waitFor(() => expect(view.container.textContent).toContain('could not be loaded: pre-allocations'));
     const kpi = view.container.querySelector('[role="group"] button');
-    expect(kpi?.textContent).toBe('No vehicle < 24 h');
+    expect(kpi?.textContent).toBe('–No vehicle < 24 h');
   });
 
   it('keeps the retry of a failed page while every page loads for a filter', async () => {

@@ -68,6 +68,7 @@
   "filter.noVehicle": "Zonder voertuig",
   "filter.noVehicleSoon": "Zonder voertuig < {hours} u",
   "kpi.label": "Snelfilters",
+  "kpi.countUnknown": "Geteld zodra alle boekingen van het tabblad zijn geladen",
   "lifecycle.label": "Levenscyclus",
   "lifecycle.created": "Aangemaakt",
   "lifecycle.prepaid": "Vooruitbetaald",
