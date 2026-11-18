@@ -188,6 +188,8 @@
   "write.editModel": "Modell ändern",
   "write.editTrip": "Fahrt ändern",
   "write.preallocate": "Fahrzeug vorab zuweisen",
+  "write.preallocateShort": "Vorab zuweisen",
+  "write.changePreallocationShort": "Fahrzeug ändern",
   "write.preallocated": "{plate} vorab zugewiesen.",
   "write.preallocationRemoved": "Vorabzuweisung entfernt.",
   "write.removePreallocation": "Vorabzuweisung entfernen",

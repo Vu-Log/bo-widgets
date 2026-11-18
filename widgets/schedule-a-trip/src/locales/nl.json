@@ -188,6 +188,8 @@
   "write.editModel": "Model wijzigen",
   "write.editTrip": "Rit wijzigen",
   "write.preallocate": "Voertuig vooraf toewijzen",
+  "write.preallocateShort": "Vooraf toewijzen",
+  "write.changePreallocationShort": "Voertuig wijzigen",
   "write.preallocated": "{plate} vooraf toegewezen.",
   "write.preallocationRemoved": "Voorafgaande toewijzing verwijderd.",
   "write.removePreallocation": "Voorafgaande toewijzing verwijderen",

@@ -188,6 +188,8 @@
   "write.editModel": "Change the model",
   "write.editTrip": "Change the trip",
   "write.preallocate": "Pre-allocate a vehicle",
+  "write.preallocateShort": "Pre-allocate",
+  "write.changePreallocationShort": "Change vehicle",
   "write.preallocated": "{plate} pre-allocated.",
   "write.preallocationRemoved": "Pre-allocation removed.",
   "write.removePreallocation": "Remove the pre-allocation",

@@ -183,8 +183,8 @@ export function createPrepaymentFeature(options: PrepaymentFeatureOptions): Book
   });
 
   const amount = column('amount', 'prepayment.column.amount', '100px', (ctx) => <AmountCell ctx={ctx} />, { align: 'right' });
-  const status = column('status', 'prepayment.column.status', '150px', (ctx) => <PrepaymentStatusCell ctx={ctx} />);
-  const credits = column('credits', 'prepayment.column.credits', '150px', (ctx) => <CreditsCell ctx={ctx} />);
+  const status = column('status', 'prepayment.column.status', '180px', (ctx) => <PrepaymentStatusCell ctx={ctx} />);
+  const credits = column('credits', 'prepayment.column.credits', '180px', (ctx) => <CreditsCell ctx={ctx} />);
   // Wide, and for some operators only: shown from the Columns menu.
   const notes = column('notes', 'prepayment.column.notes', 'minmax(120px, 1fr)', (ctx) => <InternalNotesCell ctx={ctx} />, {
     hiddenByDefault: true,

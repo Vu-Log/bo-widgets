@@ -19,7 +19,7 @@ export interface BookingContext {
  * list and the drawer show it next to the disabled action (a tooltip, or the second line of a menu
  * item). A reason implies `disabled`.
  */
-export interface BookingAction { id: string; label: string; run: (ctx: BookingContext) => void; disabled?: boolean; disabledReason?: string; tone?: 'primary' | 'default' | 'danger' }
+export interface BookingAction { id: string; label: string; /** Shorter label of the row button, the full one in its tooltip. */ shortLabel?: string; run: (ctx: BookingContext) => void; disabled?: boolean; disabledReason?: string; tone?: 'primary' | 'default' | 'danger' }
 export interface BookingFilter { id: string; label: string; tabs: ListTab[]; test: (ctx: BookingContext) => boolean; needsAllPages: boolean }
 export interface BookingKpi { id: string; label: string; tab: ListTab; filterId: string; tone: 'warn' | 'err' | 'info' }
 /**

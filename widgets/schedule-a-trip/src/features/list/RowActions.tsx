@@ -72,9 +72,10 @@ export function RowActions({
             color={buttonColor(primary.tone)}
             disabled={isActionDisabled(primary)}
             onClick={() => primary.run(ctx)}
-            sx={{ textTransform: 'none' }}
+            sx={{ textTransform: 'none', whiteSpace: 'nowrap' }}
+            {...(primary.shortLabel ? { 'aria-label': primary.label, title: primary.label } : {})}
           >
-            {primary.label}
+            {primary.shortLabel ?? primary.label}
           </Button>
         </WithDisabledReason>
       )}

@@ -188,6 +188,8 @@
   "write.editModel": "Modell módosítása",
   "write.editTrip": "Út módosítása",
   "write.preallocate": "Jármű előzetes kiosztása",
+  "write.preallocateShort": "Előzetes kiosztás",
+  "write.changePreallocationShort": "Jármű cseréje",
   "write.preallocated": "{plate} előre kiosztva.",
   "write.preallocationRemoved": "Előzetes kiosztás eltávolítva.",
   "write.removePreallocation": "Előzetes kiosztás eltávolítása",
