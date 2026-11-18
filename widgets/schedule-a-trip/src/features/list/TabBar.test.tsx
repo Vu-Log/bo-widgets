@@ -1,7 +1,4 @@
-import { useQueryClient } from '@tanstack/react-query';
-import { useAuthFetch } from '@vulog/bo-widget-react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { confirmedBookingsQueryOptions, tripsInProgressQueryOptions } from '../../query/queries';
 import { renderInWidget } from '../../test/render';
 import { apiBooking, fleetApi, stubVulogApi } from '../../test/vulog-api';
 import { TabBar, useTabCounts } from './TabBar';
@@ -35,25 +32,26 @@ describe('TabBar', () => {
 });
 
 describe('useTabCounts', () => {
-  function Probe({ prefetch = false }: { prefetch?: boolean }) {
+  function Probe() {
     const counts = useTabCounts('FLEET-1');
-    const client = useQueryClient();
-    const authFetch = useAuthFetch();
-    if (prefetch) {
-      void client.prefetchQuery(confirmedBookingsQueryOptions(authFetch, 'FLEET-1'));
-      void client.prefetchQuery(tripsInProgressQueryOptions(authFetch, 'FLEET-1'));
-    }
     return <p>{JSON.stringify(counts)}</p>;
   }
+  const countsOf = (view: { container: HTMLElement }) => JSON.parse(view.container.textContent ?? '{}');
 
-  it('counts Alert, Upcoming and Cancelled with the API totals, Ongoing once loaded, never Completed', async () => {
+  it('counts Alert, Upcoming and Cancelled with the API totals, Ongoing and Completed from CONFIRMED', async () => {
     const fetch = stubVulogApi(
       fleetApi({
         bookings: {
           ALERT: [apiBooking()],
           PENDING: [apiBooking(), apiBooking()],
           CANCELLED: [],
-          CONFIRMED: [apiBooking({ status: 'CONFIRMED', journeyId: 'trip-1' })],
+          CONFIRMED: [
+            apiBooking({ id: 'b-1', status: 'CONFIRMED', journeyId: 'trip-1' }),
+            apiBooking({ id: 'b-2', status: 'CONFIRMED', journeyId: 'trip-2', completed: true }),
+            apiBooking({ id: 'b-3', status: 'CONFIRMED', journeyId: 'trip-3', completed: true }),
+            // Confirmed, not started: in no tab.
+            apiBooking({ id: 'b-4', status: 'CONFIRMED' }),
+          ],
         },
         trips: [{ id: 'vehicle-1', orderId: 'trip-1' }],
       }),
@@ -61,17 +59,28 @@ describe('useTabCounts', () => {
     const view = await renderInWidget(<Probe />);
     unmount = view.unmount;
     await vi.waitFor(() =>
-      expect(JSON.parse(view.container.textContent ?? '{}')).toEqual({
-        alert: 1,
-        upcoming: 2,
-        cancelled: 0,
-        ongoing: null,
-        completed: null,
-      }),
+      expect(countsOf(view)).toEqual({ alert: 1, upcoming: 2, cancelled: 0, ongoing: 1, completed: 2 }),
     );
-    expect(fetch.mock.calls.some(([input]) => String(input).includes('CONFIRMED'))).toBe(false);
-    view.rerender(<Probe prefetch />);
-    await vi.waitFor(() => expect(JSON.parse(view.container.textContent ?? '{}').ongoing).toBe(1));
+    // One read of CONFIRMED, the largest page: the one the Ongoing tab reads too.
+    const confirmed = fetch.mock.calls.map(([input]) => String(input)).filter((url) => url.includes('status/CONFIRMED'));
+    expect(confirmed).toHaveLength(1);
+    expect(confirmed[0]).toContain('size=2000');
+  });
+
+  it('leaves Completed unknown when the CONFIRMED bookings are more than one read holds', async () => {
+    stubVulogApi(
+      fleetApi({ trips: [{ id: 'vehicle-1', orderId: 'trip-1' }] }, ({ path }) =>
+        path.endsWith('/status/CONFIRMED')
+          ? Response.json([apiBooking({ id: 'b-1', status: 'CONFIRMED', journeyId: 'trip-1' })], {
+              headers: { totalelements: '2001', totalpages: '2' },
+            })
+          : undefined,
+      ),
+    );
+    const view = await renderInWidget(<Probe />);
+    unmount = view.unmount;
+    await vi.waitFor(() => expect(countsOf(view).ongoing).toBe(1));
+    expect(countsOf(view).completed).toBeNull();
   });
 
   it('leaves a count unknown when its call fails', async () => {
