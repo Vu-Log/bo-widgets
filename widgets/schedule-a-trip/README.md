@@ -169,6 +169,20 @@ Or log in to that back office once, in a Chrome that the dev server opens, and l
 npx bo-widget dev --login
 ```
 
+The fake back office keeps the neutral fleet and settings of `dev` in `widget.config.ts`. To use those of the real back office, set them in `.env.local` or on the command line, never in `widget.config.ts` (the repository is public):
+
+```bash
+# .env.local
+BO_WIDGET_FLEET_ID=MY-FLEET
+BO_WIDGET_SETTINGS={"prepaymentProductId":"…","dayRate":120,"ratio":1.2,"minimumAmount":10}
+```
+
+```bash
+BO_WIDGET_HOST=bo.example.com BO_WIDGET_FLEET_ID=MY-FLEET npx bo-widget dev --login
+```
+
+`BO_WIDGET_SETTINGS` is a JSON object merged over `dev.settings` (`dev-env.ts`). The data storage stays the in-memory one of the fake back office, empty at start, but the Vulog API calls are real: on a production back office, every action that writes (prepayment, refund, allocation, cancellation, pre-allocation) writes in production.
+
 ## How it works
 
 The back office loads `index.js`, registers its default export (the element class) under a tag of its own, sets its API on the element (`vulogBo`) and inserts it in its content zone. The widget never calls `customElements.define`.

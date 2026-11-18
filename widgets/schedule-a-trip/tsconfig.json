@@ -15,5 +15,5 @@
     "noEmit": true,
     "jsx": "react-jsx"
   },
-  "include": ["src", "vite.config.ts", "widget.config.ts"]
+  "include": ["src", "vite.config.ts", "widget.config.ts", "dev-env.ts", "dev-env.test.ts"]
 }
