@@ -1,13 +1,18 @@
-import { Alert, Box, Tab, Tabs, Toolbar, Typography } from '@mui/material';
-import { useState } from 'react';
-import { LIST_TABS, type ListTab } from './domain/statuses';
-import { useI18n } from './i18n';
+import { Alert, Button } from '@mui/material';
+import { useBoClient, useBoContext } from '@vulog/bo-widget-react';
+import { useEffect } from 'react';
+import { BookingSection } from './features/BookingSection';
+import {
+  languageError,
+  loadLanguage,
+  resolveLanguage,
+  useI18n,
+  useLanguageStatus,
+} from './i18n';
+import { describeError } from './query/WidgetQueryProvider';
 import { WidgetQueryProvider } from './query/WidgetQueryProvider';
 import { useWidgetSettings } from './settings';
 import { ConfigurationBanner } from './ui/ConfigurationBanner';
-
-const tabId = (tab: ListTab) => `schedule-a-trip-tab-${tab}`;
-const panelId = (tab: ListTab) => `schedule-a-trip-panel-${tab}`;
 
 /** The state of the settings: a banner when they are invalid or cannot be read. */
 function SettingsStatus() {
@@ -25,46 +30,42 @@ function SettingsStatus() {
   return null;
 }
 
-/** The header, the tabs of the booking list and the panel of the selected tab. */
-function ScheduleATrip() {
+/**
+ * The failure to load the texts of the language of the BO: the widget stays in English, says so,
+ * logs it and offers a Retry.
+ */
+export function LanguageStatusBanner() {
   const { t } = useI18n();
-  const [tab, setTab] = useState<ListTab>('upcoming');
-
+  const bo = useBoClient();
+  const language = resolveLanguage(useBoContext().locale);
+  const status = useLanguageStatus(language);
+  const error = status === 'failed' ? languageError(language) : null;
+  useEffect(() => {
+    if (error) {
+      bo.log.error('The texts of the language could not be loaded', {
+        language: error.language,
+        ...describeError(error.cause),
+      });
+    }
+  }, [bo, error]);
+  if (!error) return null;
   return (
-    <>
-      <Toolbar sx={{ flex: 'none', borderBottom: 1, borderColor: 'divider' }}>
-        <Typography variant="h6" component="h1">
-          {t('app.title')}
-        </Typography>
-      </Toolbar>
-      <SettingsStatus />
-      <Tabs
-        value={tab}
-        onChange={(_, value: ListTab) => setTab(value)}
-        aria-label={t('tabs.label')}
-        variant="scrollable"
-        sx={{ flex: 'none', borderBottom: 1, borderColor: 'divider', px: 2 }}
-      >
-        {LIST_TABS.map((value) => (
-          <Tab
-            key={value}
-            value={value}
-            label={t(`tabs.${value}`)}
-            id={tabId(value)}
-            aria-controls={panelId(value)}
-          />
-        ))}
-      </Tabs>
-      <Box
-        component="main"
-        role="tabpanel"
-        id={panelId(tab)}
-        aria-labelledby={tabId(tab)}
-        sx={{ flex: 1, minHeight: 0, overflow: 'auto', p: 2 }}
-      >
-        <Typography color="text.secondary">{t(`tabs.empty.${tab}`)}</Typography>
-      </Box>
-    </>
+    <Alert
+      severity="warning"
+      sx={{ flex: 'none', borderRadius: 0 }}
+      action={
+        <Button
+          color="inherit"
+          size="small"
+          // The failure is kept in the store again, and shown here again.
+          onClick={() => void loadLanguage(language).catch(() => undefined)}
+        >
+          {t('grid.retry')}
+        </Button>
+      }
+    >
+      {t('i18n.loadFailed')}
+    </Alert>
   );
 }
 
@@ -72,7 +73,9 @@ function ScheduleATrip() {
 export default function App() {
   return (
     <WidgetQueryProvider>
-      <ScheduleATrip />
+      <LanguageStatusBanner />
+      <SettingsStatus />
+      <BookingSection />
     </WidgetQueryProvider>
   );
 }

@@ -1,5 +1,21 @@
 import { defineWidgetConfig } from '@vulog/bo-widget-vite';
 
+/** A booking of the mock answers, with neutral values. */
+const sampleBooking = (id: string, status: string, userId: string, startDate: string) => ({
+  id,
+  status,
+  creationDate: '2026-01-01T09:00:00Z',
+  startDate,
+  plannedReturnDate: startDate.replace(/T\d\d/, 'T18'),
+  userId,
+  profileId: 'profile-1',
+  serviceId: 'service-1',
+  modelId: 7,
+  latitude: 48.8566,
+  longitude: 2.3522,
+  radius: 500,
+});
+
 // The manifest of the widget (widget.json). The id, version and description come from package.json.
 // The settings are filled in by an administrator at installation (Configuration > Widgets), and
 // read with getSettings(): never put a secret in them, the widget code runs in the browser.
@@ -147,14 +163,14 @@ export default defineWidgetConfig({
       type: 'string',
       required: true,
       label: {
-        en: 'Public Mapbox token',
-        de: 'Öffentlicher Mapbox-Token',
-        fr: 'Token Mapbox public',
-        it: 'Token Mapbox pubblico',
-        nl: 'Openbaar Mapbox-token',
-        es: 'Token público de Mapbox',
-        pt: 'Token público do Mapbox',
-        hu: 'Nyilvános Mapbox-token',
+        en: 'Mapbox public token (pk., restricted to the back-office URL)',
+        de: 'Öffentlicher Mapbox-Token (pk., auf die Back-Office-URL beschränkt)',
+        fr: 'Token public Mapbox (pk., restreint à l’URL du back-office)',
+        it: 'Token pubblico Mapbox (pk., limitato all’URL del back office)',
+        nl: 'Openbaar Mapbox-token (pk., beperkt tot de back-office-URL)',
+        es: 'Token público de Mapbox (pk., restringido a la URL del back office)',
+        pt: 'Token público do Mapbox (pk., restrito ao URL do back office)',
+        hu: 'Nyilvános Mapbox-token (pk., a back office URL-jére korlátozva)',
       },
     },
     {
@@ -199,6 +215,65 @@ export default defineWidgetConfig({
       mapboxToken: 'pk.placeholder',
       currency: 'EUR',
       timezone: 'Europe/Paris',
+    },
+    // Neutral sample answers of the Vulog API (mock mode): a few bookings of each tab.
+    responses: {
+      'GET user/scheduleATrip/fleets/FLEET-1/bookingrequests/status/PENDING': [
+        sampleBooking('booking-1', 'PENDING', 'user-1', '2027-03-10T08:00:00Z'),
+        { ...sampleBooking('booking-2', 'PENDING', 'user-2', '2027-03-11T09:30:00Z'), plannedReturnDate: null },
+        { ...sampleBooking('booking-3', 'PENDING', 'user-3', '2027-03-12T14:00:00Z'), modelId: null },
+      ],
+      'GET user/scheduleATrip/fleets/FLEET-1/bookingrequests/status/ALERT': [
+        {
+          ...sampleBooking('booking-4', 'ALERT', 'user-1', '2027-03-09T07:00:00Z'),
+          failureReason: 'No vehicle available in the radius',
+        },
+      ],
+      'GET user/scheduleATrip/fleets/FLEET-1/bookingrequests/status/CONFIRMED': [
+        { ...sampleBooking('booking-5', 'CONFIRMED', 'user-2', '2026-01-10T08:00:00Z'), vehicleId: 'vehicle-1', journeyId: 'trip-1' },
+        { ...sampleBooking('booking-6', 'CONFIRMED', 'user-3', '2026-01-05T08:00:00Z'), vehicleId: 'vehicle-2', journeyId: 'trip-2', completed: true, endDate: '2026-01-05T12:00:00Z' },
+      ],
+      'GET user/scheduleATrip/fleets/FLEET-1/bookingrequests/status/CANCELLED': [
+        { ...sampleBooking('booking-7', 'CANCELLED', 'user-1', '2026-02-01T08:00:00Z'), cancellationDate: '2026-01-31T20:00:00Z' },
+      ],
+      'POST user/fleets/FLEET-1/users/list': [
+        { id: 'user-1', firstName: 'Jane', lastName: 'Doe', userName: 'jane.doe', profiles: [{ id: 'profile-1', type: 'Single' }] },
+        { id: 'user-2', firstName: 'Alex', lastName: 'Doe', userName: 'alex.doe', profiles: [{ id: 'profile-1', type: 'Business' }] },
+        { id: 'user-3', firstName: 'Sam', lastName: 'Doe', userName: 'sam.doe', profiles: [] },
+      ],
+      'GET user/vehicle/fleets/FLEET-1/vehicles/models': [
+        { id: 7, name: 'City car' },
+        { id: 8, name: 'Van' },
+      ],
+      'GET user/vehicle/fleets/FLEET-1/vehicles': [
+        { id: 'vehicle-1', name: 'Car 1', plate: 'AA-001-AA', model: { id: 7, name: 'City car' }, serviceIds: ['service-1'] },
+        { id: 'vehicle-2', name: 'Car 2', plate: 'AA-002-AA', model: { id: 7, name: 'City car' }, serviceIds: ['service-1'] },
+        { id: 'vehicle-3', name: 'Van 1', plate: 'AA-003-AA', model: { id: 8, name: 'Van' }, serviceIds: ['service-1'] },
+      ],
+      'GET fleetmanager/public/fleets/FLEET-1/vehicles': [
+        { id: 'vehicle-1', vehicle_status: 1, location: { latitude: 48.857, longitude: 2.353 }, orderId: 'trip-1' },
+        { id: 'vehicle-2', vehicle_status: 0, location: { latitude: 48.8575, longitude: 2.3515 }, energyLevel: 80, autonomy: 210, km: 12000 },
+        { id: 'vehicle-3', vehicle_status: 0, location: { latitude: 48.87, longitude: 2.36 }, energyLevel: 55, autonomy: 140, km: 30500 },
+      ],
+      'GET fleetmanager/public/fleets/FLEET-1/book': [{ id: 'vehicle-1', plate: 'AA-001-AA', orderId: 'trip-1' }],
+      // Writes (type "doe" in the customer search of "New booking").
+      'GET search/fleets/FLEET-1/search/doe': [
+        { type: 'user', id: 'user-1', firstname: 'Jane', lastname: 'Doe', username: 'jane.doe' },
+      ],
+      'GET user/fleets/FLEET-1/serviceRegistrationOverview': [
+        {
+          userId: 'user-1',
+          catalog: [{ id: 'service-1', name: 'Cars', type: 'FREE_FLOATING', fleetId: 'FLEET-1', cityId: 'city-1' }],
+          profiles: [{ profileId: 'profile-1', profileType: 'Single', profileStatus: 'APPROVED', services: { approved: ['service-1'] } }],
+        },
+      ],
+      'GET user/scheduleATrip/fleets/FLEET-1/bookingrequests/users/user-1/active': [],
+      'POST user/scheduleATrip/fleets/FLEET-1/bookingrequests': { id: 'booking-1' },
+      'POST user/scheduleATrip/fleets/FLEET-1/bookingrequests/booking-1': {},
+      'POST user/scheduleATrip/fleets/FLEET-1/bookingrequests/cancel/booking-1': {},
+      'POST user/scheduleATrip/fleets/FLEET-1/bookingrequests/booking-1/allocate/vehicle-2': {},
+      'POST fleetmanager/public/fleets/FLEET-1/vehicles/vehicle-2/disable': {},
+      'POST fleetmanager/public/fleets/FLEET-1/vehicles/vehicle-2/enable': {},
     },
   },
 });

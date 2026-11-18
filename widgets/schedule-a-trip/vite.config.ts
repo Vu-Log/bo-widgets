@@ -1,10 +1,39 @@
 /// <reference types="vitest/config" />
 import react from '@vitejs/plugin-react';
 import { boWidget } from '@vulog/bo-widget-vite';
+import { basename, dirname } from 'node:path';
 import { defineConfig } from 'vite';
 import widget from './widget.config.ts';
 
+/** Chunk names that several features use: prefixed with their feature (`prepayment-dialogs`). */
+const GENERIC_NAMES = new Set(['cards', 'dialogs', 'index']);
+
+/**
+ * The readable name of a chunk: its module, prefixed with its feature when the name alone is
+ * ambiguous (`core-cards`, `prepayment-cards`, `write-dialogs`, `prepayment-dialogs`).
+ */
+function chunkName(name: string, facade: string | null): string {
+  if (!facade || !GENERIC_NAMES.has(name)) return name;
+  const folder = basename(dirname(facade));
+  // `prepayment/dialogs/index.ts`: the folder is the name, its parent is the feature.
+  return folder === name ? `${basename(dirname(dirname(facade)))}-${name}` : `${folder}-${name}`;
+}
+
 export default defineConfig({
   plugins: [react(), boWidget(widget)],
+  build: {
+    rolldownOptions: {
+      output: {
+        // The lazy parts (`import()`) are chunks next to `index.js`, with stable, readable names.
+        chunkFileNames: (chunk) => `assets/${chunkName(chunk.name, chunk.facadeModuleId)}-[hash].js`,
+        // Everything `index.js` needs at once in one chunk (`shell`), instead of a dozen small
+        // shared chunks: the lazy chunks import it, so each module is loaded once.
+        codeSplitting: { groups: [{ name: 'shell', tags: ['$initial'] }] },
+        // Library mode keeps the whitespace (for the bundlers of a library's users): a widget is
+        // never bundled again, so minify it fully.
+        minify: true,
+      },
+    },
+  },
   test: { environment: 'happy-dom' },
 });

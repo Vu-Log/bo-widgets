@@ -143,6 +143,12 @@ describe('shouldPersistQuery', () => {
         state: { status: 'success' },
       } as never),
     ).toBe(false);
+    expect(
+      shouldPersistQuery({
+        queryKey: queryKeys.bookingAddress(48.85, 2.35, 'en'),
+        state: { status: 'success' },
+      } as never),
+    ).toBe(false);
   });
 });
 
@@ -160,6 +166,7 @@ describe('createPersistOptions', () => {
     });
     client.setQueryData(queryKeys.settings(), { ok: true, settings: { dayRate: 100 } });
     client.setQueryData(['unknown', 'FLEET-1'], { secret: 'never' });
+    client.setQueryData(queryKeys.bookingAddress(48.85, 2.35, 'en'), '1 Pickup Street');
     return client;
   };
 
@@ -183,6 +190,8 @@ describe('createPersistOptions', () => {
     expect(saved).not.toContain('dayRate');
     expect(saved).not.toContain('never');
     expect(saved).not.toContain('customers');
+    expect(saved).not.toContain('Pickup Street');
+    expect(saved).not.toContain('booking-geocoding');
   });
 
   it('restores the reference data in a new client', async () => {

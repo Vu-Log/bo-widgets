@@ -283,3 +283,88 @@ describe('ListGrid', () => {
     expect(view.container.textContent).not.toContain('No booking');
   });
 });
+
+describe('ListGrid with onRowActivate', () => {
+  const threeRows: Row[] = [...rows, { id: 'r3', name: 'Three' }];
+  const withAction: ListGridColumn<Row>[] = [
+    ...columns,
+    { id: 'act', header: '', width: '80px', render: (row) => <button type="button">{`act-${row.id}`}</button> },
+  ];
+  const render = async (onRowActivate = vi.fn(), activeRowId: string | null = null) => {
+    const view = await renderInWidget(
+      <ListGrid
+        label="Bookings"
+        columns={withAction}
+        rows={threeRows}
+        getRowId={getRowId}
+        onRowActivate={onRowActivate}
+        activeRowId={activeRowId}
+      />,
+    );
+    unmount = view.unmount;
+    const row = (id: string) => view.container.querySelector<HTMLElement>(`[data-row-id="${id}"]`)!;
+    await vi.waitFor(() => expect(row('r3')).not.toBeNull());
+    return { ...view, row, onRowActivate };
+  };
+  const key = (element: HTMLElement, name: string) =>
+    element.dispatchEvent(new KeyboardEvent('keydown', { key: name, bubbles: true }));
+
+  it('makes the rows one tab stop, the first one by default', async () => {
+    const { row } = await render();
+    expect([row('r1').tabIndex, row('r2').tabIndex, row('r3').tabIndex]).toEqual([0, -1, -1]);
+    expect(row('r1').getAttribute('aria-selected')).toBe('false');
+  });
+
+  it('marks the active row as selected and as the tab stop', async () => {
+    const { row } = await render(vi.fn(), 'r2');
+    expect(row('r2').getAttribute('aria-selected')).toBe('true');
+    expect(row('r2').tabIndex).toBe(0);
+    expect(row('r1').tabIndex).toBe(-1);
+  });
+
+  it('activates a row on a click, but not on a click of one of its buttons', async () => {
+    const { row, onRowActivate } = await render();
+    row('r2').querySelector('[role="gridcell"]')?.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+    expect(onRowActivate).toHaveBeenCalledWith('r2');
+    row('r3').querySelector('button')?.click();
+    expect(onRowActivate).toHaveBeenCalledTimes(1);
+  });
+
+  it('moves the focus with the arrows, Home and End, and activates with Enter or Space', async () => {
+    const { row, onRowActivate } = await render();
+    row('r1').focus();
+    key(row('r1'), 'ArrowDown');
+    expect(document.activeElement).toBe(row('r2'));
+    await vi.waitFor(() => expect(row('r2').tabIndex).toBe(0));
+    key(row('r2'), 'End');
+    expect(document.activeElement).toBe(row('r3'));
+    key(row('r3'), 'ArrowDown');
+    expect(document.activeElement).toBe(row('r3'));
+    key(row('r3'), 'Home');
+    expect(document.activeElement).toBe(row('r1'));
+    key(row('r1'), 'ArrowUp');
+    expect(document.activeElement).toBe(row('r1'));
+    key(row('r1'), 'Enter');
+    key(row('r1'), ' ');
+    expect(onRowActivate.mock.calls).toEqual([['r1'], ['r1']]);
+  });
+
+  it('leaves the keys of a control inside a row alone', async () => {
+    const { row, onRowActivate } = await render();
+    const button = row('r1').querySelector('button')!;
+    button.focus();
+    key(button, 'ArrowDown');
+    key(button, 'Enter');
+    expect(document.activeElement).toBe(button);
+    expect(onRowActivate).not.toHaveBeenCalled();
+  });
+
+  it('keeps the rows plain without onRowActivate', async () => {
+    const view = await renderInWidget(<ListGrid label="Bookings" columns={columns} rows={rows} getRowId={getRowId} />);
+    unmount = view.unmount;
+    await vi.waitFor(() => expect(view.container.querySelector('[data-row-id="r1"]')).not.toBeNull());
+    const row = view.container.querySelector('[data-row-id="r1"]')!;
+    expect(row.hasAttribute('tabindex')).toBe(false);
+    expect(row.hasAttribute('aria-selected')).toBe(false);
+  });
+});

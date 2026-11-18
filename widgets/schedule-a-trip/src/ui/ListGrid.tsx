@@ -2,9 +2,12 @@ import { Box, Button, Table, TableBody, TableCell, TableHead, TableRow } from '@
 import type { SxProps, Theme } from '@mui/material/styles';
 import {
   memo,
+  useEffect,
   useMemo,
   useState,
   type CSSProperties,
+  type KeyboardEvent,
+  type MouseEvent,
   type ReactElement,
   type ReactNode,
 } from 'react';
@@ -70,6 +73,13 @@ export interface ListGridProps<Row> {
   readonly empty?: ReactNode;
   /** Skeleton rows shown while the first or the next rows load. 3 by default. */
   readonly loadingRows?: number;
+  /**
+   * Makes the rows interactive: a click on a row (outside its buttons and links), or Enter or Space
+   * on a focused row, calls it. The arrows, Home and End then move the focus between the rows.
+   */
+  readonly onRowActivate?: (rowId: string) => void;
+  /** The row shown as selected (`aria-selected`), kept in view when it changes. */
+  readonly activeRowId?: string | null;
 }
 
 const DEFAULT_ROW_HEIGHT = 48;
@@ -90,6 +100,9 @@ const rowSx: SxProps<Theme> = {
   gridTemplateColumns: 'var(--grid-columns)',
   alignItems: 'center',
   minHeight: 'var(--row-height)',
+  // The separator is on the row: cells of different heights would break it.
+  borderBottom: 1,
+  borderColor: 'divider',
 };
 // Rendered as a grid, not a table: CSS containment does not apply to table rows, so
 // content-visibility would do nothing on a <tr>.
@@ -100,6 +113,7 @@ const bodyRowSx: SxProps<Theme> = {
 };
 const cellStyle = {
   display: 'block',
+  borderBottom: 'none',
   overflow: 'hidden',
   textOverflow: 'ellipsis',
   whiteSpace: 'nowrap',
@@ -107,6 +121,16 @@ const cellStyle = {
 } as const;
 const cellSx: SxProps<Theme> = cellStyle;
 const errorCellSx: SxProps<Theme> = { ...cellStyle, gridColumn: '1 / -1', color: 'error.main' };
+const interactiveRowSx: SxProps<Theme> = {
+  ...bodyRowSx,
+  cursor: 'pointer',
+  '&:hover': { bgcolor: 'action.hover' },
+  '&:focus-visible': { outline: 2, outlineColor: 'primary.main', outlineOffset: -2 },
+  '&[aria-selected="true"]': { bgcolor: 'action.selected' },
+};
+/** What a click on these does not activate its row. */
+const INTERACTIVE = 'button, a, input, textarea, select, [role="menuitem"], [role="checkbox"]';
+const ROW_SELECTOR = '[role="row"][data-row-id]';
 
 interface RowProps<Row> {
   readonly row: Row;
@@ -114,17 +138,30 @@ interface RowProps<Row> {
   readonly rowIndex: number;
   readonly columns: readonly ListGridColumn<Row>[];
   readonly register: RegisterRow;
+  /** `undefined` for rows that are not interactive. */
+  readonly selected: boolean | undefined;
+  readonly tabIndex: number | undefined;
 }
 
-function GridRow<Row>({ row, rowId, rowIndex, columns, register }: RowProps<Row>) {
+function GridRow<Row>({
+  row,
+  rowId,
+  rowIndex,
+  columns,
+  register,
+  selected,
+  tabIndex,
+}: RowProps<Row>) {
   return (
     <TableRow
       component="div"
       role="row"
       aria-rowindex={rowIndex}
+      aria-selected={selected}
+      tabIndex={tabIndex}
       data-row-id={rowId}
       ref={register(rowId)}
-      sx={bodyRowSx}
+      sx={selected === undefined ? bodyRowSx : interactiveRowSx}
     >
       {columns.map((column) => (
         <TableCell key={column.id} component="div" role="gridcell" align={column.align} sx={cellSx}>
@@ -135,7 +172,7 @@ function GridRow<Row>({ row, rowId, rowIndex, columns, register }: RowProps<Row>
   );
 }
 
-/** A row only renders again when its row object, index, columns or register change. */
+/** A row only renders again when its row object, index, columns, register or focus state change. */
 const MemoGridRow = memo(GridRow) as <Row>(props: RowProps<Row>) => ReactElement;
 
 /**
@@ -143,7 +180,8 @@ const MemoGridRow = memo(GridRow) as <Row>(props: RowProps<Row>) => ReactElement
  * row, columnheader and gridcell. Each row is a CSS grid sharing `grid-template-columns`, with
  * `content-visibility: auto` so that the browser skips the rows off screen while they all stay in
  * the DOM (find in page, screen readers, native scroll). The grid is its own scroll container,
- * with a sticky header: give it the remaining height of a column layout.
+ * with a sticky header: give it the remaining height of a column layout. With `onRowActivate`, the
+ * rows are a single tab stop (roving focus) moved by the arrows, Home and End.
  *
  * @param props - Columns, rows and the paging callbacks.
  * @returns The grid.
@@ -162,6 +200,8 @@ export function ListGrid<Row>({
   onVisibleRowsChange,
   empty,
   loadingRows = 3,
+  onRowActivate,
+  activeRowId = null,
 }: ListGridProps<Row>) {
   const { t } = useI18n();
   const texts = labels ?? { nextPageError: t('grid.nextPageError'), retry: t('grid.retry') };
@@ -186,6 +226,64 @@ export function ListGrid<Row>({
       return [{ row, rowId }];
     });
   }, [rows, getRowId]);
+  const interactive = onRowActivate !== undefined;
+  const [focusedRowId, setFocusedRowId] = useState<string | null>(null);
+  const tabStop =
+    [focusedRowId, activeRowId].find(
+      (rowId) => rowId !== null && uniqueRows.some((entry) => entry.rowId === rowId),
+    ) ??
+    uniqueRows[0]?.rowId ??
+    null;
+
+  useEffect(() => {
+    if (activeRowId === null || root === null) return;
+    const element = [...root.querySelectorAll<HTMLElement>(ROW_SELECTOR)].find(
+      (candidate) => candidate.dataset.rowId === activeRowId,
+    );
+    element?.scrollIntoView?.({ block: 'nearest' });
+  }, [activeRowId, root]);
+
+  const rowOf = (target: EventTarget): HTMLElement | null =>
+    target instanceof Element ? target.closest<HTMLElement>(ROW_SELECTOR) : null;
+
+  const onBodyClick = (event: MouseEvent<HTMLElement>) => {
+    const row = rowOf(event.target);
+    if (!onRowActivate || !row?.dataset.rowId) return;
+    const control = (event.target as Element).closest(INTERACTIVE);
+    if (control && row.contains(control)) return;
+    onRowActivate(row.dataset.rowId);
+  };
+
+  const onBodyKeyDown = (event: KeyboardEvent<HTMLElement>) => {
+    const row = rowOf(event.target);
+    if (!onRowActivate || !row?.dataset.rowId || event.target !== row) return;
+    if (event.key === 'Enter' || event.key === ' ') {
+      event.preventDefault();
+      onRowActivate(row.dataset.rowId);
+      return;
+    }
+    const rows = [...event.currentTarget.querySelectorAll<HTMLElement>(ROW_SELECTOR)];
+    const index = rows.indexOf(row);
+    const next =
+      event.key === 'ArrowDown'
+        ? rows[index + 1]
+        : event.key === 'ArrowUp'
+          ? rows[index - 1]
+          : event.key === 'Home'
+            ? rows[0]
+            : event.key === 'End'
+              ? rows.at(-1)
+              : undefined;
+    if (!next) return;
+    event.preventDefault();
+    next.focus();
+  };
+
+  const onBodyFocus = (event: { target: EventTarget }) => {
+    const row = rowOf(event.target);
+    if (row?.dataset.rowId && event.target === row) setFocusedRowId(row.dataset.rowId);
+  };
+
   const showSkeletons = isLoading || isFetchingNextPage;
   const style = {
     '--grid-columns': columns.map((column) => column.width).join(' '),
@@ -218,7 +316,14 @@ export function ListGrid<Row>({
             ))}
           </TableRow>
         </TableHead>
-        <TableBody component="div" role="rowgroup" sx={groupSx}>
+        <TableBody
+          component="div"
+          role="rowgroup"
+          sx={groupSx}
+          onClick={interactive ? onBodyClick : undefined}
+          onKeyDown={interactive ? onBodyKeyDown : undefined}
+          onFocus={interactive ? onBodyFocus : undefined}
+        >
           {uniqueRows.map(({ row, rowId }, index) => (
             <MemoGridRow
               key={rowId}
@@ -227,6 +332,8 @@ export function ListGrid<Row>({
               rowIndex={index + 2}
               columns={columns}
               register={register}
+              selected={interactive ? rowId === activeRowId : undefined}
+              tabIndex={interactive ? (rowId === tabStop ? 0 : -1) : undefined}
             />
           ))}
           {showSkeletons &&

@@ -1,7 +1,17 @@
 import type { AuthFetch } from '@vulog/bo-widget-sdk';
 import { describe, expect, it, vi } from 'vitest';
 import { jsonResponse } from '../test/fake-bo';
-import { getInvoice } from './billing';
+import {
+  chargeProduct,
+  getInvoice,
+  getRefundableAmount,
+  listBilledInvoices,
+  listEntityWallets,
+  readChargedInvoice,
+  refundInvoice,
+  retryPayment,
+  setWalletAvailableAmount,
+} from './billing';
 
 describe('getInvoice', () => {
   it('reads the status and amount of an invoice', async () => {
@@ -35,6 +45,7 @@ describe('getInvoice', () => {
         entityId: 'entity-1',
         productId: '11111111-1111-4111-8111-111111111111',
         invoiceDate: '2026-03-01T10:00:00Z',
+        refundInProgress: false,
       },
     });
   });
@@ -65,5 +76,201 @@ describe('getInvoice', () => {
     const authFetch = vi.fn<AuthFetch>(async () => new Response('', { status: 404 }));
     await getInvoice(authFetch, 'FLEET-1', '../users');
     expect(authFetch.mock.calls[0]?.[0]).toBe('user/billing/fleets/FLEET-1/invoices/..%2Fusers');
+  });
+});
+
+describe('readChargedInvoice', () => {
+  it('reads a bare id, a JSON string or an invoice object', () => {
+    expect(readChargedInvoice('invoice-1')).toEqual({ invoiceId: 'invoice-1', status: null });
+    expect(readChargedInvoice('"invoice-1"')).toEqual({ invoiceId: 'invoice-1', status: null });
+    expect(readChargedInvoice('{"id":"invoice-1","invoicesStatus":"PAID"}')).toEqual({ invoiceId: 'invoice-1', status: 'PAID' });
+    expect(readChargedInvoice('{"id":"invoice-1","billingStatus":"PENDING"}')).toEqual({ invoiceId: 'invoice-1', status: 'PENDING' });
+  });
+
+  it('gives a null id for an answer it cannot read', () => {
+    expect(readChargedInvoice('')).toEqual({ invoiceId: null, status: null });
+    expect(readChargedInvoice('not an id')).toEqual({ invoiceId: null, status: null });
+    expect(readChargedInvoice('{"other":1}')).toEqual({ invoiceId: null, status: null });
+    expect(readChargedInvoice('[1]')).toEqual({ invoiceId: null, status: null });
+    expect(readChargedInvoice('"a b"')).toEqual({ invoiceId: null, status: null });
+    expect(readChargedInvoice('Created')).toEqual({ invoiceId: null, status: null });
+    expect(readChargedInvoice('"OK"')).toEqual({ invoiceId: null, status: null });
+  });
+});
+
+describe('chargeProduct', () => {
+  const input = {
+    productId: 'product-1',
+    amount: 12.5,
+    userId: 'user-1',
+    entityId: 'entity-1',
+    originId: 'operator-1',
+    productNotes: 'Schedule a trip b-1 – 3 h',
+  };
+
+  it('posts the product and reads the id of the invoice', async () => {
+    const authFetch = vi.fn<AuthFetch>(async () => new Response('"invoice-1"', { status: 201 }));
+
+    const result = await chargeProduct(authFetch, 'FLEET-1', { ...input, bookingRequestId: 'b-1' });
+
+    expect(result).toEqual({ ok: true, data: { invoiceId: 'invoice-1', status: null } });
+    const [path, init] = authFetch.mock.calls[0] ?? [];
+    expect(path).toBe('user/billing/fleets/FLEET-1/invoices/product');
+    expect(init?.method).toBe('POST');
+    expect(JSON.parse(String(init?.body))).toEqual({ ...input, additionalInfo: { bookingRequestId: 'b-1' } });
+  });
+
+  it.each([0, -1, Number.NaN])('refuses the amount %s without calling', async (amount) => {
+    const authFetch = vi.fn<AuthFetch>();
+    expect(await chargeProduct(authFetch, 'FLEET-1', { ...input, amount })).toMatchObject({ ok: false, error: { kind: 'invalid-request' } });
+    expect(authFetch).not.toHaveBeenCalled();
+  });
+
+  it('sends no additionalInfo without a booking', async () => {
+    const authFetch = vi.fn<AuthFetch>(async () => new Response('', { status: 201 }));
+    const result = await chargeProduct(authFetch, 'FLEET-1', input);
+    expect(result).toEqual({ ok: true, data: { invoiceId: null, status: null } });
+    expect(JSON.parse(String(authFetch.mock.calls[0]?.[1]?.body))).toEqual(input);
+  });
+
+  it('gives the failure of the API', async () => {
+    const refused = vi.fn<AuthFetch>(async () => new Response('{}', { status: 400 }));
+    expect(await chargeProduct(refused, 'FLEET-1', input)).toEqual({ ok: false, error: { kind: 'http', status: 400 } });
+    const lost = vi.fn<AuthFetch>(async () => {
+      throw new TypeError('Failed to fetch');
+    });
+    expect(await chargeProduct(lost, 'FLEET-1', input)).toMatchObject({ ok: false, error: { kind: 'network' } });
+  });
+});
+
+describe('retryPayment', () => {
+  it('posts the retry and ignores the body', async () => {
+    const authFetch = vi.fn<AuthFetch>(async () => new Response('', { status: 200 }));
+    expect(await retryPayment(authFetch, 'FLEET-1', 'invoice-1')).toEqual({ ok: true, data: { status: 200 } });
+    expect(authFetch.mock.calls[0]?.[0]).toBe('user/billing/fleets/FLEET-1/invoices/invoice-1/retry-payment');
+    expect(authFetch.mock.calls[0]?.[1]?.method).toBe('POST');
+  });
+
+  it('maps a 403', async () => {
+    const authFetch = vi.fn<AuthFetch>(async () => new Response('{}', { status: 403 }));
+    expect(await retryPayment(authFetch, 'FLEET-1', 'invoice-1')).toEqual({ ok: false, error: { kind: 'not-allowed', status: 403 } });
+  });
+});
+
+describe('getRefundableAmount', () => {
+  it('reads the amount and the psp references of the receipts', async () => {
+    const authFetch = vi.fn<AuthFetch>(async () =>
+      jsonResponse({ invoiceId: 'i', fleetId: 'F', refundableAmount: 20, currency: 'EUR', refundablePaymentReceipts: [{ pspReference: 'psp-1' }, { pspReference: null }] }),
+    );
+    expect(await getRefundableAmount(authFetch, 'FLEET-1', 'invoice-1')).toEqual({
+      ok: true,
+      data: { amount: 20, currency: 'EUR', pspReferences: ['psp-1'] },
+    });
+    expect(authFetch.mock.calls[0]?.[0]).toBe('user/billing/fleets/FLEET-1/invoices/invoice-1/refundableAmount');
+  });
+
+  it('reads no receipts as an empty list', async () => {
+    const authFetch = vi.fn<AuthFetch>(async () => jsonResponse({ refundableAmount: 0 }));
+    expect(await getRefundableAmount(authFetch, 'FLEET-1', 'i')).toEqual({ ok: true, data: { amount: 0, currency: null, pspReferences: [] } });
+  });
+
+  it('refuses an answer without an amount', async () => {
+    const authFetch = vi.fn<AuthFetch>(async () => jsonResponse({}));
+    expect(await getRefundableAmount(authFetch, 'FLEET-1', 'i')).toMatchObject({ ok: false, error: { kind: 'invalid-response' } });
+  });
+});
+
+describe('refundInvoice', () => {
+  it('posts the amount, the note and the receipt', async () => {
+    const authFetch = vi.fn<AuthFetch>(async () => new Response('"ok"', { status: 200 }));
+    const result = await refundInvoice(authFetch, 'FLEET-1', 'invoice-1', { amount: 20, note: 'n', paymentIntentPspReference: 'psp-1' });
+    expect(result.ok).toBe(true);
+    expect(authFetch.mock.calls[0]?.[0]).toBe('user/billing/fleets/FLEET-1/invoices/invoice-1/refund');
+    expect(JSON.parse(String(authFetch.mock.calls[0]?.[1]?.body))).toEqual({ amount: 20, note: 'n', paymentIntentPspReference: 'psp-1' });
+  });
+
+  it('refuses an amount that is not positive without calling', async () => {
+    const authFetch = vi.fn<AuthFetch>();
+    expect(await refundInvoice(authFetch, 'FLEET-1', 'invoice-1', { amount: 0, note: 'n', paymentIntentPspReference: null })).toMatchObject({ ok: false, error: { kind: 'invalid-request' } });
+    expect(authFetch).not.toHaveBeenCalled();
+  });
+
+  it('leaves the receipt out when there is none, and gives a failure', async () => {
+    const authFetch = vi.fn<AuthFetch>(async () => new Response('{}', { status: 400 }));
+    const result = await refundInvoice(authFetch, 'FLEET-1', 'invoice-1', { amount: 20, note: 'n', paymentIntentPspReference: null });
+    expect(result).toEqual({ ok: false, error: { kind: 'http', status: 400 } });
+    expect(JSON.parse(String(authFetch.mock.calls[0]?.[1]?.body))).toEqual({ amount: 20, note: 'n' });
+  });
+});
+
+describe('listEntityWallets', () => {
+  it('reads the id and the balance of each wallet', async () => {
+    const authFetch = vi.fn<AuthFetch>(async () => jsonResponse([{ id: 'w-1', availableAmount: 4.5, entityId: 'e' }, { id: 'w-2' }]));
+    expect(await listEntityWallets(authFetch, 'FLEET-1', 'entity-1')).toEqual({
+      ok: true,
+      data: [{ id: 'w-1', availableAmount: 4.5 }, { id: 'w-2', availableAmount: null }],
+    });
+    expect(authFetch.mock.calls[0]?.[0]).toBe('user/billing/fleets/FLEET-1/wallet/entity/entity-1');
+  });
+
+  it('gives a failure', async () => {
+    const authFetch = vi.fn<AuthFetch>(async () => new Response('{}', { status: 404 }));
+    expect(await listEntityWallets(authFetch, 'FLEET-1', 'e')).toEqual({ ok: false, error: { kind: 'not-found', status: 404 } });
+  });
+});
+
+describe('setWalletAvailableAmount', () => {
+  it('patches the available amount with a JSON Patch', async () => {
+    const authFetch = vi.fn<AuthFetch>(async () => jsonResponse({ id: 'w-1' }));
+    expect((await setWalletAvailableAmount(authFetch, 'FLEET-1', 'w-1', 0)).ok).toBe(true);
+    const [path, init] = authFetch.mock.calls[0] ?? [];
+    expect(path).toBe('user/billing/fleets/FLEET-1/wallets/w-1');
+    expect(init?.method).toBe('PATCH');
+    expect(init?.headers).toEqual({ 'Content-Type': 'application/json-patch+json' });
+    expect(JSON.parse(String(init?.body))).toEqual([{ op: 'replace', path: '/availableAmount', value: '0' }]);
+  });
+
+  it('refuses a negative amount without calling', async () => {
+    const authFetch = vi.fn<AuthFetch>();
+    expect(await setWalletAvailableAmount(authFetch, 'FLEET-1', 'w-1', -1)).toMatchObject({ ok: false, error: { kind: 'invalid-request' } });
+    expect(authFetch).not.toHaveBeenCalled();
+  });
+});
+
+describe('listBilledInvoices', () => {
+  const params = { startDate: '2026-03-10T07:50:00.000Z', endDate: '2026-03-10T08:10:00.000Z', minAmount: 50, maxAmount: 50, page: 0, size: 100 };
+
+  it('lists the invoices of a range, reduced to what identifies them', async () => {
+    const authFetch = vi.fn<AuthFetch>(async () =>
+      jsonResponse([
+        {
+          totalWithTax: 60,
+          invoice: { id: 'i-1', invoicesStatus: 'PAID', userId: 'u', entityId: 'e', billingDate: '2026-03-10T08:00:00Z', firstName: 'dropped' },
+          product: { productId: 'p', productNotes: 'n', totalWithTax: 50 },
+        },
+        { invoice: { id: 'i-2' } },
+      ]),
+    );
+    expect(await listBilledInvoices(authFetch, 'FLEET-1', params)).toEqual({
+      ok: true,
+      data: [
+        { id: 'i-1', status: 'PAID', userId: 'u', entityId: 'e', productId: 'p', productNotes: 'n', amount: 50, billingDate: '2026-03-10T08:00:00Z' },
+        { id: 'i-2', status: null, userId: null, entityId: null, productId: null, productNotes: null, amount: null, billingDate: null },
+      ],
+    });
+    const query = new URLSearchParams(String(authFetch.mock.calls[0]?.[0]).split('?')[1]);
+    expect(Object.fromEntries(query)).toEqual({ startDate: params.startDate, endDate: params.endDate, page: '0', size: '100', minAmount: '50', maxAmount: '50' });
+  });
+
+  it.each([
+    ['an end before the start', { endDate: '2026-03-10T07:00:00.000Z' }],
+    ['a range too long', { endDate: '2026-05-10T07:00:00.000Z' }],
+    ['an invalid date', { startDate: 'nope' }],
+    ['a negative page', { page: -1 }],
+    ['a page too large', { size: 1000 }],
+  ])('refuses %s without calling', async (_, override) => {
+    const authFetch = vi.fn<AuthFetch>();
+    expect(await listBilledInvoices(authFetch, 'FLEET-1', { ...params, ...override })).toMatchObject({ ok: false, error: { kind: 'invalid-request' } });
+    expect(authFetch).not.toHaveBeenCalled();
   });
 });

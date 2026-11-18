@@ -19,6 +19,8 @@ describe('queryKeys', () => {
       'FLEET-1',
       'booking-1',
     ]);
+    expect(queryKeys.pendingRegularizations('FLEET-1')).toEqual(['regularizations', 'FLEET-1']);
+    expect(isPersistedQueryKey(queryKeys.pendingRegularizations('FLEET-1'))).toBe(false);
   });
 
   it('gives the same customers key whatever the order of the ids', () => {
@@ -31,6 +33,41 @@ describe('queryKeys', () => {
     expect(queryKeys.customers('FLEET-1', ['a', 'a', 'b'])).toEqual(
       queryKeys.customers('FLEET-1', ['b', 'a']),
     );
+  });
+
+  it('keeps the live vehicles, the trips, the counts and the states in memory', () => {
+    for (const key of [
+      queryKeys.liveVehicles('FLEET-1'),
+      queryKeys.tripsInProgress('FLEET-1'),
+      queryKeys.bookingCount('FLEET-1', 'alert'),
+      queryKeys.confirmedBookings('FLEET-1'),
+      queryKeys.booking('FLEET-1', 'booking-1'),
+      queryKeys.fleetBookingStates('FLEET-1'),
+    ])
+      expect(isPersistedQueryKey(key)).toBe(false);
+  });
+
+  it('persists the vehicle catalogue, never the address of a pickup point', () => {
+    expect(isPersistedQueryKey(queryKeys.vehicleCatalog('FLEET-1'))).toBe(true);
+    const key = queryKeys.bookingAddress(48.8566123, 2.3522987, 'fr');
+    expect(key).toEqual(['booking-geocoding', '48.85661', '2.35230', 'fr']);
+    expect(isPersistedQueryKey(key)).toBe(false);
+  });
+
+  it('makes the fleet bookings a prefix of every booking key', () => {
+    const prefix = queryKeys.fleetBookings('FLEET-1');
+    for (const key of [
+      queryKeys.bookings('FLEET-1', 'alert', { field: 'startDate', direction: 'ASC' }),
+      queryKeys.bookingCount('FLEET-1', 'alert'),
+      queryKeys.confirmedBookings('FLEET-1'),
+      queryKeys.booking('FLEET-1', 'b'),
+    ])
+      expect(key.slice(0, prefix.length)).toEqual([...prefix]);
+  });
+
+  it('makes the fleet states a prefix of the state of a booking', () => {
+    const fleet = queryKeys.fleetBookingStates('FLEET-1');
+    expect(queryKeys.bookingState('FLEET-1', 'b').slice(0, fleet.length)).toEqual([...fleet]);
   });
 
   it('does not change the ids given', () => {

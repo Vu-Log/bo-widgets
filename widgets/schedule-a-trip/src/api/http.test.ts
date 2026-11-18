@@ -7,6 +7,9 @@ import {
   ApiRequestError,
   isPermanentApiError,
   requestJson,
+  requestNoContent,
+  requestStatus,
+  requestText,
   segment,
   unwrap,
   type ApiError,
@@ -210,5 +213,81 @@ describe('segment', () => {
   it('encodes an id so that it cannot change the route', () => {
     expect(segment('a/../b?c')).toBe('a%2F..%2Fb%3Fc');
     expect(segment(42)).toBe('42');
+  });
+});
+
+describe('requestNoContent', () => {
+  it('resolves ok for an empty 2xx answer', async () => {
+    const authFetch = fetchWith(async () => new Response(null, { status: 200 }));
+    await expect(requestNoContent(authFetch, 'user/x', { method: 'POST' })).resolves.toEqual({
+      ok: true,
+      data: null,
+    });
+    expect(authFetch).toHaveBeenCalledWith('user/x', { method: 'POST' });
+  });
+
+  it('ignores a body it does not need', async () => {
+    const authFetch = fetchWith(async () => new Response('not json', { status: 201 }));
+    await expect(requestNoContent(authFetch, 'user/x')).resolves.toEqual({ ok: true, data: null });
+  });
+
+  it('maps a refused status', async () => {
+    const authFetch = fetchWith(async () => new Response('', { status: 403 }));
+    await expect(requestNoContent(authFetch, 'user/x')).resolves.toEqual({
+      ok: false,
+      error: { kind: 'not-allowed', status: 403 },
+    });
+  });
+
+  it('maps a network failure', async () => {
+    const authFetch = fetchWith(async () => Promise.reject(new TypeError('Failed to fetch')));
+    const result = await requestNoContent(authFetch, 'user/x');
+    expect(result.ok ? null : result.error.kind).toBe('network');
+  });
+});
+
+describe('requestStatus', () => {
+  it('succeeds on any 2xx, whatever the body', async () => {
+    const authFetch = vi.fn<AuthFetch>(async () => new Response('not json', { status: 202 }));
+    expect(await requestStatus(authFetch, 'user/x', { method: 'POST' })).toEqual({ ok: true, data: { status: 202 } });
+    expect(authFetch).toHaveBeenCalledWith('user/x', { method: 'POST' });
+  });
+
+  it('maps a status and a rejection', async () => {
+    expect(await requestStatus(vi.fn<AuthFetch>(async () => new Response('', { status: 404 })), 'user/x')).toEqual({ ok: false, error: { kind: 'not-found', status: 404 } });
+    const lost = vi.fn<AuthFetch>(async () => {
+      throw new TypeError('Failed to fetch');
+    });
+    expect(await requestStatus(lost, 'user/x')).toMatchObject({ ok: false, error: { kind: 'network' } });
+  });
+
+  it('rethrows a bug', async () => {
+    const buggy = vi.fn<AuthFetch>(async () => {
+      throw new RangeError('bug');
+    });
+    await expect(requestStatus(buggy, 'user/x')).rejects.toThrow(RangeError);
+  });
+});
+
+describe('requestText', () => {
+  it('gives the body as text', async () => {
+    expect(await requestText(vi.fn<AuthFetch>(async () => new Response('"id-1"', { status: 201 })), 'user/x')).toEqual({ ok: true, data: '"id-1"' });
+  });
+
+  it('maps a status', async () => {
+    expect(await requestText(vi.fn<AuthFetch>(async () => new Response('', { status: 500 })), 'user/x')).toEqual({ ok: false, error: { kind: 'http', status: 500 } });
+  });
+
+  it('gives network when the body is lost', async () => {
+    const response = new Response('x', { status: 200 });
+    vi.spyOn(response, 'text').mockRejectedValue(new TypeError('body lost'));
+    expect(await requestText(vi.fn<AuthFetch>(async () => response), 'user/x')).toMatchObject({ ok: false, error: { kind: 'network' } });
+  });
+
+  it('gives a rejection of authFetch', async () => {
+    const refused = vi.fn<AuthFetch>(async () => {
+      throw new BoError('FORBIDDEN', 'no');
+    });
+    expect(await requestText(refused, 'user/x')).toMatchObject({ ok: false, error: { kind: 'back-office' } });
   });
 });

@@ -1,19 +1,36 @@
-import { afterEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import widget from '../widget.config';
 import { LIST_TABS } from './domain/statuses';
 import {
-  CATALOGUES,
   createI18n,
+  LANGUAGE_LOADERS,
   LANGUAGES,
+  languageError,
+  LanguageLoadError,
+  languageStatus,
+  loadLanguage,
   placeholdersOf,
+  resetLanguagesForTests,
   resolveLanguage,
   translate,
   useI18n,
+  type Catalogue,
+  type Language,
 } from './i18n';
 import { fakeBo } from './test/fake-bo';
 import { renderInWidget } from './test/render';
 
+// The catalogues as the widget loads them: through the loader of each language.
+const CATALOGUES = Object.fromEntries(
+  await Promise.all(LANGUAGES.map(async (language) => [language, (await loadLanguage(language)).messages])),
+) as Record<Language, Catalogue>;
+
 const englishKeys = Object.keys(CATALOGUES.en).sort();
+
+// Every pack loaded, unless a test starts from none (`resetLanguagesForTests`).
+beforeEach(async () => {
+  await Promise.all(LANGUAGES.map(loadLanguage));
+});
 
 describe('the catalogues', () => {
   it.each(LANGUAGES)('%s has exactly the keys of English', (language) => {
@@ -30,7 +47,7 @@ describe('the catalogues', () => {
   });
 
   it.each(LANGUAGES)('%s has no blank message', (language) => {
-    for (const message of Object.values(CATALOGUES[language])) expect(message.trim()).not.toBe('');
+    for (const message of Object.values<string>(CATALOGUES[language])) expect(message.trim()).not.toBe('');
   });
 
   it('keeps the product name untranslated', () => {
@@ -78,6 +95,49 @@ describe('resolveLanguage', () => {
   });
 });
 
+describe('loadLanguage', () => {
+  beforeEach(() => resetLanguagesForTests());
+  afterEach(() => vi.restoreAllMocks());
+
+  it('has a loader for every language but English, which is always loaded', () => {
+    expect(Object.keys(LANGUAGE_LOADERS).sort()).toEqual(LANGUAGES.filter((l) => l !== 'en').sort());
+    expect(languageStatus('en')).toBe('loaded');
+  });
+
+  it('loads a pack once, sharing the load in progress', async () => {
+    const loader = vi.spyOn(LANGUAGE_LOADERS, 'de');
+    expect(languageStatus('de')).toBe('idle');
+    const first = loadLanguage('de');
+    const second = loadLanguage('de');
+    expect(languageStatus('de')).toBe('loading');
+    expect(await first).toBe(await second);
+    expect(languageStatus('de')).toBe('loaded');
+    await loadLanguage('de');
+    expect(loader).toHaveBeenCalledTimes(1);
+  });
+
+  it('keeps the failure for the banner, and tries again on the next call', async () => {
+    const offline = new Error('Failed to fetch dynamically imported module');
+    vi.spyOn(LANGUAGE_LOADERS, 'hu').mockRejectedValueOnce(offline);
+
+    const failure = await loadLanguage('hu').catch((error: unknown) => error);
+
+    expect(failure).toBeInstanceOf(LanguageLoadError);
+    expect(failure).toMatchObject({ language: 'hu', cause: offline });
+    expect(languageStatus('hu')).toBe('failed');
+    expect(languageError('hu')).toBe(failure);
+    expect(createI18n('hu_HU').t('grid.retry')).toBe('Retry');
+
+    const retry = loadLanguage('hu');
+    expect(languageStatus('hu')).toBe('loading');
+    expect(languageError('hu')).toBeNull();
+    await retry;
+    expect(languageStatus('hu')).toBe('loaded');
+    expect(languageError('hu')).toBeNull();
+    expect(createI18n('hu_HU').t('grid.retry')).toBe('Újra');
+  });
+});
+
 describe('placeholdersOf', () => {
   it('lists the placeholders once, sorted', () => {
     expect(placeholdersOf('{b} and {a}, {b}')).toEqual(['a', 'b']);
@@ -115,6 +175,30 @@ describe('createI18n', () => {
     expect(createI18n('en_GB').formatDate(date, 'P')).toBe('10/03/2026');
   });
 
+  it('formats a date in a time zone, or in the zone of the browser without one', () => {
+    const date = new Date('2026-03-10T12:00:00Z');
+    const french = createI18n('fr_FR');
+    expect(french.formatDateInZone(date, 'HH:mm', 'Asia/Tokyo')).toBe('21:00');
+    expect(french.formatDateInZone(date, 'PPP', 'America/Los_Angeles')).toBe('10 mars 2026');
+    expect(french.formatDateInZone(date, 'HH:mm', null)).toBe(french.formatDate(date, 'HH:mm'));
+  });
+
+  it('throws on an unknown time zone', () => {
+    expect(() => createI18n('en_GB').formatDateInZone(new Date(), 'p', 'Not/AZone')).toThrow(
+      RangeError,
+    );
+  });
+
+  it('says how far a date is from now', () => {
+    const now = new Date('2026-03-10T12:00:00Z');
+    expect(createI18n('en_GB').formatRelative(new Date('2026-03-10T14:00:00Z'), now)).toBe(
+      'in about 2 hours',
+    );
+    expect(createI18n('de_DE').formatRelative(new Date('2026-03-07T12:00:00Z'), now)).toBe(
+      'vor 3 Tagen',
+    );
+  });
+
   it('uses the Brazilian date locale for pt_BR', () => {
     const date = new Date(2026, 2, 10);
     expect(createI18n('pt_BR').formatDate(date, 'P')).toBe('10/03/2026');
@@ -126,6 +210,21 @@ describe('createI18n', () => {
     expect(i18n.language).toBe('es');
     expect(i18n.locale).toBe('es');
     expect(i18n.formatNumber(1.5)).toBe('1,5');
+  });
+
+  it('speaks English, with English dates, until the pack of the language is loaded', async () => {
+    resetLanguagesForTests();
+    const date = new Date(2026, 2, 10);
+    const waiting = createI18n('fr_FR');
+    expect(waiting.language).toBe('en');
+    expect(waiting.t('grid.retry')).toBe('Retry');
+    expect(waiting.formatDate(date, 'PPP')).toBe('10 March 2026');
+
+    await loadLanguage('fr');
+
+    const french = createI18n('fr_FR');
+    expect(french.language).toBe('fr');
+    expect(french.formatDate(date, 'PPP')).toBe('10 mars 2026');
   });
 
   it('speaks English without a locale', () => {
@@ -147,6 +246,26 @@ function Probe() {
 describe('useI18n', () => {
   let unmount: (() => void) | undefined;
   afterEach(() => unmount?.());
+  beforeEach(() => resetLanguagesForTests());
+
+  it('shows English at once, then the language when its pack arrives', async () => {
+    let arrive: () => void = () => undefined;
+    const original = LANGUAGE_LOADERS.de;
+    vi.spyOn(LANGUAGE_LOADERS, 'de').mockImplementationOnce(
+      () => new Promise((resolve) => (arrive = () => resolve(original()))),
+    );
+    const { api } = fakeBo({
+      getContext: async () => ({ fleetId: 'FLEET-1', locale: 'de_DE', basename: '/' }),
+    });
+    const view = await renderInWidget(<Probe />, api);
+    unmount = view.unmount;
+    await vi.waitFor(() => expect(view.container.textContent).toBe('en: Upcoming'));
+    expect(languageStatus('de')).toBe('loading');
+
+    arrive();
+
+    await vi.waitFor(() => expect(view.container.textContent).toBe('de: Anstehend'));
+  });
 
   it('follows the locale of the back office', async () => {
     const { api, emit } = fakeBo({
