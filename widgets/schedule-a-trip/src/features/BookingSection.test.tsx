@@ -4,7 +4,7 @@ import { connect } from '@vulog/bo-widget-sdk';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { bookingsCollection, createBookingState } from '../storage/booking-state';
 import { fakeBo, hostError } from '../test/fake-bo';
-import { activeObservers, installFakeIntersectionObserver } from '../test/intersection-observer';
+import { installFakeIntersectionObserver } from '../test/intersection-observer';
 import { renderInWidget } from '../test/render';
 import { apiBooking, calledPaths, fleetApi, stubVulogApi } from '../test/vulog-api';
 import { BookingSection } from './BookingSection';
@@ -51,9 +51,6 @@ function routedBo(initialPath = '/') {
   Object.assign(bo.api, { navigate });
   return { ...bo, navigate };
 }
-
-const gridObserver = () =>
-  activeObservers().find((observer) => observer.options.rootMargin?.endsWith('px 0px') && !observer.options.rootMargin.startsWith('0px'));
 
 async function render(api: object, extraFeatures?: readonly BookingFeature[]) {
   const view = await renderInWidget(<BookingSection extraFeatures={extraFeatures} />, api);
@@ -111,7 +108,7 @@ describe('the booking section', () => {
     expect(preloadPrepaymentDialogs).toHaveBeenCalledTimes(1);
   });
 
-  it('lists a tab, enriches the visible rows only, and shows the pre-allocation kept in storage', async () => {
+  it('lists a tab, enriches the customers of the page in one call, and shows the pre-allocation kept in storage', async () => {
     const fetch = stubVulogApi(
       fleetApi({
         bookings: { PENDING: upcoming, ALERT: [apiBooking({ id: 'alert-1', status: 'ALERT' })] },
@@ -132,18 +129,14 @@ describe('the booking section', () => {
     // The vehicle model comes from the catalog query, which may resolve after the storage documents.
     await vi.waitFor(() => expect(view.row('booking-1')?.textContent).toContain('City car'));
     expect(view.row('booking-2')?.textContent).toContain('No return date');
-    expect(view.row('booking-1')?.querySelector('[data-skeleton]')).not.toBeNull();
-    expect(calledPaths(fetch).some((path) => path.includes('users/list'))).toBe(false);
     await vi.waitFor(() => expect(view.tab('Alert')?.textContent).toBe('Alert1'));
 
-    await vi.waitFor(() => expect(gridObserver()?.targets.size).toBe(2));
-    gridObserver()?.report([view.row('booking-2')!], true);
-
+    // No row was reported visible: the customers of the page are asked for all the same.
     await vi.waitFor(() => expect(view.row('booking-2')?.textContent).toContain('Jane Doe'));
     expect(view.row('booking-2')?.textContent).toContain('B2B');
-    const usersCall = fetch.mock.calls.find(([input]) => String(input).includes('users/list'));
-    expect(usersCall?.[1]?.body).toBe('["user-2"]');
-    expect(view.row('booking-1')?.textContent).not.toContain('Jane');
+    const usersCalls = fetch.mock.calls.filter(([input]) => String(input).includes('users/list'));
+    expect(usersCalls.map(([, init]) => init?.body)).toEqual(['["user-1","user-2"]']);
+    expect(view.row('booking-1')?.textContent).toContain('Jane Doe');
   });
 
   it('opens the detail of a row in the URL, moves with the arrows and closes', async () => {
@@ -382,8 +375,6 @@ describe('the booking section', () => {
     await vi.waitFor(() => expect(view.row('booking-2')?.textContent).toContain('col-booking-2-upcoming'));
     expect(view.container.querySelector('[data-test-host]')).not.toBeNull();
     // booking-2 is a business booking (no prepayment): the action of the feature is its primary one.
-    await vi.waitFor(() => expect(gridObserver()?.targets.size).toBeGreaterThan(0));
-    gridObserver()?.report([view.row('booking-1')!, view.row('booking-2')!], true);
     await vi.waitFor(() => expect(view.button('Do it', view.row('booking-2')!)).toBeDefined());
     view.button('Do it', view.row('booking-2')!)?.click();
     expect(ran).toEqual(['booking-2']);

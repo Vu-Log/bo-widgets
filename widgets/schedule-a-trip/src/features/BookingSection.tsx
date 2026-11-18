@@ -66,8 +66,8 @@ export interface BookingSectionProps {
 
 /**
  * The booking section: KPIs, the five tabs with their counts, the toolbar (search, filter chips,
- * density, columns, refresh), the list of the tab loaded page by page with its extra data for the
- * visible rows, the detail drawer of the booking in the URL, and the dialogs of the features. Every
+ * density, columns, refresh), the list of the tab loaded page by page with the customers of each
+ * page, the detail drawer of the booking in the URL, and the dialogs of the features. Every
  * column, action, filter, KPI and card comes from the features of the registry.
  *
  * @param props - Extra actions of the header.
@@ -106,7 +106,6 @@ function FleetSection({
   const [filters, setFilters] = useState(EMPTY_FILTERS);
   const [search, setSearch] = useState('');
   const deferredSearch = useDeferredValue(search.trim());
-  const [visibleIds, setVisibleIds] = useState<ReadonlySet<string>>(new Set());
   const [preferences, setPreferences] = useListPreferences();
   const searchRef = useRef<HTMLInputElement>(null);
   const route = useDetailRoute();
@@ -197,13 +196,7 @@ function FleetSection({
     const known = new Set(tabBookings.bookings.map((booking) => booking.id));
     return [...tabBookings.bookings, ...sourced.bookings.filter((booking) => !known.has(booking.id))];
   }, [tabBookings.bookings, sourced.bookings]);
-  const enrichment = useBookingContexts({
-    fleetId,
-    tab,
-    bookings,
-    visibleIds,
-    allCustomers: deferredSearch !== '',
-  });
+  const enrichment = useBookingContexts({ fleetId, tab, bookings });
   const plateOf = usePlateIndex(fleetId);
 
   const rows = useMemo(
@@ -495,7 +488,6 @@ function FleetSection({
             totalCount={filtering ? rows.length : (counts[tab] ?? null)}
             isLoading={tabBookings.isLoading}
             pagination={tabBookings.pagination}
-            onVisibleRowsChange={setVisibleIds}
             empty={empty}
             onRowActivate={route.open}
             activeRowId={route.selectedId}
