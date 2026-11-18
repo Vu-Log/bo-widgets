@@ -1,5 +1,5 @@
 import { useBoClient, useBoRouter } from '@vulog/bo-widget-react';
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 
 /**
  * The booking id of a route of the widget: the first segment after its view (`{basename}/{id}`).
@@ -41,8 +41,13 @@ export function useDetailRoute(): DetailRoute {
   const fromRoute = location === null ? null : bookingIdFromPath(location.pathname, basename);
   const [selectedId, setSelectedId] = useState<string | null>(fromRoute);
 
+  // Follows each new route the back office sends, not the one the state starts from: on a busy page the mount effect
+  // can run after a first click, and re-applying the starting route would undo the booking just opened.
+  const appliedLocation = useRef(location);
   useEffect(() => {
-    if (location !== null) setSelectedId(fromRoute);
+    if (location === null || location === appliedLocation.current) return;
+    appliedLocation.current = location;
+    setSelectedId(fromRoute);
   }, [location, fromRoute]);
 
   const go = useCallback(

@@ -129,7 +129,8 @@ describe('the booking section', () => {
     const view = await render(bo.api);
 
     await vi.waitFor(() => expect(view.row('booking-2')?.textContent).toContain('AB-123-CD'));
-    expect(view.row('booking-1')?.textContent).toContain('City car');
+    // The vehicle model comes from the catalog query, which may resolve after the storage documents.
+    await vi.waitFor(() => expect(view.row('booking-1')?.textContent).toContain('City car'));
     expect(view.row('booking-2')?.textContent).toContain('No return date');
     expect(view.row('booking-1')?.querySelector('[data-skeleton]')).not.toBeNull();
     expect(calledPaths(fetch).some((path) => path.includes('users/list'))).toBe(false);
@@ -158,15 +159,18 @@ describe('the booking section', () => {
     const drawer = view.drawer()!;
     await vi.waitFor(() => expect(drawer.textContent).toContain('Jane Doe'));
     expect(drawer.textContent).toContain('#booking-1');
-    expect([...drawer.querySelectorAll('section[aria-label]')].map((card) => card.getAttribute('aria-label'))).toEqual([
-      'Actions',
-      'Trip',
-      'Vehicle',
-      'Customer',
-      'Payment',
-      'Internal notes',
-      'Journal',
-    ]);
+    // The cards are a lazy chunk: they may render after the header.
+    await vi.waitFor(() =>
+      expect([...drawer.querySelectorAll('section[aria-label]')].map((card) => card.getAttribute('aria-label'))).toEqual([
+        'Actions',
+        'Trip',
+        'Vehicle',
+        'Customer',
+        'Payment',
+        'Internal notes',
+        'Journal',
+      ]),
+    );
     expect(drawer.querySelector('[data-step="prepaid"]')?.getAttribute('data-state')).toBe('current');
     expect(drawer.querySelector('svg[role="img"]')?.getAttribute('aria-label')).toContain('500 m');
     expect(view.row('booking-1')?.getAttribute('aria-selected')).toBe('true');
@@ -303,7 +307,7 @@ describe('the booking section', () => {
     search.dispatchEvent(new Event('input', { bubbles: true }));
 
     await vi.waitFor(() => expect(view.row('booking-1')).toBeNull());
-    expect(view.row('booking-2')?.textContent).toContain('Ada Doe');
+    await vi.waitFor(() => expect(view.row('booking-2')?.textContent).toContain('Ada Doe'));
   });
 
   it('shows a failure of the list with a retry', async () => {

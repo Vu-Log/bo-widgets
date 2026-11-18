@@ -67,6 +67,19 @@ describe('useDetailRoute', () => {
     await vi.waitFor(() => expect(text()).toBe('booking-9'), WAIT);
   });
 
+  it('follows the route again when the back office sends it after a refused navigation', async () => {
+    const { bo, click, text } = await setup(async () =>
+      Promise.reject(Object.assign(new Error('forbidden'), { code: 'forbidden' })),
+    );
+    await vi.waitFor(() => expect(text()).toBe('booking-1'), WAIT);
+    click('open');
+    await vi.waitFor(() => expect(text()).toBe('booking/2'), WAIT);
+
+    bo.emit('routeChanged', { pathname: '/booking-1', search: '', hash: '' });
+
+    await vi.waitFor(() => expect(text()).toBe('booking-1'), WAIT);
+  });
+
   it('keeps the drawer and logs when the back office refuses to navigate', async () => {
     const { bo, click, text } = await setup(async () =>
       Promise.reject(Object.assign(new Error('forbidden'), { code: 'forbidden' })),

@@ -35,5 +35,12 @@ export default defineConfig({
       },
     },
   },
-  test: { environment: 'happy-dom' },
+  test: {
+    environment: 'happy-dom',
+    setupFiles: ['src/test/setup.ts'],
+    // The CI runner is slower than a laptop: rendering, lazy chunks and fake back office round trips can take a few
+    // seconds, and vi.waitFor waits up to 5 s (src/test/setup.ts).
+    testTimeout: 15_000,
+    hookTimeout: 30_000,
+  },
 });
