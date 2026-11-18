@@ -2,7 +2,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import { fakeBo, jsonResponse } from '../../test/fake-bo';
 import { booking, context, renderInSection, stateDoc } from '../../test/section';
 import { stubVulogApi } from '../../test/vulog-api';
-import { CustomerCell, DateCell, ModelCell, Plate, VehicleCell } from './cells';
+import { CustomerCell, DateCell, ModelCell, Plate, ShortDateCell, VehicleCell } from './cells';
 
 let unmount: (() => void) | undefined;
 afterEach(() => {
@@ -37,6 +37,21 @@ describe('DateCell', () => {
 
   it('shows the empty text without a date', async () => {
     const view = await render(<DateCell value={null} empty="No return date" />);
+    await vi.waitFor(() => expect(view.container.textContent).toBe('No return date'));
+  });
+});
+
+describe('ShortDateCell', () => {
+  it('shows the day, the month and the time in the zone of the fleet, on one line', async () => {
+    const view = await render(<ShortDateCell value="2026-03-10T10:00:00Z" empty="–" />, {
+      value: { timeZone: 'Asia/Tokyo' },
+    });
+    await vi.waitFor(() => expect(view.container.textContent).toBe('10/03, 19:00'));
+    expect(view.container.textContent).not.toContain('2026');
+  });
+
+  it('shows the empty text without a date', async () => {
+    const view = await render(<ShortDateCell value={null} empty="No return date" />);
     await vi.waitFor(() => expect(view.container.textContent).toBe('No return date'));
   });
 });

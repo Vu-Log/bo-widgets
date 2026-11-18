@@ -408,6 +408,28 @@ describe('the booking section', () => {
     ]);
   });
 
+  it('hides the alert reason and the internal notes by default, shows them from the Columns menu, and pins the actions', async () => {
+    stubVulogApi(fleetApi({ bookings: { PENDING: upcoming } }));
+    const view = await render(routedBo().api);
+    await vi.waitFor(() => expect(view.row('booking-1')).not.toBeNull());
+    const headers = () =>
+      [...view.container.querySelectorAll('[role="columnheader"]')].map((cell) => cell.textContent);
+    expect(headers()).not.toContain('Alert reason');
+    expect(headers()).not.toContain('Internal notes');
+    expect(headers()).toContain('Planned return');
+    expect(view.row('booking-1')?.querySelector('[role="gridcell"]:last-child')?.hasAttribute('data-pinned')).toBe(true);
+
+    view.button('Columns')?.click();
+    await vi.waitFor(() => expect(document.body.querySelector('[role="menu"]')?.textContent).toContain('Alert reason'));
+    const item = (label: string) =>
+      [...document.body.querySelectorAll<HTMLElement>('[role="menuitem"]')].find((candidate) => candidate.textContent === label);
+    expect(item('Internal notes')?.querySelector<HTMLInputElement>('input[type="checkbox"]')?.checked).toBe(false);
+    item('Alert reason')?.click();
+
+    await vi.waitFor(() => expect(headers()).toContain('Alert reason'));
+    expect(headers()).not.toContain('Internal notes');
+  });
+
   it('says when the back office gives no fleet, and calls nothing', async () => {
     const fetch = stubVulogApi(fleetApi({}));
     const bo = fakeBo({ getContext: async () => ({ fleetId: null, locale: 'en_GB', basename: '/' }) });

@@ -12,9 +12,9 @@ import {
   type BookingStateCollection,
 } from '../../storage/booking-state';
 import { lazyModule } from '../../ui/lazy';
-import type { ListGridColumn } from '../../ui/ListGrid';
 import type {
   BookingAction,
+  BookingColumn,
   BookingContext,
   BookingFeature,
   BookingFilter,
@@ -173,20 +173,23 @@ export function createPrepaymentFeature(options: PrepaymentFeatureOptions): Book
     header: MessageKey,
     width: string,
     render: (ctx: BookingContext) => React.ReactNode,
-    align?: 'left' | 'right',
-  ): ListGridColumn<BookingContext> => ({
+    options: { readonly align?: 'right'; readonly hiddenByDefault?: boolean } = {},
+  ): BookingColumn => ({
     id: `prepayment.${id}`,
     header: t(header),
     width,
     render,
-    ...(align ? { align } : {}),
+    ...options,
   });
 
-  const amount = column('amount', 'prepayment.column.amount', '110px', (ctx) => <AmountCell ctx={ctx} />, 'right');
-  const status = column('status', 'prepayment.column.status', '170px', (ctx) => <PrepaymentStatusCell ctx={ctx} />);
+  const amount = column('amount', 'prepayment.column.amount', '100px', (ctx) => <AmountCell ctx={ctx} />, { align: 'right' });
+  const status = column('status', 'prepayment.column.status', '150px', (ctx) => <PrepaymentStatusCell ctx={ctx} />);
   const credits = column('credits', 'prepayment.column.credits', '150px', (ctx) => <CreditsCell ctx={ctx} />);
-  const notes = column('notes', 'prepayment.column.notes', 'minmax(120px, 1fr)', (ctx) => <InternalNotesCell ctx={ctx} />);
-  const errors = column('scheduler-errors', 'prepayment.column.schedulerErrors', '180px', (ctx) => (
+  // Wide, and for some operators only: shown from the Columns menu.
+  const notes = column('notes', 'prepayment.column.notes', 'minmax(120px, 1fr)', (ctx) => <InternalNotesCell ctx={ctx} />, {
+    hiddenByDefault: true,
+  });
+  const errors = column('scheduler-errors', 'prepayment.column.schedulerErrors', '160px', (ctx) => (
     <SchedulerErrorsCell ctx={ctx} />
   ));
   const regularization = column('regularization', 'prepayment.column.regularization', '190px', (ctx) => (

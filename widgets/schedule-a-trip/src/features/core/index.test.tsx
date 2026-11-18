@@ -25,6 +25,14 @@ describe('createCoreFeature', () => {
     for (const id of HIDDEN_CORE_COLUMNS) expect(ids('upcoming')).toContain(id);
   });
 
+  it('hides the id, the dates of creation, the radius, the coordinates and the alert reason by default', () => {
+    const columns = createCoreFeature(deps()).columns?.('upcoming') ?? [];
+    expect(columns.filter((column) => column.hiddenByDefault).map((column) => column.id)).toEqual([
+      'id', 'radius', 'coordinates', 'failureReason', 'created',
+    ]);
+    expect(columns.find((column) => column.id === 'plannedReturn')?.hiddenByDefault).toBeUndefined();
+  });
+
   it('renders the plain columns', () => {
     const columns = createCoreFeature(deps()).columns?.('upcoming') ?? [];
     const render = (id: string, ctx = context()) => columns.find((column) => column.id === id)?.render(ctx);

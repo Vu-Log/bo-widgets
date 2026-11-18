@@ -18,7 +18,6 @@ import { describeError } from '../query/WidgetQueryProvider';
 import { whenIdle } from '../ui/lazy';
 import { ListGrid, type ListGridColumn } from '../ui/ListGrid';
 import { queryErrorText } from './core/common';
-import { HIDDEN_CORE_COLUMNS } from './core';
 import { BookingDrawer, preloadDetail } from './detail/BookingDrawer';
 import { useDetailRoute } from './detail/use-detail-route';
 import type { BookingContext, BookingKpi } from './extensions';
@@ -223,13 +222,15 @@ function FleetSection({
   const columns = useMemo<ListGridColumn<BookingContext>[]>(
     () => [
       ...allColumns.filter((column) =>
-        isColumnShown(preferences.columns, column.id, HIDDEN_CORE_COLUMNS.includes(column.id)),
+        isColumnShown(preferences.columns, column.id, column.hiddenByDefault === true),
       ),
       {
         id: 'actions',
         header: <Box component="span" sx={visuallyHidden}>{t('column.actions')}</Box>,
         width: 'minmax(170px, auto)',
         align: 'right',
+        // Always in view: the list scrolls sideways when the columns are wider than the section.
+        pinned: true,
         render: (ctx) => <RowActions ctx={ctx} features={features} />,
       },
     ],
@@ -382,20 +383,18 @@ function FleetSection({
         }
         density={preferences.density}
         onDensity={(density) => setPreferences((current) => ({ ...current, density }))}
-        columns={allColumns.map((column) => {
-          const hidden = HIDDEN_CORE_COLUMNS.includes(column.id);
-          return {
-            id: column.id,
-            label: headerText(column.header, column.id),
-            shown: isColumnShown(preferences.columns, column.id, hidden),
-          };
-        })}
-        onToggleColumn={(id, shown) =>
+        columns={allColumns.map((column) => ({
+          id: column.id,
+          label: headerText(column.header, column.id),
+          shown: isColumnShown(preferences.columns, column.id, column.hiddenByDefault === true),
+        }))}
+        onToggleColumn={(id, shown) => {
+          const hidden = allColumns.find((column) => column.id === id)?.hiddenByDefault === true;
           setPreferences((current) => ({
             ...current,
-            columns: withColumn(current.columns, id, HIDDEN_CORE_COLUMNS.includes(id), shown),
-          }))
-        }
+            columns: withColumn(current.columns, id, hidden, shown),
+          }));
+        }}
         updatedAt={tabBookings.updatedAt}
         now={now}
         onRefresh={refresh}

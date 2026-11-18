@@ -187,6 +187,17 @@ describe('createI18n', () => {
     expect(() => createI18n('en_GB').formatDateInZone(new Date(), 'p', 'Not/AZone')).toThrow(
       RangeError,
     );
+    expect(() => createI18n('en_GB').formatShortDateTime(new Date(), 'Not/AZone')).toThrow(RangeError);
+  });
+
+  it('formats a compact date without the year, in the order of the locale and in a time zone', () => {
+    const date = new Date('2026-11-20T13:15:00Z');
+    expect(createI18n('fr_FR').formatShortDateTime(date, 'Europe/Paris')).toBe('20/11 14:15');
+    expect(createI18n('en_GB').formatShortDateTime(date, 'Europe/London')).toBe('20/11, 13:15');
+    expect(createI18n('en_US').formatShortDateTime(date, 'America/New_York')).toMatch(/^11\/20, 08:15\sAM$/);
+    expect(createI18n('fr_FR').formatShortDateTime(date, null)).toBe(
+      new Intl.DateTimeFormat('fr-FR', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' }).format(date),
+    );
   });
 
   it('says how far a date is from now', () => {
