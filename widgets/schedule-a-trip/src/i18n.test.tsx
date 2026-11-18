@@ -260,7 +260,8 @@ describe('useI18n', () => {
     const view = await renderInWidget(<Probe />, api);
     unmount = view.unmount;
     await vi.waitFor(() => expect(view.container.textContent).toBe('en: Upcoming'));
-    expect(languageStatus('de')).toBe('loading');
+    // The pack is asked for once the context gives the locale, which may come after the first render.
+    await vi.waitFor(() => expect(languageStatus('de')).toBe('loading'));
 
     arrive();
 

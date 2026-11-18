@@ -168,7 +168,8 @@ describe('ListGrid', () => {
       expect(view.container.querySelectorAll('[data-skeleton]')).toHaveLength(6),
     );
     expect(view.container.querySelector('[role="grid"]')?.getAttribute('aria-busy')).toBe('true');
-    expect(activeObservers()).toHaveLength(1);
+    // The end observer is disconnected by an effect cleanup, which may run after the skeleton rows render.
+    await vi.waitFor(() => expect(activeObservers()).toHaveLength(1));
 
     // Once the page has loaded, a new observer asks again if the end is still in view.
     view.rerender(<ListGrid {...props} pagination={paging} />);

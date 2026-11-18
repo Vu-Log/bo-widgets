@@ -48,7 +48,7 @@ Before you say a change is done: `npm test` and `npm run build` pass.
 | `settings.ts`              | The installation settings, checked with zod.                                                                                                  |
 | `features/prepayment/`     | The prepayment feature: charge with its claim, verification, retry, refund, regularization, internal notes, journal.                     |
 | `i18n.ts`, `locales/`      | Translation (`useI18n().t`) and `Intl`/date-fns formatting; one flat JSON catalogue per language, and its pack `locales/<language>.ts` (catalogue and date-fns locale), a chunk loaded on demand (English is bundled). |
-| `test/`                    | Test helpers only: the fake BO (in-memory storage), the fake `IntersectionObserver`, `renderInWidget`, the fake Vulog API, `renderInSection`, the fake billing API (`fake-aima.ts`), a minimal host of a feature (`feature-host.tsx`). |
+| `test/`                    | Test helpers only (and `setup.ts`, the `setupFiles` of Vitest: `vi.waitFor` waits up to 5 s by default): the fake BO (in-memory storage), the fake `IntersectionObserver`, `renderInWidget`, the fake Vulog API, `renderInSection`, the fake billing API (`fake-aima.ts`), a minimal host of a feature (`feature-host.tsx`). |
 
 ## Languages
 
@@ -85,6 +85,8 @@ In `npm run dev` (mock mode), API calls are answered by `dev.responses` of `widg
 ## Tests
 
 `src/main.test.tsx` mounts the element with a fake of the BO API (an object with `getContext`, `on`, `off`… set as `vulogBo`). Extend it for every behaviour you add: nominal case, `BoError` from a request, an event changing the display, cleanup on removal. Stub `fetch` for `authFetch`. `src/integration.test.tsx` and `src/features/BookingSection.test.tsx` wire the real modules together with only the edges faked (`stubVulogApi` and `fleetApi` of `src/test/vulog-api.ts`): extend them when a feature crosses modules. Test values stay neutral (`FLEET-1`, `Jane Doe`): the repository is public.
+
+The CI runner is slower than a laptop: tests have 15 s, hooks 30 s, and `vi.waitFor` 5 s by default (`src/test/setup.ts`). After a `vi.waitFor`, an assertion on data from another source (another query, a lazy chunk, an effect, the storage) goes in its own `vi.waitFor`, never bare.
 
 ## Documentation
 
