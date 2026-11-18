@@ -26,13 +26,27 @@ interface TokenFailure {
 }
 
 /**
+ * The tokens Mapbox refused, by client of the back office (one per mounted widget): every later
+ * map shows the static view at once, and the refusal is logged once, not at each map.
+ */
+const refusedTokens = new WeakMap<object, Map<string, MapFailure>>();
+const refusedOf = (bo: object): Map<string, MapFailure> => {
+  let refused = refusedTokens.get(bo);
+  if (!refused) {
+    refused = new Map();
+    refusedTokens.set(bo, refused);
+  }
+  return refused;
+};
+
+/**
  * The map of the widget (drawer, wizard, vehicle picker): the interactive Mapbox GL JS map, loaded
  * on demand with a skeleton meanwhile, or the static view ({@link StaticMap}, in the main bundle)
  * when it cannot show:
  * - no token in the settings: the static drawing, with the explanation of the token, and Mapbox GL
  *   JS is never loaded;
  * - Mapbox refuses the token (401, 403): the same explanation (the static image would be refused
- *   too);
+ *   too), for every later map of the widget with that token, logged once;
  * - no WebGL, the style or the chunk not loaded: the static image of Mapbox.
  *
  * Every failure is logged (`bo.log`).
@@ -46,7 +60,13 @@ export function MapView(props: MapViewProps) {
   // Checked before loading the chunk: no need for Mapbox GL JS without WebGL.
   const [webGl] = useState(hasWebGl);
   const [failed, setFailed] = useState<TokenFailure | null>(null);
-  const failure = !webGl ? NO_WEBGL : failed !== null && failed.token === token ? failed.failure : null;
+  const failure = !webGl
+    ? NO_WEBGL
+    : failed !== null && failed.token === token
+      ? failed.failure
+      : token === null
+        ? null
+        : (refusedOf(bo).get(token) ?? null);
   const onFailure = useCallback(
     (next: MapFailure) => {
       if (token === null) return;
@@ -60,6 +80,9 @@ export function MapView(props: MapViewProps) {
     if (failure.kind === 'webgl') {
       bo.log.warn('The interactive map needs WebGL: the static map is shown');
     } else if (failure.kind === 'token') {
+      const refused = refusedOf(bo);
+      if (token === null || refused.has(token)) return;
+      refused.set(token, failure);
       bo.log.error('Mapbox refused the token of the settings', { status: failure.status });
     } else {
       bo.log.error(
@@ -67,7 +90,7 @@ export function MapView(props: MapViewProps) {
         describeError(failure.error),
       );
     }
-  }, [bo, failure]);
+  }, [bo, failure, token]);
 
   if (token === null || failure?.kind === 'token') {
     return <StaticMap {...view} token={null} height={height} />;
