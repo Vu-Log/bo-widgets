@@ -31,11 +31,12 @@ export function DateCell({ value, empty }: { readonly value: string | null; read
   const exact = formatDateInZone(date, EXACT_DATE, timeZone);
   return (
     <Tooltip title={timeZone ? `${exact} (${timeZone})` : exact}>
-      <Box sx={{ lineHeight: 1.2, overflow: 'hidden', textOverflow: 'ellipsis' }}>
-        <Typography variant="body2" noWrap>
+      {/* Two lines of 1.2 (about 31 px): they fit the row of every density. */}
+      <Box sx={{ overflow: 'hidden', textOverflow: 'ellipsis' }}>
+        <Typography variant="body2" noWrap sx={{ lineHeight: 1.2 }}>
           {formatRelative(date, now)}
         </Typography>
-        <Typography variant="caption" color="text.secondary" noWrap component="div">
+        <Typography variant="caption" color="text.secondary" noWrap component="div" sx={{ lineHeight: 1.2 }}>
           {exact}
         </Typography>
       </Box>

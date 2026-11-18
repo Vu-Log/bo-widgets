@@ -43,6 +43,15 @@ afterEach(() => {
 const styles = () =>
   [...document.querySelectorAll('style')].map((style) => style.textContent).join('\n');
 
+/** The declarations of the Emotion class of an element (its own rule, not its selectors). */
+const declarationsOf = (element: Element): string => {
+  const css = styles();
+  const classes = [...element.classList].filter((name) => name.startsWith('css-'));
+  return classes
+    .map((name) => new RegExp(`\\.${name}\\{([^}]*)\\}`).exec(css)?.[1] ?? '')
+    .join(';');
+};
+
 describe('ListGrid', () => {
   it('renders a grid of divs with the ARIA roles of a grid', async () => {
     const view = await renderInWidget(
@@ -101,6 +110,54 @@ describe('ListGrid', () => {
     expect(styles()).toContain('content-visibility:auto');
     expect(styles()).toContain('contain-intrinsic-size:auto var(--row-height)');
     expect(styles()).toContain('grid-template-columns:var(--grid-columns)');
+  });
+
+  it('makes every body row exactly --row-height high, border included, and keeps cells inside', async () => {
+    const view = await renderInWidget(
+      <ListGrid label="Bookings" columns={columns} rows={rows} getRowId={getRowId} isLoading />,
+    );
+    unmount = view.unmount;
+    await vi.waitFor(() => expect(view.container.querySelector('[data-row-id]')).not.toBeNull());
+
+    const bodyRows = [
+      ...view.container.querySelectorAll('[data-row-id]'),
+      ...view.container.querySelectorAll('[role="row"][aria-busy="true"]'),
+    ];
+    expect(bodyRows.length).toBeGreaterThan(2);
+    for (const row of bodyRows) {
+      const rule = declarationsOf(row);
+      // The skipped rows take contain-intrinsic-size, the rendered ones their height: the same.
+      expect(rule).toMatch(/(^|;)height:var\(--row-height\)/);
+      expect(rule).toContain('box-sizing:border-box');
+      expect(rule).toContain('overflow:clip');
+      expect(rule).not.toMatch(/(^|;)min-height:var\(--row-height\)/);
+      for (const cell of row.querySelectorAll('[role="gridcell"]')) {
+        const cellRule = declarationsOf(cell);
+        expect(cellRule).toContain('max-height:var(--row-height)');
+        expect(cellRule).toContain('overflow:hidden');
+        expect(cellRule).toMatch(/padding-top:0(px)?;/);
+      }
+    }
+  });
+
+  it('keeps a pinned column in view at the end of the rows', async () => {
+    const pinned: ListGridColumn<Row>[] = [
+      columns[0]!,
+      { id: 'actions', header: 'Actions', width: '120px', pinned: true, render: () => 'Act' },
+    ];
+    const view = await renderInWidget(
+      <ListGrid label="Bookings" columns={pinned} rows={rows} getRowId={getRowId} />,
+    );
+    unmount = view.unmount;
+    await vi.waitFor(() => expect(view.container.querySelector('[data-pinned]')).not.toBeNull());
+
+    const cells = view.container.querySelectorAll('[data-row-id] [data-pinned]');
+    expect(cells).toHaveLength(2);
+    expect(declarationsOf(cells[0]!)).toContain('position:sticky');
+    expect(declarationsOf(cells[0]!)).toContain('right:0');
+    const header = [...view.container.querySelectorAll('[role="columnheader"]')].at(-1)!;
+    expect(declarationsOf(header)).toContain('position:sticky');
+    expect(view.container.querySelector('[data-row-id] [role="gridcell"]')?.hasAttribute('data-pinned')).toBe(false);
   });
 
   it('renders again only the rows whose object changed', async () => {

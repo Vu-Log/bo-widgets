@@ -25,6 +25,11 @@ export interface ListGridColumn<Row> {
   readonly align?: 'left' | 'right';
   /** The content of its cell for a row. Subscribe to a query in it to enrich only this cell. */
   readonly render: (row: Row) => ReactNode;
+  /**
+   * Keeps the column in view at the end of the rows when the grid scrolls sideways (the actions of
+   * a row). For the last column only.
+   */
+  readonly pinned?: boolean;
 }
 
 /**
@@ -56,7 +61,10 @@ export interface ListGridProps<Row> {
   readonly rows: readonly Row[];
   /** Stable id of a row. Rows with the same id (a row moved between two pages) are shown once. */
   readonly getRowId: (row: Row) => string;
-  /** Height of a row in px: 48 by default (36 compact, 56 comfortable). */
+  /**
+   * Height of every row in px, its border included: 48 by default (36 compact, 56 comfortable).
+   * A cell never makes its row higher: its content is clipped, so keep it to two lines.
+   */
   readonly rowHeight?: number;
   /** Total rows on the server, for `aria-rowcount`; unknown by default. */
   readonly totalCount?: number | null;
@@ -104,10 +112,18 @@ const rowSx: SxProps<Theme> = {
   borderBottom: 1,
   borderColor: 'divider',
 };
+const headRowSx: SxProps<Theme> = { ...rowSx, minHeight: 40 };
 // Rendered as a grid, not a table: CSS containment does not apply to table rows, so
-// content-visibility would do nothing on a <tr>.
+// content-visibility would do nothing on a <tr>. Every row is exactly `--row-height` high, its
+// border included: a row the browser skips takes `contain-intrinsic-size`, a row it renders its
+// height, and a difference would move the content while scrolling.
 const bodyRowSx: SxProps<Theme> = {
   ...rowSx,
+  height: 'var(--row-height)',
+  minHeight: 0,
+  boxSizing: 'border-box',
+  // `clip`, not `hidden`: a sticky cell still sticks to the scroll container of the grid.
+  overflow: 'clip',
   contentVisibility: 'auto',
   containIntrinsicSize: 'auto var(--row-height)',
 };
@@ -119,7 +135,30 @@ const cellStyle = {
   whiteSpace: 'nowrap',
   py: 1,
 } as const;
-const cellSx: SxProps<Theme> = cellStyle;
+const headCellStyle = {
+  ...cellStyle,
+  fontSize: 12,
+  fontWeight: 500,
+  lineHeight: 1.5,
+  color: 'text.secondary',
+  textTransform: 'uppercase',
+  letterSpacing: '0.04em',
+} as const;
+// No vertical padding: the row sets the height, and a cell never grows past it.
+const bodyCellStyle = { ...cellStyle, py: 0, maxHeight: 'var(--row-height)' } as const;
+/** A flat colour as a background image, over the background colour. */
+const tint = (color: string) => `linear-gradient(${color}, ${color})`;
+/** The cell of a column pinned to the end: it stays in view when the grid scrolls sideways. */
+const pinnedStyle = {
+  position: 'sticky',
+  right: 0,
+  zIndex: 1,
+  bgcolor: 'background.paper',
+} as const;
+const headCellSx: SxProps<Theme> = headCellStyle;
+const pinnedHeadCellSx: SxProps<Theme> = { ...headCellStyle, ...pinnedStyle };
+const bodyCellSx: SxProps<Theme> = bodyCellStyle;
+const pinnedBodyCellSx: SxProps<Theme> = { ...bodyCellStyle, ...pinnedStyle };
 const errorCellSx: SxProps<Theme> = { ...cellStyle, gridColumn: '1 / -1', color: 'error.main' };
 const interactiveRowSx: SxProps<Theme> = {
   ...bodyRowSx,
@@ -127,6 +166,11 @@ const interactiveRowSx: SxProps<Theme> = {
   '&:hover': { bgcolor: 'action.hover' },
   '&:focus-visible': { outline: 2, outlineColor: 'primary.main', outlineOffset: -2 },
   '&[aria-selected="true"]': { bgcolor: 'action.selected' },
+  // A pinned cell is opaque: it shows the tint of its row over its own background.
+  '&:hover > [data-pinned]': { backgroundImage: (theme) => tint(theme.palette.action.hover) },
+  '&[aria-selected="true"] > [data-pinned]': {
+    backgroundImage: (theme) => tint(theme.palette.action.selected),
+  },
 };
 /** What a click on these does not activate its row. */
 const INTERACTIVE = 'button, a, input, textarea, select, [role="menuitem"], [role="checkbox"]';
@@ -164,7 +208,14 @@ function GridRow<Row>({
       sx={selected === undefined ? bodyRowSx : interactiveRowSx}
     >
       {columns.map((column) => (
-        <TableCell key={column.id} component="div" role="gridcell" align={column.align} sx={cellSx}>
+        <TableCell
+          key={column.id}
+          component="div"
+          role="gridcell"
+          align={column.align}
+          data-pinned={column.pinned ? '' : undefined}
+          sx={column.pinned ? pinnedBodyCellSx : bodyCellSx}
+        >
           {column.render(row)}
         </TableCell>
       ))}
@@ -302,14 +353,14 @@ export function ListGrid<Row>({
         sx={tableSx}
       >
         <TableHead component="div" role="rowgroup" sx={headSx}>
-          <TableRow component="div" role="row" aria-rowindex={1} sx={rowSx}>
+          <TableRow component="div" role="row" aria-rowindex={1} sx={headRowSx}>
             {columns.map((column) => (
               <TableCell
                 key={column.id}
                 component="div"
                 role="columnheader"
                 align={column.align}
-                sx={cellSx}
+                sx={column.pinned ? pinnedHeadCellSx : headCellSx}
               >
                 {column.header}
               </TableCell>
@@ -343,10 +394,10 @@ export function ListGrid<Row>({
                 component="div"
                 role="row"
                 aria-busy="true"
-                sx={rowSx}
+                sx={bodyRowSx}
               >
                 {columns.map((column) => (
-                  <TableCell key={column.id} component="div" role="gridcell" sx={cellSx}>
+                  <TableCell key={column.id} component="div" role="gridcell" sx={bodyCellSx}>
                     <SkeletonCell />
                   </TableCell>
                 ))}

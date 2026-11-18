@@ -205,7 +205,7 @@ export function SchedulerErrorsCell({ ctx }: { readonly ctx: BookingContext }) {
   if (names.length === 0) return null;
   const errors = ctx.state?.value.schedulerErrors ?? {};
   return (
-    <Box sx={{ display: 'flex', gap: 0.5, flexWrap: 'wrap' }}>
+    <Box sx={{ display: 'flex', gap: 0.5, overflow: 'hidden' }}>
       {names.map((name) => {
         const at = errors[name];
         const key = SCHEDULER_ERROR_KEYS[name];
