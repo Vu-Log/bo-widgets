@@ -256,7 +256,7 @@ describe('the booking list foundation', () => {
     gridObserver()?.report([row()!], true);
 
     await vi.waitFor(() => expect(row()?.textContent).toContain('error'));
-    expect(row()?.textContent).toContain('City car');
+    await vi.waitFor(() => expect(row()?.textContent).toContain('City car'));
   });
 });
 

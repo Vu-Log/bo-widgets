@@ -50,7 +50,7 @@ describe('useDetailContext', () => {
     };
     await vi.waitFor(() => expect(state()?.status).toBeDefined());
     await vi.waitFor(() => expect(ready().ctx.customer?.id).toBe('user-1'));
-    expect(ready().ctx).toMatchObject({ tab: 'alert', state: null });
+    await vi.waitFor(() => expect(ready().ctx).toMatchObject({ tab: 'alert', state: null }));
     expect(Object.isFrozen(ready().ctx)).toBe(true);
     expect(ready().customerStatus).toBe('ok');
     expect(ready().stateError).toBeNull();

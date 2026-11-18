@@ -9,4 +9,7 @@ export const WAIT_FOR_TIMEOUT = 5000;
 
 const waitFor = vi.waitFor;
 vi.waitFor = ((callback, options) =>
-  waitFor(callback, typeof options === 'number' ? options : { timeout: WAIT_FOR_TIMEOUT, ...options })) as typeof vi.waitFor;
+  waitFor(
+    callback,
+    typeof options === 'number' ? options : { ...options, timeout: options?.timeout ?? WAIT_FOR_TIMEOUT },
+  )) as typeof vi.waitFor;

@@ -171,7 +171,9 @@ describe('the booking section', () => {
         'Journal',
       ]),
     );
-    expect(drawer.querySelector('[data-step="prepaid"]')?.getAttribute('data-state')).toBe('current');
+    await vi.waitFor(() =>
+      expect(drawer.querySelector('[data-step="prepaid"]')?.getAttribute('data-state')).toBe('current'),
+    );
     expect(drawer.querySelector('svg[role="img"]')?.getAttribute('aria-label')).toContain('500 m');
     expect(view.row('booking-1')?.getAttribute('aria-selected')).toBe('true');
 

@@ -115,7 +115,8 @@ describe('VehicleCard', () => {
       { api },
     );
     await vi.waitFor(() => expect(view.container.textContent).toContain('AB-123-CD'));
-    expect(view.container.textContent).toContain('City car');
+    // The model comes from the catalog query, which may resolve after the vehicles.
+    await vi.waitFor(() => expect(view.container.textContent).toContain('City car'));
     expect(view.container.textContent).toContain('ZZ-999-ZZ');
     [...view.container.querySelectorAll('button')].find((b) => b.textContent === 'ZZ-999-ZZ')?.click();
     await vi.waitFor(() => expect(navigate).toHaveBeenCalledWith({ path: '/app/new-vehicles/vehicle-2' }));
