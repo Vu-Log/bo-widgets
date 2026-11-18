@@ -1,0 +1,83 @@
+# AGENTS.md
+
+Instructions for AI coding agents working on **Schedule a trip**, a widget of the Vulog back office (BO), built with React and MUI, through `@vulog/bo-widget-react`.
+
+## Read first
+
+- `node_modules/@vulog/bo-widget-sdk/AGENTS.md`: the contract between a widget and the BO (`connect`, requests, events, permissions, `BoError`, `authFetch`), versioned with the installed SDK. Follow it over anything you remember about other widget systems.
+- `README.md`: scripts, publication, development against a real API.
+- `widget.config.ts`: the manifest (`widget.json`) is generated from it and from `package.json`. See `node_modules/@vulog/bo-widget-vite/README.md` for its fields and the fake BO.
+
+## Commands
+
+| Command                  | When                                                                                |
+| ------------------------ | ----------------------------------------------------------------------------------- |
+| `npm run dev`            | Shows the widget in a fake BO with the mock data of `widget.config.ts` (`dev`).     |
+| `npm test`               | After every change (Vitest).                                                        |
+| `npm run build`          | Type-checks (`tsc`), builds `dist/` and packs `schedule-a-trip-<version>.zip`.      |
+| `npx bo-widget validate` | Checks the zip of the current version with the rules the BO applies at publication. |
+
+Before you say a change is done: `npm test` and `npm run build` pass.
+
+## Rules for this project
+
+- `src/main.tsx` exports `toCustomElement(App)`: keep it the default export, do not register the class. It renders React in a shadow root, keeps the Emotion styles and the MUI portals (Dialog, Menu, Popover, Tooltip, Select…) in it, and builds the MUI theme from the theme of the back office.
+- Read the back office state with the hooks of `@vulog/bo-widget-react`: `useBoContext()`, `useCurrentUser()`, `useAuthFetch()`, `useBoTheme()`, `useBoRouter()`, `useBoClient()`. Do not call `connect` yourself. See `node_modules/@vulog/bo-widget-react/README.md`.
+- Keep `@mui/material` 7.3.6 or later: earlier versions trap the focus of a dialog outside a shadow root.
+- The hooks load the initial state and follow the events (`localeChanged`, `fleetChanged`, `themeChanged`…). Navigate with `useBoRouter().navigate`, show feedback with `useBoClient().notify({ message, severity })`: never `window.location`, `history` or `alert`.
+- Do not set `container` on MUI portals and do not use `cssVariables` in the theme: its `:root` variables do not apply in a shadow root. Customize the theme with the `customizeTheme` option of `toCustomElement`.
+- The BO registers the class under a tag it chooses: never call `customElements.define`, never register other elements globally, never assume the tag name.
+- Fill the content zone: `:host` at 100 %, a column root, only the main area scrolls (`flex: 1; min-height: 0; overflow: auto`). Never use `100vh` or `100vw`.
+- Keep every style in the shadow root: nothing in `document.head`.
+- A request needing a permission (`apiInfo`, `accessToken`, `navigate`, `notify`, `storage`, `sharedStorage`) needs it in `permissions` of `widget.config.ts`.
+- The bundle is public: no secret, no API key, no token in the code or in `widget.config.ts`. `.env.local` holds the developer's values and is never committed.
+- Errors the BO cannot see (anything after the element is inserted) are shown by the widget itself, with a loading and an error state.
+
+## Layout of `src/`
+
+| Path                       | Holds                                                                                                                                         |
+| -------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------- |
+| `api/`                     | One module per API domain: thin wrappers over `authFetch` that return an `ApiResult` (`{ ok, data }` or `{ ok: false, error }`), never throw. |
+| `domain/`                  | Pure business rules (amount, refund policy, statuses, vehicles in range): no React, no I/O, 100 % covered.                                    |
+| `storage/booking-state.ts` | The contract of the `bookings` collection of `bo.storage`, shared with a server scheduler.                                                    |
+| `query/`                   | TanStack Query: client, persistence, query keys and query options.                                                                            |
+| `ui/`                      | Primitives without business logic: `ListGrid`, `SkeletonCell`, `ConfigurationBanner`, the `IntersectionObserver` hooks.                       |
+| `settings.ts`              | The installation settings, checked with zod.                                                                                                  |
+| `i18n.ts`, `locales/`      | Translation (`useI18n().t`) and `Intl`/date-fns formatting; one flat JSON catalogue per language.                                             |
+| `test/`                    | Test helpers only: the fake BO (with an in-memory storage), the fake `IntersectionObserver`, `renderInWidget`.                                |
+
+## Languages
+
+The widget speaks 8 languages: English (source and fallback), German, French, Italian, Dutch, Spanish, Portuguese and Hungarian (`LANGUAGES` in `src/i18n.ts`). The language comes from the BO locale (`useBoContext().locale`, followed on `localeChanged`): the full locale, then its language, then English.
+
+- **Every string shown to an operator goes through `useI18n().t('key', { param })`**: never a literal in a component. Error messages too: `apiErrorText(error)` gives the key of an API failure.
+- **A new string is added to the 8 catalogues `src/locales/{en,de,fr,it,nl,es,pt,hu}.json` in the same change**, with a real translation: flat keys (`area.name`), the same keys and the same `{param}` placeholders as `en.json`. `src/i18n.test.tsx` fails otherwise, and the type check refuses a catalogue missing a key.
+- Keep the product name "Schedule a trip" untranslated. Keep UI wording short.
+- Format numbers, amounts and dates with `formatNumber`, `formatCurrency` and `formatDate` of `useI18n()` (`Intl` and the date-fns locale), never by hand.
+- The manifest labels (`menu.label`, each setting `label`) carry the 8 languages too: the test checks it.
+
+## Data rules
+
+- Build every query key with `queryKeys` (`query/keys.ts`). Only the roots of `PERSISTED_QUERY_ROOTS` (models, services, cities, plates, geocoding, fleet config) are written to `localStorage`: never a customer name, a payment status, a booking, a stored state or the settings. A new root is memory-only until it is added to that list, and `query/client.test.ts` checks it.
+- A persisted query needs a `gcTime` at least `PERSIST_MAX_AGE_MS`, or it is never restored.
+- Keep only the fields the widget needs from an API answer (`api/users.ts` keeps the names, the user name and the profile types and entities, never other personal data).
+- A 403 is shown as "not allowed" (`apiErrorMessage`), not as a generic failure. Mutations are never retried.
+- `bookings/{bookingId}`: read the document, then write a patch over it with `updateBookingState(collection, current, patch)` (always `ifVersion`; never `set` over an existing document). Create with `createBookingState` (`allocationProcessed: false`, no expiry). Start the 365-day expiry only at the end of a cycle with `startExpiry`, remove it with `stopExpiry`. Claim a charge with `claimCharge` before creating an invoice, and `releaseCharge` when the API refused it. Record an action by passing `events: withEvent(...)` in the patch of its own write. The widget never writes the scheduler fields (`SCHEDULER_FIELDS`), and every write is checked against the contract, rules between fields included. Raise `SCHEMA_VERSION` for any change of the contract: the scheduler reads it too.
+- Branch on the `kind` of a `StorageFailure`: after `unknown-outcome`, read again before writing; after `rate-limited`, wait, never retry in a loop.
+- Lists: `useInfiniteQuery` with `bookingPagesQueryOptions`, rendered with `ListGrid` (divs in CSS grid with `content-visibility: auto`, never a `<table>`), with `isLoading` and `pagination` (pass `isFetchNextPageError`: the grid stops asking after a failed page and shows a retry). Load the extra data of the visible rows only (`onVisibleRowsChange`), one query per cell, with `SkeletonCell` until it arrives.
+
+## Calling the Vulog API
+
+Use `useAuthFetch()`, then `authFetch('<service path>/<route>')`, a path relative to the BO admin API (`.../boapi/proxy/`): never prefix it with `boapi/proxy/`, never add `Authorization` or `X-API-Key`. The widget needs the `apiInfo` permission.
+
+To find an endpoint, its parameters and its response, use the **`aima-api` skill** of the SDK repository (`plugins/bo-widget/skills/aima-api` in <https://github.com/Vu-Log/bo-widget-sdk>, generated from the public API reference; a weekly job proposes an update): it gives the path to pass to `authFetch`. In Claude Code: `/plugin marketplace add Vu-Log/bo-widget-sdk`, then `/plugin install bo-widget@bo-widget-sdk`. Other agents: `npx skills add Vu-Log/bo-widget-sdk`. Never guess an endpoint: if you cannot find it, ask.
+
+In `npm run dev` (mock mode), API calls are answered by `dev.responses` of `widget.config.ts`: add a response there for each endpoint the widget calls.
+
+## Tests
+
+`src/main.test.tsx` mounts the element with a fake of the BO API (an object with `getContext`, `on`, `off`… set as `vulogBo`). Extend it for every behaviour you add: nominal case, `BoError` from a request, an event changing the display, cleanup on removal. Stub `fetch` for `authFetch`. `src/integration.test.tsx` wires the real API, query, storage and grid modules together with only the edges faked: extend it when a feature crosses modules. Test values stay neutral (`FLEET-1`, `Jane Doe`): the repository is public.
+
+## Documentation
+
+<https://vu-log.github.io/bo-widget-sdk/> (`llms.txt` and `llms-full.txt` for agents).
