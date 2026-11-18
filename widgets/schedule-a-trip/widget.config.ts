@@ -1,4 +1,10 @@
 import { defineWidgetConfig } from '@vulog/bo-widget-vite';
+import { loadEnv } from 'vite';
+import { devOverrides } from './dev-env.ts';
+
+// The fleet and settings of a real back office come from the environment or `.env.local` (dev-env.ts), never from
+// this public file. Not under Vitest: a developer's `.env.local` must not change the tests.
+const devEnv = devOverrides(process.env.VITEST ? {} : loadEnv('development', import.meta.dirname, 'BO_WIDGET_'));
 
 /** A booking of the mock answers, with neutral values. */
 const sampleBooking = (id: string, status: string, userId: string, startDate: string) => ({
@@ -204,7 +210,7 @@ export default defineWidgetConfig({
   ],
   // Data of the fake back office in `npm run dev` (mock mode).
   dev: {
-    context: { fleetId: 'FLEET-1', locale: 'en_GB' },
+    context: { fleetId: devEnv.fleetId ?? 'FLEET-1', locale: 'en_GB' },
     user: { fullName: 'Jane Doe' },
     settings: {
       prepaymentProductId: '11111111-1111-4111-8111-111111111111',
@@ -215,6 +221,7 @@ export default defineWidgetConfig({
       mapboxToken: 'pk.placeholder',
       currency: 'EUR',
       timezone: 'Europe/Paris',
+      ...devEnv.settings,
     },
     // Neutral sample answers of the Vulog API (mock mode): a few bookings of each tab.
     responses: {
