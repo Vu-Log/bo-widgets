@@ -21,6 +21,10 @@ function chunkName(name: string, facade: string | null): string {
 
 export default defineConfig({
   plugins: [react(), boWidget(widget)],
+  // Dev server only: scan every source file up front, so that the dependencies of the chunks loaded on demand (the
+  // drawer, the dialogs, the map, the languages) are pre-bundled at start. Otherwise Vite finds them at the first use,
+  // re-optimizes and reloads the whole page (a one-off « refresh » at the first click on a booking).
+  optimizeDeps: { entries: ['src/**/*.{ts,tsx}', '!src/**/*.test.{ts,tsx}', '!src/test/**'] },
   build: {
     rolldownOptions: {
       output: {
