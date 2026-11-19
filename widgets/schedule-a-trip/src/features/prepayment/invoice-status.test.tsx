@@ -83,11 +83,12 @@ describe('useInvoiceStatusSync', () => {
   it('writes nothing when the stored status is the live one', async () => {
     const rendered = await renderWithBilling(
       <FeatureHost feature={prepaymentFeature} booking={booking()} tab="upcoming" customer={customer()} />,
-      { stored: { ...charged, invoiceStatus: 'PAID' }, aima: { invoices: [fakeInvoice({ status: 'PAID' })] } },
+      // PENDING: a stored PAID is trusted without reading the invoice (SETTLED_INVOICE_STATUSES).
+      { stored: { ...charged, invoiceStatus: 'PENDING' }, aima: { invoices: [fakeInvoice({ status: 'PENDING' })] } },
     );
     unmount = rendered.view.unmount;
 
-    await vi.waitFor(() => expect(cell()).toBe('Paid'));
+    await vi.waitFor(() => expect(cell()).toBe('Payment in progress'));
     await vi.waitFor(() => expect(rendered.aima.calls.some((call) => call.path.endsWith('/invoices/invoice-1'))).toBe(true));
     expect(rendered.bo.storage.api.update).not.toHaveBeenCalled();
   });

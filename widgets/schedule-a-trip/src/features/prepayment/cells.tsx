@@ -48,6 +48,17 @@ export const CREDITS_CHIPS: Readonly<Record<CreditsStatus, { key: MessageKey; co
 };
 
 /**
+ * Stored invoice statuses the list trusts without reading the invoice again (one call per row otherwise): a paid
+ * invoice only changes by a refund, which the widget makes and stores itself, and a refunded one never changes. The
+ * dialogs that act on an invoice still read it live.
+ */
+export const SETTLED_INVOICE_STATUSES: ReadonlySet<string> = new Set(['PAID', 'REFUNDED']);
+
+/** Whether a stored invoice status is trusted by the list ({@link SETTLED_INVOICE_STATUSES}). */
+export const isSettledInvoiceStatus = (status: string | undefined): boolean =>
+  status !== undefined && SETTLED_INVOICE_STATUSES.has(status);
+
+/**
  * The live invoice of a row, when its document names one: its own query, so that a status that
  * arrives only renders its cell. A status that changed is written back to the stored state
  * ({@link useInvoiceStatusSync}).
@@ -61,7 +72,7 @@ export function useRowInvoice(ctx: BookingContext) {
   const invoiceId = ctx.state?.value.invoiceId ?? null;
   const invoice = useQuery({
     ...invoiceQueryOptions(authFetch, fleetId ?? '', invoiceId ?? ''),
-    enabled: Boolean(fleetId && invoiceId),
+    enabled: Boolean(fleetId && invoiceId) && !isSettledInvoiceStatus(ctx.state?.value.invoiceStatus),
   });
   useInvoiceStatusSync(ctx, invoice.data);
   return invoice;
