@@ -164,7 +164,7 @@
   "picker.noneOutOfRange": "Kein verfügbares Fahrzeug außerhalb des Radius.",
   "picker.noPickup": "Diese Buchung hat keinen Abholpunkt oder keinen Dienst: Es kann kein Fahrzeug gesucht werden.",
   "picker.outOfRange": "Außerhalb des Radius",
-  "picker.outOfRangeTab": "Die 10 nächsten außerhalb",
+  "picker.outOfRangeTab": "Außerhalb des Radius ({count})",
   "picker.preallocate": "Vorab zuweisen",
   "picker.preallocateHint": "Das Fahrzeug wird bis zum Beginn außer Betrieb gesetzt, mit der Buchungs-ID im Grund.",
   "picker.preallocateTitle": "Ein Fahrzeug vorab zuweisen",

@@ -164,7 +164,7 @@
   "picker.noneOutOfRange": "Geen beschikbaar voertuig buiten de straal.",
   "picker.noPickup": "Deze boeking heeft geen ophaalpunt of dienst: er kan geen voertuig worden gezocht.",
   "picker.outOfRange": "Buiten de straal",
-  "picker.outOfRangeTab": "De 10 dichtstbijzijnde buiten",
+  "picker.outOfRangeTab": "Buiten de straal ({count})",
   "picker.preallocate": "Vooraf toewijzen",
   "picker.preallocateHint": "Het voertuig wordt buiten dienst gesteld tot vertrek, met het boekings-id in de reden.",
   "picker.preallocateTitle": "Een voertuig vooraf toewijzen",

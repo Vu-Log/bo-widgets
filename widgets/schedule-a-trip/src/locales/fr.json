@@ -164,7 +164,7 @@
   "picker.noneOutOfRange": "Aucun véhicule disponible hors du rayon.",
   "picker.noPickup": "Cette réservation n’a pas de point de départ ou de service : aucun véhicule ne peut être recherché.",
   "picker.outOfRange": "Hors du rayon",
-  "picker.outOfRangeTab": "Les 10 plus proches hors rayon",
+  "picker.outOfRangeTab": "Hors rayon ({count})",
   "picker.preallocate": "Pré-allouer",
   "picker.preallocateHint": "Le véhicule est mis hors service jusqu’au départ, avec l’id de la réservation dans son motif.",
   "picker.preallocateTitle": "Pré-allouer un véhicule",

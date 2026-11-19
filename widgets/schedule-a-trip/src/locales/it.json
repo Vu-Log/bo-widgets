@@ -164,7 +164,7 @@
   "picker.noneOutOfRange": "Nessun veicolo disponibile fuori dal raggio.",
   "picker.noPickup": "Questa prenotazione non ha punto di ritiro o servizio: non si può cercare alcun veicolo.",
   "picker.outOfRange": "Fuori dal raggio",
-  "picker.outOfRangeTab": "I 10 più vicini fuori",
+  "picker.outOfRangeTab": "Fuori dal raggio ({count})",
   "picker.preallocate": "Preassegna",
   "picker.preallocateHint": "Il veicolo viene messo fuori servizio fino alla partenza, con l’ID della prenotazione nel motivo.",
   "picker.preallocateTitle": "Preassegna un veicolo",

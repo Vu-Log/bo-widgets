@@ -164,7 +164,7 @@
   "picker.noneOutOfRange": "Nenhum veículo disponível fora do raio.",
   "picker.noPickup": "Esta reserva não tem ponto de retirada ou serviço: nenhum veículo pode ser pesquisado.",
   "picker.outOfRange": "Fora do raio",
-  "picker.outOfRangeTab": "Os 10 mais próximos fora",
+  "picker.outOfRangeTab": "Fora do raio ({count})",
   "picker.preallocate": "Pré-alocar",
   "picker.preallocateHint": "O veículo fica fora de serviço até a saída, com o id da reserva no motivo.",
   "picker.preallocateTitle": "Pré-alocar um veículo",

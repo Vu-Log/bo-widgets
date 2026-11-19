@@ -164,7 +164,7 @@
   "picker.noneOutOfRange": "Nincs elérhető jármű a sugáron kívül.",
   "picker.noPickup": "Ennek a foglalásnak nincs átvételi pontja vagy szolgáltatása: nem kereshető jármű.",
   "picker.outOfRange": "A sugáron kívül",
-  "picker.outOfRangeTab": "A 10 legközelebbi kívül",
+  "picker.outOfRangeTab": "A sugáron kívül ({count})",
   "picker.preallocate": "Előre kiosztás",
   "picker.preallocateHint": "A jármű az indulásig üzemen kívül kerül, az okban a foglalásazonosítóval.",
   "picker.preallocateTitle": "Jármű előzetes kiosztása",

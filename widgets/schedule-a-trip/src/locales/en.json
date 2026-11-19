@@ -164,7 +164,7 @@
   "picker.noneOutOfRange": "No available vehicle outside the radius.",
   "picker.noPickup": "This booking has no pickup point or no service: no vehicle can be searched.",
   "picker.outOfRange": "Outside the radius",
-  "picker.outOfRangeTab": "10 closest outside",
+  "picker.outOfRangeTab": "Outside the radius ({count})",
   "picker.preallocate": "Pre-allocate",
   "picker.preallocateHint": "The vehicle is put out of service until the start, with the booking id in its reason.",
   "picker.preallocateTitle": "Pre-allocate a vehicle",

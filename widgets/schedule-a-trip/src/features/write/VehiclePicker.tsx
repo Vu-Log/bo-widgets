@@ -251,7 +251,7 @@ export function VehiclePickerDialog({
                 {t('picker.inRangeTab', { count: found?.inRange.length ?? 0 })}
               </ToggleButton>
               <ToggleButton value="out" sx={{ textTransform: 'none' }}>
-                {t('picker.outOfRangeTab')}
+                {t('picker.outOfRangeTab', { count: found?.closestOutOfRange.length ?? 0 })}
               </ToggleButton>
             </ToggleButtonGroup>
             {!found ? (

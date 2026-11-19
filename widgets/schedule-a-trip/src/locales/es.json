@@ -164,7 +164,7 @@
   "picker.noneOutOfRange": "Ningún vehículo disponible fuera del radio.",
   "picker.noPickup": "Esta reserva no tiene punto de recogida o servicio: no se puede buscar ningún vehículo.",
   "picker.outOfRange": "Fuera del radio",
-  "picker.outOfRangeTab": "Los 10 más cercanos fuera",
+  "picker.outOfRangeTab": "Fuera del radio ({count})",
   "picker.preallocate": "Preasignar",
   "picker.preallocateHint": "El vehículo queda fuera de servicio hasta la salida, con el id de la reserva en el motivo.",
   "picker.preallocateTitle": "Preasignar un vehículo",
