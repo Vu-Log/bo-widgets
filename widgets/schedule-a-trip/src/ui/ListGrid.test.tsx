@@ -140,13 +140,13 @@ describe('ListGrid', () => {
     }
   });
 
-  it('keeps a pinned column in view at the end of the rows', async () => {
+  it('keeps the last column in view at the end of the rows', async () => {
     const pinned: ListGridColumn<Row>[] = [
       columns[0]!,
-      { id: 'actions', header: 'Actions', width: '120px', pinned: true, render: () => 'Act' },
+      { id: 'actions', header: 'Actions', width: '120px', render: () => 'Act' },
     ];
     const view = await renderInWidget(
-      <ListGrid label="Bookings" columns={pinned} rows={rows} getRowId={getRowId} />,
+      <ListGrid label="Bookings" columns={pinned} pinLastColumn rows={rows} getRowId={getRowId} />,
     );
     unmount = view.unmount;
     await vi.waitFor(() => expect(view.container.querySelector('[data-pinned]')).not.toBeNull());
@@ -161,6 +161,13 @@ describe('ListGrid', () => {
     expect(declarationsOf(header)).toContain('text-transform:uppercase');
     expect(declarationsOf(header)).toContain('font-size:12px');
     expect(view.container.querySelector('[data-row-id] [role="gridcell"]')?.hasAttribute('data-pinned')).toBe(false);
+  });
+
+  it('pins no column by default', async () => {
+    const view = await renderInWidget(<ListGrid label="Bookings" columns={columns} rows={rows} getRowId={getRowId} />);
+    unmount = view.unmount;
+    await vi.waitFor(() => expect(view.container.querySelector('[data-row-id]')).not.toBeNull());
+    expect(view.container.querySelector('[data-pinned]')).toBeNull();
   });
 
   it('renders again only the rows whose object changed', async () => {

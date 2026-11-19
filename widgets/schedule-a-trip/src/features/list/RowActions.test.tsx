@@ -54,7 +54,7 @@ describe('RowActions', () => {
     await vi.waitFor(() => expect(document.body.querySelectorAll('[role="menuitem"]')).toHaveLength(0));
   });
 
-  it('shows the short label on the row button, and the full one in its tooltip and accessible name', async () => {
+  it('shows the short label on the row button as its name, and the full one in its tooltip', async () => {
     const short: BookingFeature[] = [
       { id: 'write', primaryAction: () => ({ id: 'preallocate', label: 'Pre-allocate a vehicle', shortLabel: 'Pre-allocate', run }) },
     ];
@@ -62,7 +62,7 @@ describe('RowActions', () => {
     unmount = view.unmount;
     await vi.waitFor(() => expect(view.container.textContent).toContain('Pre-allocate'));
     const button = [...view.container.querySelectorAll('button')].find((b) => b.textContent === 'Pre-allocate');
-    expect(button?.getAttribute('aria-label')).toBe('Pre-allocate a vehicle');
+    expect(button?.hasAttribute('aria-label')).toBe(false);
     expect(button?.getAttribute('title')).toBe('Pre-allocate a vehicle');
     button?.click();
     expect(run).toHaveBeenCalledTimes(1);

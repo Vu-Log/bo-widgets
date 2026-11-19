@@ -83,7 +83,7 @@ describe('useInvoiceStatusSync', () => {
   it('writes nothing when the stored status is the live one', async () => {
     const rendered = await renderWithBilling(
       <FeatureHost feature={prepaymentFeature} booking={booking()} tab="upcoming" customer={customer()} />,
-      // PENDING: a stored PAID is trusted without reading the invoice (SETTLED_INVOICE_STATUSES).
+      // PENDING: a stored PAID is trusted without reading the invoice (isSettledInvoice).
       { stored: { ...charged, invoiceStatus: 'PENDING' }, aima: { invoices: [fakeInvoice({ status: 'PENDING' })] } },
     );
     unmount = rendered.view.unmount;

@@ -344,7 +344,7 @@ describe('the widget, from the list to the regularization', () => {
     await vi.waitFor(() => expect(document.body.textContent).toContain('The prepayment is charged.'));
     buttonIn(document.body, 'Close')?.click();
     await vi.waitFor(() => expect(row()?.textContent).toContain('Payment in progress'));
-    expect(buttonIn(row()!, 'Pre-allocate a vehicle')).toBeUndefined();
+    expect(buttonIn(row()!, 'Pre-allocate')).toBeUndefined();
 
     // The payment settles in the billing API: the refresh reads it and writes it back.
     aima.invoices.get('invoice-new-1')!.status = 'PAID';
@@ -356,8 +356,8 @@ describe('the widget, from the list to the regularization', () => {
     );
 
     // Paid: the pre-allocation is the primary action now.
-    await vi.waitFor(() => expect(buttonIn(row()!, 'Pre-allocate a vehicle')).toBeDefined());
-    buttonIn(row()!, 'Pre-allocate a vehicle')?.click();
+    await vi.waitFor(() => expect(buttonIn(row()!, 'Pre-allocate')).toBeDefined());
+    buttonIn(row()!, 'Pre-allocate')?.click();
     await dialogShown();
     await vi.waitFor(() => expect(dialogButton('Pre-allocate')).toBeDefined());
     dialogButton('Pre-allocate')?.click();

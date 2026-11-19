@@ -142,7 +142,8 @@ export const PREPAYMENT_FILTER_IDS = {
  *
  * - The labels are translated with `options.t`: build it per language ({@link usePrepaymentFeature}).
  * - Filters and KPIs read the document of each row, and the invoice status cached in it: a
- *   payment that failed after the last action of the widget is only seen once its row is shown.
+ *   payment that failed after the last action of the widget is only seen once its row is loaded. A
+ *   settled stored status (`isSettledInvoice`) is not read again.
  * - "To regularize" is served by the storage without reading the AIMA pages:
  *   {@link pendingRegularizationsQueryOptions} gives the bookings to list.
  *

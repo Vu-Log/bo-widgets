@@ -73,7 +73,8 @@ export function RowActions({
             disabled={isActionDisabled(primary)}
             onClick={() => primary.run(ctx)}
             sx={{ textTransform: 'none', whiteSpace: 'nowrap' }}
-            {...(primary.shortLabel ? { 'aria-label': primary.label, title: primary.label } : {})}
+            // The visible short label stays the accessible name (WCAG 2.5.3), the full one is the description.
+            {...(primary.shortLabel ? { title: primary.label } : {})}
           >
             {primary.shortLabel ?? primary.label}
           </Button>

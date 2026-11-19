@@ -3,14 +3,20 @@ import { useQuery } from '@tanstack/react-query';
 import { useAuthFetch } from '@vulog/bo-widget-react';
 import type { Invoice } from '../../api/billing';
 import { computeChargeAmount, type ChargeSettings } from '../../domain/charge-amount';
-import { creditsStatus, isSettledInvoiceStatus, type CreditsStatus } from '../../domain/statuses';
+import { creditsStatus, isSettledInvoice, type CreditsStatus } from '../../domain/statuses';
 import type { MessageKey } from '../../i18n';
 import { invoiceQueryOptions } from '../../query/queries';
 import { SkeletonCell } from '../../ui/SkeletonCell';
 import { StatusChip, type StatusTone } from '../../ui/StatusChip';
 import type { BookingContext } from '../extensions';
 import { useInvoiceStatusSync } from './invoice-status';
-import { prepaymentDisplay, prepaymentEligibility, schedulerErrorNames, type PrepaymentDisplay } from './rules';
+import {
+  prepaymentDisplay,
+  prepaymentEligibility,
+  schedulerErrorNames,
+  UPCOMING_TABS,
+  type PrepaymentDisplay,
+} from './rules';
 import { usePrepaymentEnv } from './use-prepayment-env';
 
 type Tone = StatusTone;
@@ -48,12 +54,12 @@ export const CREDITS_CHIPS: Readonly<Record<CreditsStatus, { key: MessageKey; co
 };
 
 /**
- * The live invoice of a row, when its document names one: its own query, so that a status that
- * arrives only renders its cell. A status that changed is written back to the stored state
- * ({@link useInvoiceStatusSync}).
+ * The live invoice of a row, when its document names one and its stored status can still change
+ * ({@link isSettledInvoice}): its own query, so that a status that arrives only renders its cell. A
+ * status that changed is written back to the stored state ({@link useInvoiceStatusSync}).
  *
  * @param ctx - The row.
- * @returns The invoice query (disabled without an invoice).
+ * @returns The invoice query (disabled without an invoice, or for a settled stored status).
  */
 export function useRowInvoice(ctx: BookingContext) {
   const authFetch = useAuthFetch();
@@ -61,7 +67,7 @@ export function useRowInvoice(ctx: BookingContext) {
   const invoiceId = ctx.state?.value.invoiceId ?? null;
   const invoice = useQuery({
     ...invoiceQueryOptions(authFetch, fleetId ?? '', invoiceId ?? ''),
-    enabled: Boolean(fleetId && invoiceId) && !isSettledInvoiceStatus(ctx.state?.value.invoiceStatus),
+    enabled: Boolean(fleetId && invoiceId) && !isSettledInvoice(ctx.state?.value),
   });
   useInvoiceStatusSync(ctx, invoice.data);
   return invoice;
@@ -129,8 +135,9 @@ export function CreditsCell({ ctx }: { readonly ctx: BookingContext }) {
 
 /**
  * The estimated prepayment of a row with nothing charged yet: the amount the charge dialog would
- * propose ({@link computeChargeAmount}), `null` when there is none (a charge or a claim already, a
- * business booking, no planned return, settings missing or invalid).
+ * propose ({@link computeChargeAmount}), `null` when there is none (a tab where no charge is
+ * offered, a charge or a claim already, a business booking, the customer not loaded yet, no planned
+ * return, settings missing or invalid).
  *
  * @param ctx - The row.
  * @param settings - The valid settings, `null` otherwise.
@@ -143,6 +150,7 @@ export function estimatedAmount(
   now: Date,
 ): number | null {
   if (settings === null || ctx.booking.plannedReturnDate === null) return null;
+  if (!UPCOMING_TABS.includes(ctx.tab)) return null;
   if (prepaymentDisplay(ctx, null, now) !== 'NOT_CHARGED') return null;
   // A document does not always say it is a business booking (a pre-allocation): ask the customer.
   const eligibility = prepaymentEligibility(ctx.booking, ctx.customer).kind;

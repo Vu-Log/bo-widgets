@@ -27,7 +27,7 @@ import { RowActions } from './list/RowActions';
 import { headerText, SortHeader } from './list/SortHeader';
 import { panelId, TabBar, tabId, useTabCounts } from './list/TabBar';
 import { Toolbar } from './list/Toolbar';
-import { useBookingContexts } from './list/use-booking-contexts';
+import { useBookingContexts, type CustomerStatus } from './list/use-booking-contexts';
 import { DEFAULT_SORTS, useTabBookings } from './list/use-tab-bookings';
 import { preloadPrepaymentDialogs } from './prepayment';
 import { useBookingFeatures, type SectionFeature } from './registry';
@@ -229,8 +229,6 @@ function FleetSection({
         header: <Box component="span" sx={visuallyHidden}>{t('column.actions')}</Box>,
         width: 'minmax(170px, auto)',
         align: 'right',
-        // Always in view: the list scrolls sideways when the columns are wider than the section.
-        pinned: true,
         render: (ctx) => <RowActions ctx={ctx} features={features} />,
       },
     ],
@@ -247,10 +245,11 @@ function FleetSection({
       const ids = sources.find((source) => source.filterId === kpi.filterId)?.bookingIds;
       if (ids) counts.set(kpi.id, new Set(ids).size);
     }
-    // Without every row, their stored states or their customers, a count would be wrong: none is
-    // shown.
+    // Without every row, with a failed read of the stored states, or with customers still loading or
+    // that could not be read, a count would be wrong: none is shown.
     if (!tabBookings.complete || enrichment.statesError) return counts;
-    if (enrichment.contexts.some((ctx) => customerStatus(ctx.booking.userId) === 'loading')) return counts;
+    const unknownCustomer = (status: CustomerStatus) => status === 'loading' || status === 'error';
+    if (enrichment.contexts.some((ctx) => unknownCustomer(customerStatus(ctx.booking.userId)))) return counts;
     const allFilters = features.flatMap((feature) => feature.filters ?? []);
     for (const kpi of kpis) {
       const filter = allFilters.find((candidate) => candidate.id === kpi.filterId);
@@ -497,6 +496,8 @@ function FleetSection({
             key={`${fleetId}:${tab}`}
             label={t(`tabs.${tab}`)}
             columns={columns}
+            // The actions, last, always in view: the list scrolls sideways when the columns are wider than the section.
+            pinLastColumn
             rows={rows}
             getRowId={getRowId}
             rowHeight={DENSITIES[preferences.density]}

@@ -539,6 +539,19 @@ describe('the booking section', () => {
     await vi.waitFor(() => expect(view.button('1To prepay')).toBeDefined());
   });
 
+  it('shows no KPI count when the customers of the tab cannot be read', async () => {
+    stubVulogApi(
+      fleetApi({ bookings: { PENDING: upcoming } }, ({ path }) =>
+        path.endsWith('users/list') ? new Response('', { status: 403 }) : undefined,
+      ),
+    );
+    const view = await render(routedBo().api);
+    await vi.waitFor(() => expect(view.row('booking-1')?.textContent).toContain('City car'));
+    await vi.waitFor(() => expect(view.row('booking-1')?.querySelector('[aria-label="Load the customers again"]')).not.toBeNull());
+    // A row without its customer cannot be counted: the tile keeps its dash, never a smaller count.
+    expect(view.button('–To prepay')).toBeDefined();
+  });
+
   it('shows no KPI count while the stored states cannot be read', async () => {
     stubVulogApi(fleetApi({ bookings: { PENDING: upcoming } }));
     const bo = routedBo();

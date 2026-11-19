@@ -191,9 +191,9 @@ describe('the write flows in the section', () => {
     const view = await renderInWidget(<BookingSection />, bo.api);
     unmount = view.unmount;
     const row = () => view.container.querySelector<HTMLElement>('[data-row-id="booking-1"]');
-    await vi.waitFor(() => expect(buttonNamed('Pre-allocate a vehicle', row() ?? undefined)).toBeDefined());
+    await vi.waitFor(() => expect(buttonNamed('Pre-allocate', row() ?? undefined)).toBeDefined());
 
-    buttonNamed('Pre-allocate a vehicle', row()!)?.click();
+    buttonNamed('Pre-allocate', row()!)?.click();
     // The row button now reads « Pre-allocate » too: the confirm button is the one of the dialog.
     const confirm = () => {
       const dialog = document.body.querySelector<HTMLElement>('[role="dialog"]');

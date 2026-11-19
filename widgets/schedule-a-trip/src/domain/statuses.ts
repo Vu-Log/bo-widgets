@@ -122,21 +122,27 @@ export function prepaymentStatus(
 export const canRetryPayment = (invoiceStatus: string | null): boolean =>
   invoiceStatus === 'REFUSED' || invoiceStatus === 'ERROR';
 
-/**
- * Stored invoice statuses the list trusts without reading the invoice again (one call per row otherwise): a paid
- * invoice only changes by a refund, which the widget makes and stores itself, and a refunded one never changes. The
- * dialogs that act on an invoice still read it live.
- */
-export const SETTLED_INVOICE_STATUSES: ReadonlySet<string> = new Set(['PAID', 'REFUNDED']);
+/** What {@link isSettledInvoice} reads of a stored state. */
+export interface StoredInvoiceState {
+  readonly invoiceStatus?: string | null | undefined;
+  readonly refundStartedAt?: string | null | undefined;
+  readonly refundedAt?: string | null | undefined;
+}
 
 /**
- * Whether a stored invoice status is trusted by the list ({@link SETTLED_INVOICE_STATUSES}).
+ * Whether the list trusts the stored status of an invoice without reading it again (one call per row otherwise, AIMA
+ * has no read of several invoices at once). A `REFUNDED` invoice never changes. A `PAID` one changes by a refund, and
+ * the widget records its own refunds in the refund fields, not in `invoiceStatus`: a stored `PAID` is trusted only
+ * while no refund was started, so the list reads the invoice of a refunded booking again and stores its new status. A
+ * refund made outside the widget is not seen by the list, only by the dialogs, which always read the invoice live.
  *
- * @param status - The stored status, `null` or `undefined` when unknown.
- * @returns `true` for `PAID` or `REFUNDED`.
+ * @param state - The stored state of the booking, `null` or `undefined` without one.
+ * @returns `true` for a stored `REFUNDED`, or a stored `PAID` with no refund started.
  */
-export const isSettledInvoiceStatus = (status: string | null | undefined): boolean =>
-  status != null && SETTLED_INVOICE_STATUSES.has(status);
+export function isSettledInvoice(state: StoredInvoiceState | null | undefined): boolean {
+  if (state?.invoiceStatus === 'REFUNDED') return true;
+  return state?.invoiceStatus === 'PAID' && !state.refundStartedAt && !state.refundedAt;
+}
 
 /** Status of the credits granted for a prepaid booking. */
 export type CreditsStatus = 'REVOKED' | 'GRANTED' | 'PENDING_GRANT' | 'PENDING_PREPAYMENT';

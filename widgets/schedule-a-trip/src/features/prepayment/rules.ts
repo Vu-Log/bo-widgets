@@ -6,7 +6,7 @@ import type { ScheduledBooking } from '../../api/schedule-a-trip';
 import type { Customer } from '../../api/users';
 import { round2 } from '../../domain/charge-amount';
 import {
-  isSettledInvoiceStatus,
+  isSettledInvoice,
   prepaymentStatus,
   type ListTab,
   type PrepaymentStatus,
@@ -392,7 +392,8 @@ export interface RowInput {
 }
 
 const NONE: RowActions = { primary: null, menu: [], primaryDisabled: false };
-const UPCOMING_TABS: readonly ListTab[] = ['upcoming', 'alert'];
+/** The tabs where a booking can still be prepaid. */
+export const UPCOMING_TABS: readonly ListTab[] = ['upcoming', 'alert'];
 const RETRYABLE_STATUSES = new Set(['REFUSED', 'ERROR']);
 const NOT_REFUNDABLE_STATUSES = new Set(['REFUNDED', 'CANCELLED']);
 
@@ -425,7 +426,7 @@ export function rowActions(row: RowInput, now: Date): RowActions {
       primaryDisabled = eligibility.kind === 'loading';
     } else if (value?.invoiceId) {
       if (status !== null && RETRYABLE_STATUSES.has(status)) primary = 'retry';
-      else if (!isSettledInvoiceStatus(status)) menu.push('retry');
+      else if (!isSettledInvoice(value)) menu.push('retry');
     }
   } else if (tab === 'cancelled' && value?.invoiceId) {
     const progress = refundProgress(value);
@@ -434,7 +435,7 @@ export function rowActions(row: RowInput, now: Date): RowActions {
     } else if (!progress.refunded && (status === null || !NOT_REFUNDABLE_STATUSES.has(status))) {
       primary = 'refund';
     }
-  } else if (value?.invoiceId && !isSettledInvoiceStatus(status)) {
+  } else if (value?.invoiceId && !isSettledInvoice(value)) {
     menu.push('retry');
   }
 

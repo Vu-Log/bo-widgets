@@ -7,8 +7,8 @@ const TONES = { warn: 'warning', err: 'error', info: 'info' } as const;
 
 /**
  * The quick filters of the header: one tile per KPI of the features, its count and its label. The
- * count of a filter shows once the rows of its tab are all loaded (or when the filter brings its own
- * bookings); a dash until then. A click shows its tab with its filter alone; a second click clears
+ * count of a filter shows once every row of its tab, their stored states and their customers are
+ * loaded (at once when the filter brings its own bookings); a dash until then, or when one failed. A click shows its tab with its filter alone; a second click clears
  * it.
  *
  * @param props - The KPIs, their counts, the one active and the handler.

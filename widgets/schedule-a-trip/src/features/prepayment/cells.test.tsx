@@ -48,6 +48,15 @@ describe('PrepaymentStatusCell', () => {
     },
   );
 
+  it('reads again a stored PAID once a refund was made: the list shows it refunded', async () => {
+    const refunded = charged({ invoiceStatus: 'PAID', refundStartedAt: NOW.toISOString(), refundedAt: NOW.toISOString() });
+    const { aima } = await show(<PrepaymentStatusCell ctx={row({ tab: 'cancelled', state: refunded })} />, [
+      fakeInvoice({ status: 'REFUNDED' }),
+    ]);
+    await vi.waitFor(() => expect(bodyText()).toBe('Refunded'));
+    expect(aima.callsTo('GET', '/invoices/invoice-1')).toHaveLength(1);
+  });
+
   it.each<[string, Partial<BookingContext>, string]>([
     ['upcoming without a document', {}, 'To prepay'],
     ['a business booking', { customer: customer('Business') }, 'Not required (B2B)'],
@@ -137,6 +146,8 @@ describe('estimatedAmount', () => {
     ['for a claim to verify', { state: doc({ chargeStartedAt: NOW.toISOString() }) }],
     ['while the customer loads', { customer: undefined }],
     ['on another tab', { tab: 'completed' }],
+    ['on another tab with a document', { tab: 'completed', state: doc() }],
+    ['on the ongoing tab with a document', { tab: 'ongoing', state: doc() }],
   ])('is null %s', (_, ctx) => {
     expect(estimatedAmount(row({ state: null, ...ctx }), settings(), NOW)).toBeNull();
   });

@@ -25,11 +25,6 @@ export interface ListGridColumn<Row> {
   readonly align?: 'left' | 'right';
   /** The content of its cell for a row. Subscribe to a query in it to enrich only this cell. */
   readonly render: (row: Row) => ReactNode;
-  /**
-   * Keeps the column in view at the end of the rows when the grid scrolls sideways (the actions of
-   * a row). For the last column only.
-   */
-  readonly pinned?: boolean;
 }
 
 /**
@@ -58,6 +53,8 @@ export interface ListGridProps<Row> {
   readonly label: string;
   /** Keep the array stable (`useMemo`): the rows are memoized on it. */
   readonly columns: readonly ListGridColumn<Row>[];
+  /** Keeps the last column in view at the end of the rows when the grid scrolls sideways (the actions of a row). */
+  readonly pinLastColumn?: boolean;
   readonly rows: readonly Row[];
   /** Stable id of a row. Rows with the same id (a row moved between two pages) are shown once. */
   readonly getRowId: (row: Row) => string;
@@ -181,6 +178,7 @@ interface RowProps<Row> {
   readonly rowId: string;
   readonly rowIndex: number;
   readonly columns: readonly ListGridColumn<Row>[];
+  readonly pinLastColumn: boolean;
   readonly register: RegisterRow;
   /** `undefined` for rows that are not interactive. */
   readonly selected: boolean | undefined;
@@ -192,6 +190,7 @@ function GridRow<Row>({
   rowId,
   rowIndex,
   columns,
+  pinLastColumn,
   register,
   selected,
   tabIndex,
@@ -207,18 +206,21 @@ function GridRow<Row>({
       ref={register(rowId)}
       sx={selected === undefined ? bodyRowSx : interactiveRowSx}
     >
-      {columns.map((column) => (
-        <TableCell
-          key={column.id}
-          component="div"
-          role="gridcell"
-          align={column.align}
-          data-pinned={column.pinned ? '' : undefined}
-          sx={column.pinned ? pinnedBodyCellSx : bodyCellSx}
-        >
-          {column.render(row)}
-        </TableCell>
-      ))}
+      {columns.map((column, index) => {
+        const pinned = pinLastColumn && index === columns.length - 1;
+        return (
+          <TableCell
+            key={column.id}
+            component="div"
+            role="gridcell"
+            align={column.align}
+            data-pinned={pinned ? '' : undefined}
+            sx={pinned ? pinnedBodyCellSx : bodyCellSx}
+          >
+            {column.render(row)}
+          </TableCell>
+        );
+      })}
     </TableRow>
   );
 }
@@ -240,6 +242,7 @@ const MemoGridRow = memo(GridRow) as <Row>(props: RowProps<Row>) => ReactElement
 export function ListGrid<Row>({
   label,
   columns,
+  pinLastColumn = false,
   rows,
   getRowId,
   rowHeight = DEFAULT_ROW_HEIGHT,
@@ -354,13 +357,13 @@ export function ListGrid<Row>({
       >
         <TableHead component="div" role="rowgroup" sx={headSx}>
           <TableRow component="div" role="row" aria-rowindex={1} sx={headRowSx}>
-            {columns.map((column) => (
+            {columns.map((column, index) => (
               <TableCell
                 key={column.id}
                 component="div"
                 role="columnheader"
                 align={column.align}
-                sx={column.pinned ? pinnedHeadCellSx : headCellSx}
+                sx={pinLastColumn && index === columns.length - 1 ? pinnedHeadCellSx : headCellSx}
               >
                 {column.header}
               </TableCell>
@@ -382,6 +385,7 @@ export function ListGrid<Row>({
               rowId={rowId}
               rowIndex={index + 2}
               columns={columns}
+              pinLastColumn={pinLastColumn}
               register={register}
               selected={interactive ? rowId === activeRowId : undefined}
               tabIndex={interactive ? (rowId === tabStop ? 0 : -1) : undefined}
