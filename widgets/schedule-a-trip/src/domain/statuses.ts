@@ -122,6 +122,22 @@ export function prepaymentStatus(
 export const canRetryPayment = (invoiceStatus: string | null): boolean =>
   invoiceStatus === 'REFUSED' || invoiceStatus === 'ERROR';
 
+/**
+ * Stored invoice statuses the list trusts without reading the invoice again (one call per row otherwise): a paid
+ * invoice only changes by a refund, which the widget makes and stores itself, and a refunded one never changes. The
+ * dialogs that act on an invoice still read it live.
+ */
+export const SETTLED_INVOICE_STATUSES: ReadonlySet<string> = new Set(['PAID', 'REFUNDED']);
+
+/**
+ * Whether a stored invoice status is trusted by the list ({@link SETTLED_INVOICE_STATUSES}).
+ *
+ * @param status - The stored status, `null` or `undefined` when unknown.
+ * @returns `true` for `PAID` or `REFUNDED`.
+ */
+export const isSettledInvoiceStatus = (status: string | null | undefined): boolean =>
+  status != null && SETTLED_INVOICE_STATUSES.has(status);
+
 /** Status of the credits granted for a prepaid booking. */
 export type CreditsStatus = 'REVOKED' | 'GRANTED' | 'PENDING_GRANT' | 'PENDING_PREPAYMENT';
 

@@ -8,7 +8,6 @@ import {
   CreditsCell,
   estimatedAmount,
   InternalNotesCell,
-  isSettledInvoiceStatus,
   PrepaymentStatusCell,
   RegularizationCell,
   SchedulerErrorsCell,
@@ -190,15 +189,5 @@ describe('InternalNotesCell', () => {
   it('shows a dash without notes, a skeleton while loading', async () => {
     await show(<InternalNotesCell ctx={row({ state: undefined })} />);
     await vi.waitFor(() => expect(skeleton()).not.toBeNull());
-  });
-});
-
-describe('isSettledInvoiceStatus', () => {
-  it('trusts PAID and REFUNDED only', () => {
-    expect(isSettledInvoiceStatus('PAID')).toBe(true);
-    expect(isSettledInvoiceStatus('REFUNDED')).toBe(true);
-    expect(isSettledInvoiceStatus('PENDING')).toBe(false);
-    expect(isSettledInvoiceStatus('REFUSED')).toBe(false);
-    expect(isSettledInvoiceStatus(undefined)).toBe(false);
   });
 });

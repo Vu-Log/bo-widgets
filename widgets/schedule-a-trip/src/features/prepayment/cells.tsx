@@ -3,7 +3,7 @@ import { useQuery } from '@tanstack/react-query';
 import { useAuthFetch } from '@vulog/bo-widget-react';
 import type { Invoice } from '../../api/billing';
 import { computeChargeAmount, type ChargeSettings } from '../../domain/charge-amount';
-import { creditsStatus, type CreditsStatus } from '../../domain/statuses';
+import { creditsStatus, isSettledInvoiceStatus, type CreditsStatus } from '../../domain/statuses';
 import type { MessageKey } from '../../i18n';
 import { invoiceQueryOptions } from '../../query/queries';
 import { SkeletonCell } from '../../ui/SkeletonCell';
@@ -46,17 +46,6 @@ export const CREDITS_CHIPS: Readonly<Record<CreditsStatus, { key: MessageKey; co
   PENDING_GRANT: { key: 'prepayment.credits.pendingGrant', color: 'info' },
   PENDING_PREPAYMENT: { key: 'prepayment.credits.pendingPrepayment', color: 'default' },
 };
-
-/**
- * Stored invoice statuses the list trusts without reading the invoice again (one call per row otherwise): a paid
- * invoice only changes by a refund, which the widget makes and stores itself, and a refunded one never changes. The
- * dialogs that act on an invoice still read it live.
- */
-export const SETTLED_INVOICE_STATUSES: ReadonlySet<string> = new Set(['PAID', 'REFUNDED']);
-
-/** Whether a stored invoice status is trusted by the list ({@link SETTLED_INVOICE_STATUSES}). */
-export const isSettledInvoiceStatus = (status: string | undefined): boolean =>
-  status !== undefined && SETTLED_INVOICE_STATUSES.has(status);
 
 /**
  * The live invoice of a row, when its document names one: its own query, so that a status that

@@ -6,6 +6,7 @@ import type { ScheduledBooking } from '../../api/schedule-a-trip';
 import type { Customer } from '../../api/users';
 import { round2 } from '../../domain/charge-amount';
 import {
+  isSettledInvoiceStatus,
   prepaymentStatus,
   type ListTab,
   type PrepaymentStatus,
@@ -398,8 +399,8 @@ const NOT_REFUNDABLE_STATUSES = new Set(['REFUNDED', 'CANCELLED']);
 /**
  * The actions of a row. Never a money action without a document (except the first charge of an
  * upcoming booking, protected by the claim), never any action on archived data, never a
- * prepayment for a business profile. The invoice status read is the one cached in the document:
- * the dialogs check the live one before any call.
+ * prepayment for a business profile, never a retry of a paid or refunded invoice. The invoice status
+ * read is the one cached in the document: the dialogs check the live one before any call.
  *
  * @param row - Booking, tab, document and customer.
  * @param now - The current date.
@@ -424,7 +425,7 @@ export function rowActions(row: RowInput, now: Date): RowActions {
       primaryDisabled = eligibility.kind === 'loading';
     } else if (value?.invoiceId) {
       if (status !== null && RETRYABLE_STATUSES.has(status)) primary = 'retry';
-      else menu.push('retry');
+      else if (!isSettledInvoiceStatus(status)) menu.push('retry');
     }
   } else if (tab === 'cancelled' && value?.invoiceId) {
     const progress = refundProgress(value);
@@ -433,7 +434,7 @@ export function rowActions(row: RowInput, now: Date): RowActions {
     } else if (!progress.refunded && (status === null || !NOT_REFUNDABLE_STATUSES.has(status))) {
       primary = 'refund';
     }
-  } else if (value?.invoiceId) {
+  } else if (value?.invoiceId && !isSettledInvoiceStatus(status)) {
     menu.push('retry');
   }
 

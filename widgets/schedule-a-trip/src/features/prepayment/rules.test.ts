@@ -246,11 +246,20 @@ describe('rowActions', () => {
     expect(rowActions(row({ state: claimed, tab: 'cancelled' }), NOW).primary).toBe('verify');
   });
 
-  it('offers the retry first after a failed payment, in the menu otherwise', () => {
+  it('offers the retry first after a failed payment, in the menu while the status can change', () => {
     const charged = { chargeStartedAt: NOW.toISOString(), invoiceId: 'i-1' };
     expect(rowActions(row({ state: doc({ ...charged, invoiceStatus: 'REFUSED' }) }), NOW).primary).toBe('retry');
-    expect(rowActions(row({ state: doc({ ...charged, invoiceStatus: 'PAID' }) }), NOW)).toEqual({ primary: null, menu: ['retry', 'notes'], primaryDisabled: false });
+    expect(rowActions(row({ state: doc({ ...charged, invoiceStatus: 'PENDING' }) }), NOW)).toEqual({ primary: null, menu: ['retry', 'notes'], primaryDisabled: false });
     expect(rowActions(row({ tab: 'ongoing', state: doc(charged) }), NOW).menu).toEqual(['retry', 'notes']);
+  });
+
+  it('never offers the retry of a paid or refunded invoice', () => {
+    const charged = { chargeStartedAt: NOW.toISOString(), invoiceId: 'i-1' };
+    for (const invoiceStatus of ['PAID', 'REFUNDED']) {
+      expect(rowActions(row({ state: doc({ ...charged, invoiceStatus }) }), NOW)).toEqual({ primary: null, menu: ['notes'], primaryDisabled: false });
+      expect(rowActions(row({ tab: 'ongoing', state: doc({ ...charged, invoiceStatus }) }), NOW).menu).toEqual(['notes']);
+      expect(rowActions(row({ tab: 'completed', state: doc({ ...charged, invoiceStatus }) }), NOW).menu).toEqual(['notes']);
+    }
   });
 
   it('offers no money action on a cancelled booking without a document', () => {

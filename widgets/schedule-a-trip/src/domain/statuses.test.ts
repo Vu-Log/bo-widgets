@@ -3,6 +3,7 @@ import {
   aimaStatusOfTab,
   canRetryPayment,
   creditsStatus,
+  isSettledInvoiceStatus,
   LIST_TABS,
   prepaymentStatus,
   tabOfBooking,
@@ -101,6 +102,20 @@ describe('canRetryPayment', () => {
     expect(canRetryPayment('PAID')).toBe(false);
     expect(canRetryPayment('MOP_MISSING')).toBe(false);
     expect(canRetryPayment(null)).toBe(false);
+  });
+});
+
+describe('isSettledInvoiceStatus', () => {
+  it('trusts PAID and REFUNDED only', () => {
+    expect(isSettledInvoiceStatus('PAID')).toBe(true);
+    expect(isSettledInvoiceStatus('REFUNDED')).toBe(true);
+    expect(isSettledInvoiceStatus('PENDING')).toBe(false);
+    expect(isSettledInvoiceStatus('REFUSED')).toBe(false);
+  });
+
+  it('does not trust an unknown status', () => {
+    expect(isSettledInvoiceStatus(undefined)).toBe(false);
+    expect(isSettledInvoiceStatus(null)).toBe(false);
   });
 });
 
