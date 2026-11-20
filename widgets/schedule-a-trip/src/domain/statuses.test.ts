@@ -3,6 +3,7 @@ import {
   aimaStatusOfTab,
   canRetryPayment,
   creditsStatus,
+  isSettledInvoice,
   LIST_TABS,
   prepaymentStatus,
   tabOfBooking,
@@ -101,6 +102,27 @@ describe('canRetryPayment', () => {
     expect(canRetryPayment('PAID')).toBe(false);
     expect(canRetryPayment('MOP_MISSING')).toBe(false);
     expect(canRetryPayment(null)).toBe(false);
+  });
+});
+
+describe('isSettledInvoice', () => {
+  it('trusts a stored PAID or REFUNDED only', () => {
+    expect(isSettledInvoice({ invoiceStatus: 'PAID' })).toBe(true);
+    expect(isSettledInvoice({ invoiceStatus: 'REFUNDED' })).toBe(true);
+    expect(isSettledInvoice({ invoiceStatus: 'PENDING' })).toBe(false);
+    expect(isSettledInvoice({ invoiceStatus: 'REFUSED' })).toBe(false);
+  });
+
+  it('no longer trusts a PAID once a refund was started or made', () => {
+    expect(isSettledInvoice({ invoiceStatus: 'PAID', refundStartedAt: '2026-11-19T10:00:00.000Z' })).toBe(false);
+    expect(isSettledInvoice({ invoiceStatus: 'PAID', refundedAt: '2026-11-19T10:00:00.000Z' })).toBe(false);
+    expect(isSettledInvoice({ invoiceStatus: 'REFUNDED', refundedAt: '2026-11-19T10:00:00.000Z' })).toBe(true);
+  });
+
+  it('does not trust a missing state or status', () => {
+    expect(isSettledInvoice(undefined)).toBe(false);
+    expect(isSettledInvoice(null)).toBe(false);
+    expect(isSettledInvoice({ invoiceStatus: null })).toBe(false);
   });
 });
 

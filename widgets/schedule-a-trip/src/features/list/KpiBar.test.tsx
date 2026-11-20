@@ -12,7 +12,7 @@ describe('KpiBar', () => {
   let unmount: (() => void) | undefined;
   afterEach(() => unmount?.());
 
-  it('shows each KPI with its count when known, the active one pressed', async () => {
+  it('shows each KPI with its count when known, a dash otherwise, the active one pressed', async () => {
     const onSelect = vi.fn();
     const view = await renderInWidget(
       <KpiBar kpis={kpis} counts={new Map([['a', 3]])} activeId="b" onSelect={onSelect} />,
@@ -21,10 +21,23 @@ describe('KpiBar', () => {
     await vi.waitFor(() => expect(view.container.querySelectorAll('button')).toHaveLength(2));
     const [a, b] = [...view.container.querySelectorAll('button')];
     expect(a?.textContent).toBe('3To prepay');
-    expect(b?.textContent).toBe('Failed');
+    expect(b?.textContent).toBe('–Failed');
+    // The dash is explained in a description: the name of the tile stays its label.
+    expect(b?.getAttribute('aria-label')).toBeNull();
+    expect(a?.getAttribute('aria-pressed')).toBe('false');
     expect(b?.getAttribute('aria-pressed')).toBe('true');
     a?.click();
     expect(onSelect).toHaveBeenCalledWith(kpis[0]);
+  });
+
+  it('keeps the same tile when its count arrives, so that it keeps the focus', async () => {
+    const view = await renderInWidget(<KpiBar kpis={kpis} counts={new Map()} activeId={null} onSelect={vi.fn()} />);
+    unmount = view.unmount;
+    await vi.waitFor(() => expect(view.container.querySelectorAll('button')).toHaveLength(2));
+    const before = view.container.querySelector('button');
+    view.rerender(<KpiBar kpis={kpis} counts={new Map([['a', 4]])} activeId={null} onSelect={vi.fn()} />);
+    await vi.waitFor(() => expect(view.container.querySelector('button')?.textContent).toBe('4To prepay'));
+    expect(view.container.querySelector('button')).toBe(before);
   });
 
   it('shows nothing without KPI', async () => {

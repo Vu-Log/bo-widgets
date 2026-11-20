@@ -191,11 +191,16 @@ describe('the write flows in the section', () => {
     const view = await renderInWidget(<BookingSection />, bo.api);
     unmount = view.unmount;
     const row = () => view.container.querySelector<HTMLElement>('[data-row-id="booking-1"]');
-    await vi.waitFor(() => expect(buttonNamed('Pre-allocate a vehicle', row() ?? undefined)).toBeDefined());
+    await vi.waitFor(() => expect(buttonNamed('Pre-allocate', row() ?? undefined)).toBeDefined());
 
-    buttonNamed('Pre-allocate a vehicle', row()!)?.click();
-    await vi.waitFor(() => expect(buttonNamed('Pre-allocate')).toBeDefined());
-    buttonNamed('Pre-allocate')?.click();
+    buttonNamed('Pre-allocate', row()!)?.click();
+    // The row button now reads « Pre-allocate » too: the confirm button is the one of the dialog.
+    const confirm = () => {
+      const dialog = document.body.querySelector<HTMLElement>('[role="dialog"]');
+      return dialog ? buttonNamed('Pre-allocate', dialog) : undefined;
+    };
+    await vi.waitFor(() => expect(confirm()).toBeDefined());
+    confirm()?.click();
 
     await vi.waitFor(() => expect(row()?.textContent).toContain('AA-001-AApre-allocated'));
     expect(writes.map((call) => call.path)).toEqual(['fleetmanager/public/fleets/FLEET-1/vehicles/near/disable']);

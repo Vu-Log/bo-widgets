@@ -2,6 +2,7 @@ import { Badge, Tab, Tabs } from '@mui/material';
 import { useQueries, useQuery } from '@tanstack/react-query';
 import { useAuthFetch } from '@vulog/bo-widget-react';
 import { useMemo } from 'react';
+import { MAX_BOOKING_PAGE_SIZE } from '../../api/schedule-a-trip';
 import { LIST_TABS, tabOfBooking, type ListTab } from '../../domain/statuses';
 import { useI18n } from '../../i18n';
 import {
@@ -18,9 +19,11 @@ export const tabId = (tab: ListTab) => `schedule-a-trip-tab-${tab}`;
 export const panelId = (tab: ListTab) => `schedule-a-trip-panel-${tab}`;
 
 /**
- * The number of bookings of each tab, when known: from the API totals for Alert, Upcoming and
- * Cancelled; from the bookings already loaded for Ongoing; never for Completed (the API gives the
- * total of `CONFIRMED` only).
+ * The number of bookings of each tab, when known. The API gives a total per AIMA status only (the
+ * `totalelements` header): read with a page of one row for Alert, Upcoming and Cancelled. Ongoing
+ * and Completed share `CONFIRMED`: they are counted from the one read of the `CONFIRMED` bookings
+ * and the trips in progress (shared with the Ongoing tab), Completed only when that read holds
+ * every `CONFIRMED` booking.
  *
  * @param fleetId - The fleet.
  * @returns The count by tab, `null` when unknown.
@@ -30,20 +33,26 @@ export function useTabCounts(fleetId: string): Readonly<Record<ListTab, number |
   const counts = useQueries({
     queries: COUNTED_TABS.map((tab) => bookingCountQueryOptions(authFetch, fleetId, tab)),
   });
-  // Read from the cache only: the Ongoing tab loads them.
-  const confirmed = useQuery({ ...confirmedBookingsQueryOptions(authFetch, fleetId), enabled: false });
-  const trips = useQuery({ ...tripsInProgressQueryOptions(authFetch, fleetId), enabled: false });
-  const ongoing = useMemo(() => {
-    if (!confirmed.data || !trips.data) return null;
+  const confirmed = useQuery(confirmedBookingsQueryOptions(authFetch, fleetId));
+  const trips = useQuery(tripsInProgressQueryOptions(authFetch, fleetId));
+  const split = useMemo(() => {
+    if (!confirmed.data || !trips.data) return { ongoing: null, completed: null };
     const ids = new Set(trips.data.map((trip) => trip.tripId));
-    return confirmed.data.items.filter((booking) => tabOfBooking(booking, ids) === 'ongoing').length;
+    const tabs = confirmed.data.items.map((booking) => tabOfBooking(booking, ids));
+    const total = confirmed.data.totalElements;
+    // Without a total, a full page may hide more bookings.
+    const whole =
+      total === null ? confirmed.data.items.length < MAX_BOOKING_PAGE_SIZE : total <= confirmed.data.items.length;
+    return {
+      ongoing: tabs.filter((tab) => tab === 'ongoing').length,
+      completed: whole ? tabs.filter((tab) => tab === 'completed').length : null,
+    };
   }, [confirmed.data, trips.data]);
   return {
     alert: counts[0]?.data ?? null,
     upcoming: counts[1]?.data ?? null,
     cancelled: counts[2]?.data ?? null,
-    ongoing,
-    completed: null,
+    ...split,
   };
 }
 

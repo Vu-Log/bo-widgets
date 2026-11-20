@@ -85,7 +85,8 @@ describe('VehiclePickerDialog', () => {
     expect(document.body.textContent).not.toContain('AA-003-AA');
     expect(document.body.textContent).toContain('Energy 80 %');
     expect(document.body.querySelectorAll('[data-marker]')).toHaveLength(2);
-    buttonNamed('10 closest outside')?.click();
+    expect(document.body.textContent).toContain('Outside the radius (1)');
+    buttonNamed('Outside the radius (1)')?.click();
     await vi.waitFor(() => expect(document.body.textContent).toContain('AA-002-AA'));
     expect(document.body.querySelector('ul[aria-label]')?.textContent).not.toContain('AA-001-AA');
   });

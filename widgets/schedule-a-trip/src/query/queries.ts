@@ -105,7 +105,7 @@ export const bookingPagesQueryOptions = (
  *
  * @param authFetch - `useAuthFetch()`.
  * @param fleetId - The fleet.
- * @param userIds - The ids of the visible rows.
+ * @param userIds - The ids of a batch: the customers of a page of bookings not asked for yet.
  * @returns Options for `useQuery`.
  */
 export const customersQueryOptions = (

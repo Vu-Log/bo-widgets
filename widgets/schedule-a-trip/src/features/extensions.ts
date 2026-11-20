@@ -19,7 +19,7 @@ export interface BookingContext {
  * list and the drawer show it next to the disabled action (a tooltip, or the second line of a menu
  * item). A reason implies `disabled`.
  */
-export interface BookingAction { id: string; label: string; run: (ctx: BookingContext) => void; disabled?: boolean; disabledReason?: string; tone?: 'primary' | 'default' | 'danger' }
+export interface BookingAction { id: string; label: string; /** Shorter label of the primary row button, also its accessible name; the full `label` is its tooltip. */ shortLabel?: string; run: (ctx: BookingContext) => void; disabled?: boolean; disabledReason?: string; tone?: 'primary' | 'default' | 'danger' }
 export interface BookingFilter { id: string; label: string; tabs: ListTab[]; test: (ctx: BookingContext) => boolean; needsAllPages: boolean }
 export interface BookingKpi { id: string; label: string; tab: ListTab; filterId: string; tone: 'warn' | 'err' | 'info' }
 /**
@@ -28,10 +28,15 @@ export interface BookingKpi { id: string; label: string; tab: ListTab; filterId:
  * render shows the failure). The drawer ignores a preload that rejects anyway.
  */
 export interface DetailCard { id: string; order: number; render: (ctx: BookingContext) => ReactNode; preload?: () => Promise<void> }
+/**
+ * A column of the list. `hiddenByDefault`: shown only once the operator picks it in the Columns
+ * menu (a column for some operators only, or too wide for the default set).
+ */
+export type BookingColumn = ListGridColumn<BookingContext> & { readonly hiddenByDefault?: boolean };
 /** A feature plugs columns, actions, filters, KPIs and detail cards into the list and the drawer. */
 export interface BookingFeature {
   id: string;
-  columns?: (tab: ListTab) => ListGridColumn<BookingContext>[];
+  columns?: (tab: ListTab) => BookingColumn[];
   primaryAction?: (ctx: BookingContext) => BookingAction | null;
   menuActions?: (ctx: BookingContext) => BookingAction[];
   filters?: BookingFilter[];

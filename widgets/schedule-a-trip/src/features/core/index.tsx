@@ -2,10 +2,9 @@ import { differenceInHours } from 'date-fns';
 import type { ReactNode } from 'react';
 import type { ListTab } from '../../domain/statuses';
 import type { MessageKey, MessageParams } from '../../i18n';
-import type { ListGridColumn } from '../../ui/ListGrid';
-import type { BookingContext, BookingFeature } from '../extensions';
+import type { BookingColumn, BookingContext, BookingFeature } from '../extensions';
 import { lazyModule } from '../../ui/lazy';
-import { CustomerCell, DateCell, ModelCell, VehicleCell } from './cells';
+import { CustomerCell, DateCell, ModelCell, ShortDateCell, VehicleCell } from './cells';
 
 // The cards of the drawer: one chunk, loaded with the drawer (`DetailCard.preload`).
 const cards = lazyModule('core-cards', () => import('./cards'));
@@ -26,7 +25,7 @@ export interface CoreFeatureDeps {
 }
 
 /** Ids of the core columns hidden until the operator shows them. */
-export const HIDDEN_CORE_COLUMNS: readonly string[] = ['id', 'created', 'radius', 'coordinates'];
+export const HIDDEN_CORE_COLUMNS: readonly string[] = ['id', 'created', 'radius', 'coordinates', 'failureReason'];
 
 /** Whether a booking has neither an allocated nor a pre-allocated vehicle. */
 export const hasNoVehicle = (ctx: BookingContext): boolean =>
@@ -35,10 +34,10 @@ export const hasNoVehicle = (ctx: BookingContext): boolean =>
 /** A booking leaving within this many hours without a vehicle is flagged. */
 export const NO_VEHICLE_SOON_HOURS = 24;
 
-const coreColumns = (tab: ListTab, deps: CoreFeatureDeps): ListGridColumn<BookingContext>[] => {
+const coreColumns = (tab: ListTab, deps: CoreFeatureDeps): BookingColumn[] => {
   const { t, sortHeader } = deps;
   const upcoming = tab === 'alert' || tab === 'upcoming';
-  const columns: (ListGridColumn<BookingContext> | false)[] = [
+  const columns: (BookingColumn | false)[] = [
     {
       id: 'id',
       header: sortHeader('id', t('column.id')),
@@ -56,7 +55,7 @@ const coreColumns = (tab: ListTab, deps: CoreFeatureDeps): ListGridColumn<Bookin
       header: sortHeader('plannedReturnDate', t('column.plannedReturn')),
       width: '150px',
       render: (ctx) => (
-        <DateCell value={ctx.booking.plannedReturnDate} empty={t('trip.noReturnDate')} />
+        <ShortDateCell value={ctx.booking.plannedReturnDate} empty={t('trip.noReturnDate')} />
       ),
     },
     tab === 'cancelled' && {
@@ -80,7 +79,7 @@ const coreColumns = (tab: ListTab, deps: CoreFeatureDeps): ListGridColumn<Bookin
     {
       id: 'vehicle',
       header: t('column.vehicle'),
-      width: '140px',
+      width: '120px',
       render: (ctx) => <VehicleCell ctx={ctx} />,
     },
     {
@@ -112,7 +111,9 @@ const coreColumns = (tab: ListTab, deps: CoreFeatureDeps): ListGridColumn<Bookin
       render: (ctx) => <DateCell value={ctx.booking.creationDate} empty={t('common.none')} />,
     },
   ];
-  return columns.filter((column): column is ListGridColumn<BookingContext> => column !== false);
+  return columns
+    .filter((column): column is BookingColumn => column !== false)
+    .map((column) => (HIDDEN_CORE_COLUMNS.includes(column.id) ? { ...column, hiddenByDefault: true } : column));
 };
 
 /**

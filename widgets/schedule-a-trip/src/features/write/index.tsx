@@ -117,6 +117,7 @@ export function writeActions(ctx: BookingContext, deps: WriteFeatureDeps): Booki
     canPreallocate(ctx, now) && {
       id: 'preallocate',
       label: preallocated ? t('write.changePreallocation') : t('write.preallocate'),
+      shortLabel: preallocated ? t('write.changePreallocationShort') : t('write.preallocateShort'),
       run: open('preallocate'),
       ...preallocationBlock(ctx, t),
     },

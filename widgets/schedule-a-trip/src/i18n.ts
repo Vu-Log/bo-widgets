@@ -226,6 +226,12 @@ export interface I18n {
   readonly formatDateInZone: (date: Date, pattern: string, timeZone: string | null) => string;
   /** How far a date is from now, in words: "in 2 hours", "3 days ago". */
   readonly formatRelative: (date: Date, now: Date) => string;
+  /**
+   * A day, a month and a time, without the year, in the order of the locale of the BO ("20/11
+   * 14:15" in French, "11/20, 02:15 PM" in American English): a compact date for a list. In the
+   * time zone of the browser when `timeZone` is `null`.
+   */
+  readonly formatShortDateTime: (date: Date, timeZone: string | null) => string;
 }
 
 const bcp47 = (boLocale: string | null, language: Language): string => {
@@ -266,6 +272,14 @@ export function createI18n(boLocale: string | null): I18n {
         : formatInTimeZone(date, timeZone, pattern, { locale: dateLocale }),
     formatRelative: (date, now) =>
       formatDistance(date, now, { addSuffix: true, locale: dateLocale }),
+    formatShortDateTime: (date, timeZone) =>
+      new Intl.DateTimeFormat(locale, {
+        day: '2-digit',
+        month: '2-digit',
+        hour: '2-digit',
+        minute: '2-digit',
+        ...(timeZone === null ? {} : { timeZone }),
+      }).format(date),
   };
 }
 

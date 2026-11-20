@@ -36,6 +36,9 @@ describe('createPrepaymentFeature', () => {
     expect(ids('completed')).toEqual(ids('ongoing'));
     expect(ids('cancelled')).toEqual(['prepayment.status', 'prepayment.credits', 'prepayment.regularization']);
     expect(prepaymentFeature.columns?.('upcoming')[0]).toMatchObject({ header: 'Amount', align: 'right' });
+    // The internal notes are shown from the Columns menu only.
+    const hidden = prepaymentFeature.columns?.('upcoming').filter((column) => column.hiddenByDefault);
+    expect(hidden?.map((column) => column.id)).toEqual(['prepayment.notes']);
   });
 
   it('gives the primary action and the menu, which open their dialog', () => {

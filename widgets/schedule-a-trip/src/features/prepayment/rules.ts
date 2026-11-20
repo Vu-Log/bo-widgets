@@ -6,6 +6,7 @@ import type { ScheduledBooking } from '../../api/schedule-a-trip';
 import type { Customer } from '../../api/users';
 import { round2 } from '../../domain/charge-amount';
 import {
+  isSettledInvoice,
   prepaymentStatus,
   type ListTab,
   type PrepaymentStatus,
@@ -391,15 +392,16 @@ export interface RowInput {
 }
 
 const NONE: RowActions = { primary: null, menu: [], primaryDisabled: false };
-const UPCOMING_TABS: readonly ListTab[] = ['upcoming', 'alert'];
+/** The tabs where a booking can still be prepaid. */
+export const UPCOMING_TABS: readonly ListTab[] = ['upcoming', 'alert'];
 const RETRYABLE_STATUSES = new Set(['REFUSED', 'ERROR']);
 const NOT_REFUNDABLE_STATUSES = new Set(['REFUNDED', 'CANCELLED']);
 
 /**
  * The actions of a row. Never a money action without a document (except the first charge of an
  * upcoming booking, protected by the claim), never any action on archived data, never a
- * prepayment for a business profile. The invoice status read is the one cached in the document:
- * the dialogs check the live one before any call.
+ * prepayment for a business profile, never a retry of a paid or refunded invoice. The invoice status
+ * read is the one cached in the document: the dialogs check the live one before any call.
  *
  * @param row - Booking, tab, document and customer.
  * @param now - The current date.
@@ -424,7 +426,7 @@ export function rowActions(row: RowInput, now: Date): RowActions {
       primaryDisabled = eligibility.kind === 'loading';
     } else if (value?.invoiceId) {
       if (status !== null && RETRYABLE_STATUSES.has(status)) primary = 'retry';
-      else menu.push('retry');
+      else if (!isSettledInvoice(value)) menu.push('retry');
     }
   } else if (tab === 'cancelled' && value?.invoiceId) {
     const progress = refundProgress(value);
@@ -433,7 +435,7 @@ export function rowActions(row: RowInput, now: Date): RowActions {
     } else if (!progress.refunded && (status === null || !NOT_REFUNDABLE_STATUSES.has(status))) {
       primary = 'refund';
     }
-  } else if (value?.invoiceId) {
+  } else if (value?.invoiceId && !isSettledInvoice(value)) {
     menu.push('retry');
   }
 

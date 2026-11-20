@@ -5,6 +5,7 @@ import type { ScheduledBooking } from '../../api/schedule-a-trip';
 import { MAX_USER_IDS, type Customer } from '../../api/users';
 import type { ListTab } from '../../domain/statuses';
 import {
+  BOOKING_PAGE_SIZE,
   bookingStateQueryOptions,
   customersQueryOptions,
   fleetBookingStatesQueryOptions,
@@ -44,10 +45,11 @@ interface CustomerBatches {
 }
 
 /**
- * Loads the customers by batches of at most 100 ids: each id is asked for once, in the batch of the
- * rows that made it visible, so the keys of the batches stay the same while scrolling.
+ * Loads the customers by batches: one batch per page of bookings, with the ids no earlier batch
+ * asked for (at most {@link MAX_USER_IDS}). Each id is asked for once, and the keys of the batches
+ * stay the same while pages are added.
  */
-function useCustomerBatches(fleetId: string, wanted: readonly string[]): CustomerBatches {
+function useCustomerBatches(fleetId: string, pages: readonly (readonly string[])[]): CustomerBatches {
   const authFetch = useAuthFetch();
   const [batches, setBatches] = useState<{ fleetId: string; ids: string[][] }>({ fleetId, ids: [] });
   const current = batches.fleetId === fleetId ? batches.ids : [];
@@ -56,11 +58,16 @@ function useCustomerBatches(fleetId: string, wanted: readonly string[]): Custome
     setBatches((previous) => {
       const ids = previous.fleetId === fleetId ? previous.ids : [];
       const requested = new Set(ids.flat());
-      const fresh = [...new Set(wanted)].filter((id) => !requested.has(id));
-      if (fresh.length === 0 && previous.fleetId === fleetId) return previous;
-      return { fleetId, ids: [...ids, ...chunk(fresh, MAX_USER_IDS)] };
+      const added: string[][] = [];
+      for (const page of pages) {
+        const fresh = [...new Set(page)].filter((id) => !requested.has(id));
+        fresh.forEach((id) => requested.add(id));
+        added.push(...chunk(fresh, MAX_USER_IDS));
+      }
+      if (added.length === 0 && previous.fleetId === fleetId) return previous;
+      return { fleetId, ids: [...ids, ...added] };
     });
-  }, [fleetId, wanted]);
+  }, [fleetId, pages]);
 
   const combine = useCallback(
     (results: UseQueryResult<readonly Customer[]>[]) => {
@@ -140,26 +147,24 @@ function useStates(fleetId: string, bookingIds: readonly string[]) {
 
 /**
  * The context of each booking of a tab: the booking, its stored state and its customer. The
- * customers are loaded for the visible rows only, or for every row when `allCustomers` (a search
- * by name needs them).
+ * customers are loaded page by page, as the pages of the tab arrive: one call per page of
+ * {@link BOOKING_PAGE_SIZE} bookings, with the customers not asked for yet.
  *
- * @param input - Fleet, tab, bookings, ids of the visible rows, and whether every customer is needed.
+ * @param input - Fleet, tab and bookings (in the order of their pages).
  * @returns The contexts and the state of their extra data.
  */
 export function useBookingContexts(input: {
   readonly fleetId: string;
   readonly tab: ListTab;
   readonly bookings: readonly ScheduledBooking[];
-  readonly visibleIds: ReadonlySet<string>;
-  readonly allCustomers: boolean;
 }): BookingContexts {
-  const { fleetId, tab, bookings, visibleIds, allCustomers } = input;
+  const { fleetId, tab, bookings } = input;
   const wanted = useMemo(
     () =>
-      bookings.flatMap((booking) =>
-        booking.userId && (allCustomers || visibleIds.has(booking.id)) ? [booking.userId] : [],
+      chunk(bookings, BOOKING_PAGE_SIZE).map((page) =>
+        page.flatMap((booking) => (booking.userId ? [booking.userId] : [])),
       ),
-    [bookings, visibleIds, allCustomers],
+    [bookings],
   );
   const customers = useCustomerBatches(fleetId, wanted);
   const bookingIds = useMemo(() => bookings.map((booking) => booking.id), [bookings]);

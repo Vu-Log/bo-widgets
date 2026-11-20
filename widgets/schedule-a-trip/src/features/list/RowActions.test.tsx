@@ -54,6 +54,20 @@ describe('RowActions', () => {
     await vi.waitFor(() => expect(document.body.querySelectorAll('[role="menuitem"]')).toHaveLength(0));
   });
 
+  it('shows the short label on the row button as its name, and the full one in its tooltip', async () => {
+    const short: BookingFeature[] = [
+      { id: 'write', primaryAction: () => ({ id: 'preallocate', label: 'Pre-allocate a vehicle', shortLabel: 'Pre-allocate', run }) },
+    ];
+    const view = await renderInWidget(<RowActions ctx={context()} features={short} />);
+    unmount = view.unmount;
+    await vi.waitFor(() => expect(view.container.textContent).toContain('Pre-allocate'));
+    const button = [...view.container.querySelectorAll('button')].find((b) => b.textContent === 'Pre-allocate');
+    expect(button?.hasAttribute('aria-label')).toBe(false);
+    expect(button?.getAttribute('title')).toBe('Pre-allocate a vehicle');
+    button?.click();
+    expect(run).toHaveBeenCalledTimes(1);
+  });
+
   it('shows a disabled primary action as such, and no button without one', async () => {
     const view = await renderInWidget(
       <RowActions

@@ -20,18 +20,31 @@ const bookings: ScheduledBooking[] = [
   booking({ id: 'b-3', userId: null }),
 ];
 
-async function run(api: object, visible: string[], allCustomers = false) {
+async function run(api: object, rows: readonly ScheduledBooking[] = bookings) {
   const seen: BookingContexts[] = [];
-  function Probe({ ids }: { ids: string[] }) {
-    seen.push(
-      useBookingContexts({ fleetId: 'FLEET-1', tab: 'upcoming', bookings, visibleIds: new Set(ids), allCustomers }),
-    );
+  function Probe({ list }: { list: readonly ScheduledBooking[] }) {
+    seen.push(useBookingContexts({ fleetId: 'FLEET-1', tab: 'upcoming', bookings: list }));
     return null;
   }
-  const view = await renderInWidget(<Probe ids={visible} />, api);
+  const view = await renderInWidget(<Probe list={rows} />, api);
   unmount = view.unmount;
-  return { latest: () => seen.at(-1)!, seen, rerender: (ids: string[]) => view.rerender(<Probe ids={ids} />) };
+  return {
+    latest: () => seen.at(-1)!,
+    seen,
+    rerender: (list: readonly ScheduledBooking[]) => view.rerender(<Probe list={list} />),
+  };
 }
+
+const usersListBodies = (fetch: ReturnType<typeof stubVulogApi>) =>
+  fetch.mock.calls
+    .filter(([input]) => String(input).includes('users/list'))
+    .map(([, init]) => JSON.parse(String(init?.body)) as string[]);
+
+/** `count` bookings from `b-{from}`, each with its own customer `user-{n}`. */
+const manyBookings = (from: number, count: number, userOf = (n: number) => `user-${n}`) =>
+  Array.from({ length: count }, (_, index) =>
+    booking({ id: `b-${from + index}`, userId: userOf(from + index) }),
+  );
 
 describe('chunk', () => {
   it('splits in chunks of a size, the last one shorter', () => {
@@ -41,21 +54,21 @@ describe('chunk', () => {
 });
 
 describe('useBookingContexts', () => {
-  it('loads the customers of the visible rows, the states of the fleet, and keeps the contexts', async () => {
+  it('loads the customers of the page, the states of the fleet, and keeps the contexts', async () => {
     const fetch = stubVulogApi(fleetApi({}));
     const bo = fakeBo();
     const seeding = await connect({ vulogBo: bo.api });
     await createBookingState(bookingsCollection(seeding.storage), 'b-2', { fleetId: 'FLEET-1' });
     seeding.disconnect();
 
-    const { latest, rerender } = await run(bo.api, ['b-1']);
+    const { latest, rerender } = await run(bo.api);
 
-    await vi.waitFor(() => expect(latest().contexts[0]?.customer?.id).toBe('user-1'));
+    await vi.waitFor(() => expect(latest().contexts[1]?.customer?.id).toBe('user-2'));
     await vi.waitFor(() => expect(latest().contexts[1]?.state?.id).toBe('b-2'));
+    expect(latest().contexts[0]?.customer?.id).toBe('user-1');
     expect(latest().contexts[0]?.state).toBeNull();
-    expect(latest().contexts[1]?.customer).toBeUndefined();
     expect(latest().customerStatus('user-1')).toBe('ok');
-    expect(latest().customerStatus('user-2')).toBe('loading');
+    expect(latest().customerStatus('user-9')).toBe('loading');
     expect(latest().customerStatus(null)).toBe('missing');
     const first = latest().contexts[0];
     expect(Object.isFrozen(first)).toBe(true);
@@ -63,24 +76,37 @@ describe('useBookingContexts', () => {
       (first as { tab: string }).tab = 'alert';
     }).toThrow(TypeError);
 
-    rerender(['b-1', 'b-2']);
-    await vi.waitFor(() => expect(latest().contexts[1]?.customer?.id).toBe('user-2'));
+    rerender([...bookings]);
     expect(latest().contexts[0]).toBe(first);
-    const bodies = fetch.mock.calls.filter(([input]) => String(input).includes('users/list')).map(([, init]) => init?.body);
-    expect(bodies).toEqual(['["user-1"]', '["user-2"]']);
+    // One call for the page, whatever the rows shown.
+    expect(usersListBodies(fetch)).toEqual([['user-1', 'user-2']]);
   });
 
-  it('loads every customer with allCustomers', async () => {
+  it('asks for the customers once per page of 50 bookings, each customer once', async () => {
     const fetch = stubVulogApi(fleetApi({}));
-    const { latest } = await run(fakeBo().api, [], true);
-    await vi.waitFor(() => expect(latest().contexts[1]?.customer?.id).toBe('user-2'));
-    expect(fetch.mock.calls.find(([input]) => String(input).includes('users/list'))?.[1]?.body).toBe('["user-1","user-2"]');
+    // The second page repeats the customer of b-1, the third has the customers of the first page only.
+    const first = manyBookings(1, 50);
+    const second = [booking({ id: 'b-51', userId: 'user-1' }), ...manyBookings(52, 49)];
+    const { latest, rerender } = await run(fakeBo().api, first);
+    await vi.waitFor(() => expect(latest().customerStatus('user-50')).toBe('ok'));
+    expect(usersListBodies(fetch)).toEqual([first.map((row) => row.userId)]);
+
+    rerender([...first, ...second]);
+    await vi.waitFor(() => expect(latest().customerStatus('user-100')).toBe('ok'));
+    const third = manyBookings(101, 10, (n) => `user-${n - 100}`);
+    rerender([...first, ...second, ...third]);
+
+    await vi.waitFor(() => expect(latest().contexts[109]?.customer?.id).toBe('user-10'));
+    const bodies = usersListBodies(fetch);
+    expect(bodies).toHaveLength(2);
+    expect(bodies[1]).toEqual(manyBookings(52, 49).map((row) => row.userId));
+    expect(bodies.every((ids) => ids.length <= 50)).toBe(true);
   });
 
   it('marks the customers of a failed batch, and asks again on retry', async () => {
     let fail = true;
     stubVulogApi(fleetApi({}, ({ path }) => (fail && path.endsWith('users/list') ? new Response('', { status: 403 }) : undefined)));
-    const { latest } = await run(fakeBo().api, ['b-1']);
+    const { latest } = await run(fakeBo().api);
     await vi.waitFor(() => expect(latest().customerStatus('user-1')).toBe('error'));
     fail = false;
     latest().retryCustomers();
@@ -89,7 +115,7 @@ describe('useBookingContexts', () => {
 
   it('marks a customer the API does not know as missing', async () => {
     stubVulogApi(fleetApi({}, ({ path }) => (path.endsWith('users/list') ? Response.json([]) : undefined)));
-    const { latest } = await run(fakeBo().api, ['b-1']);
+    const { latest } = await run(fakeBo().api);
     await vi.waitFor(() => expect(latest().customerStatus('user-1')).toBe('missing'));
   });
 
@@ -97,7 +123,7 @@ describe('useBookingContexts', () => {
     stubVulogApi(fleetApi({}));
     const bo = fakeBo();
     bo.storage.api.query.mockRejectedValue(hostError('rate-limited', 429));
-    const { latest } = await run(bo.api, []);
+    const { latest } = await run(bo.api);
     await vi.waitFor(() => expect(latest().statesError).not.toBeNull());
     expect(latest().contexts[0]?.state).toBeUndefined();
     bo.storage.api.query.mockResolvedValue({ items: [], nextCursor: null });
@@ -115,7 +141,7 @@ describe('useBookingContexts, over time', () => {
     seeding.disconnect();
     let latest: BookingContexts | undefined;
     function Probe() {
-      latest = useBookingContexts({ fleetId: 'FLEET-1', tab: 'upcoming', bookings, visibleIds: new Set(), allCustomers: false });
+      latest = useBookingContexts({ fleetId: 'FLEET-1', tab: 'upcoming', bookings });
       return null;
     }
     const view = await renderInWidget(<Probe />, bo.api);
@@ -134,7 +160,7 @@ describe('useBookingContexts, over time', () => {
     await bo.storage.api.set('bookings', 'b-1', { schemaVersion: 99, fleetId: 'FLEET-1', allocationProcessed: false });
     let latest: BookingContexts | undefined;
     function Probe() {
-      latest = useBookingContexts({ fleetId: 'FLEET-1', tab: 'upcoming', bookings, visibleIds: new Set(), allCustomers: false });
+      latest = useBookingContexts({ fleetId: 'FLEET-1', tab: 'upcoming', bookings });
       return null;
     }
     const view = await renderInWidget(<Probe />, bo.api);

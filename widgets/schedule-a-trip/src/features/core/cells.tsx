@@ -31,14 +31,43 @@ export function DateCell({ value, empty }: { readonly value: string | null; read
   const exact = formatDateInZone(date, EXACT_DATE, timeZone);
   return (
     <Tooltip title={timeZone ? `${exact} (${timeZone})` : exact}>
-      <Box sx={{ lineHeight: 1.2, overflow: 'hidden', textOverflow: 'ellipsis' }}>
-        <Typography variant="body2" noWrap>
+      {/* Two lines of 1.2 (about 31 px): they fit the row of every density. */}
+      <Box sx={{ overflow: 'hidden', textOverflow: 'ellipsis' }}>
+        <Typography variant="body2" noWrap sx={{ lineHeight: 1.2 }}>
           {formatRelative(date, now)}
         </Typography>
-        <Typography variant="caption" color="text.secondary" noWrap component="div">
+        <Typography variant="caption" color="text.secondary" noWrap component="div" sx={{ lineHeight: 1.2 }}>
           {exact}
         </Typography>
       </Box>
+    </Tooltip>
+  );
+}
+
+/**
+ * A date on one line, compact ("20/11 14:15", in the order of the locale), with the exact date and
+ * the time zone in the tooltip.
+ *
+ * @param props - The ISO date, or `null` for the text shown without one.
+ * @returns The cell.
+ */
+export function ShortDateCell({ value, empty }: { readonly value: string | null; readonly empty: string }) {
+  const { formatDateInZone, formatShortDateTime } = useI18n();
+  const { timeZone } = useSection();
+  if (value === null) {
+    return (
+      <Typography variant="body2" color="text.secondary" noWrap>
+        {empty}
+      </Typography>
+    );
+  }
+  const date = new Date(value);
+  const exact = formatDateInZone(date, EXACT_DATE, timeZone);
+  return (
+    <Tooltip title={timeZone ? `${exact} (${timeZone})` : exact}>
+      <Typography variant="body2" noWrap sx={{ fontVariantNumeric: 'tabular-nums' }}>
+        {formatShortDateTime(date, timeZone)}
+      </Typography>
     </Tooltip>
   );
 }

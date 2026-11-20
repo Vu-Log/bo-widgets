@@ -18,7 +18,6 @@ import { describeError } from '../query/WidgetQueryProvider';
 import { whenIdle } from '../ui/lazy';
 import { ListGrid, type ListGridColumn } from '../ui/ListGrid';
 import { queryErrorText } from './core/common';
-import { HIDDEN_CORE_COLUMNS } from './core';
 import { BookingDrawer, preloadDetail } from './detail/BookingDrawer';
 import { useDetailRoute } from './detail/use-detail-route';
 import type { BookingContext, BookingKpi } from './extensions';
@@ -28,7 +27,7 @@ import { RowActions } from './list/RowActions';
 import { headerText, SortHeader } from './list/SortHeader';
 import { panelId, TabBar, tabId, useTabCounts } from './list/TabBar';
 import { Toolbar } from './list/Toolbar';
-import { useBookingContexts } from './list/use-booking-contexts';
+import { useBookingContexts, type CustomerStatus } from './list/use-booking-contexts';
 import { DEFAULT_SORTS, useTabBookings } from './list/use-tab-bookings';
 import { preloadPrepaymentDialogs } from './prepayment';
 import { useBookingFeatures, type SectionFeature } from './registry';
@@ -66,8 +65,8 @@ export interface BookingSectionProps {
 
 /**
  * The booking section: KPIs, the five tabs with their counts, the toolbar (search, filter chips,
- * density, columns, refresh), the list of the tab loaded page by page with its extra data for the
- * visible rows, the detail drawer of the booking in the URL, and the dialogs of the features. Every
+ * density, columns, refresh), the list of the tab loaded page by page with the customers of each
+ * page, the detail drawer of the booking in the URL, and the dialogs of the features. Every
  * column, action, filter, KPI and card comes from the features of the registry.
  *
  * @param props - Extra actions of the header.
@@ -106,7 +105,6 @@ function FleetSection({
   const [filters, setFilters] = useState(EMPTY_FILTERS);
   const [search, setSearch] = useState('');
   const deferredSearch = useDeferredValue(search.trim());
-  const [visibleIds, setVisibleIds] = useState<ReadonlySet<string>>(new Set());
   const [preferences, setPreferences] = useListPreferences();
   const searchRef = useRef<HTMLInputElement>(null);
   const route = useDetailRoute();
@@ -197,13 +195,7 @@ function FleetSection({
     const known = new Set(tabBookings.bookings.map((booking) => booking.id));
     return [...tabBookings.bookings, ...sourced.bookings.filter((booking) => !known.has(booking.id))];
   }, [tabBookings.bookings, sourced.bookings]);
-  const enrichment = useBookingContexts({
-    fleetId,
-    tab,
-    bookings,
-    visibleIds,
-    allCustomers: deferredSearch !== '',
-  });
+  const enrichment = useBookingContexts({ fleetId, tab, bookings });
   const plateOf = usePlateIndex(fleetId);
 
   const rows = useMemo(
@@ -230,7 +222,7 @@ function FleetSection({
   const columns = useMemo<ListGridColumn<BookingContext>[]>(
     () => [
       ...allColumns.filter((column) =>
-        isColumnShown(preferences.columns, column.id, HIDDEN_CORE_COLUMNS.includes(column.id)),
+        isColumnShown(preferences.columns, column.id, column.hiddenByDefault === true),
       ),
       {
         id: 'actions',
@@ -244,16 +236,20 @@ function FleetSection({
   );
 
   const kpis = useMemo(() => features.flatMap((feature) => feature.kpis ?? []), [features]);
+  const { customerStatus } = enrichment;
   const kpiCounts = useMemo(() => {
     const counts = new Map<string, number>();
-    // A filter that brings its own bookings counts them, whether the pages of the tab are read or not.
+    // A filter that brings its own bookings counts them, whatever the tab shown.
     const sources = features.flatMap((feature) => feature.filterSources ?? []);
     for (const kpi of kpis) {
       const ids = sources.find((source) => source.filterId === kpi.filterId)?.bookingIds;
-      if (kpi.tab === tab && ids) counts.set(kpi.id, new Set(ids).size);
+      if (ids) counts.set(kpi.id, new Set(ids).size);
     }
-    // Without every row, or without their stored states, a count would be wrong: none is shown.
+    // Without every row, with a failed read of the stored states, or with customers still loading or
+    // that could not be read, a count would be wrong: none is shown.
     if (!tabBookings.complete || enrichment.statesError) return counts;
+    const unknownCustomer = (status: CustomerStatus) => status === 'loading' || status === 'error';
+    if (enrichment.contexts.some((ctx) => unknownCustomer(customerStatus(ctx.booking.userId)))) return counts;
     const allFilters = features.flatMap((feature) => feature.filters ?? []);
     for (const kpi of kpis) {
       const filter = allFilters.find((candidate) => candidate.id === kpi.filterId);
@@ -262,7 +258,7 @@ function FleetSection({
       }
     }
     return counts;
-  }, [kpis, features, tab, tabBookings.complete, enrichment.statesError, enrichment.contexts]);
+  }, [kpis, features, tab, tabBookings.complete, enrichment.statesError, enrichment.contexts, customerStatus]);
   const activeKpi =
     kpis.find(
       (kpi) => kpi.tab === tab && filters[tab].length === 1 && filters[tab][0] === kpi.filterId,
@@ -389,20 +385,18 @@ function FleetSection({
         }
         density={preferences.density}
         onDensity={(density) => setPreferences((current) => ({ ...current, density }))}
-        columns={allColumns.map((column) => {
-          const hidden = HIDDEN_CORE_COLUMNS.includes(column.id);
-          return {
-            id: column.id,
-            label: headerText(column.header, column.id),
-            shown: isColumnShown(preferences.columns, column.id, hidden),
-          };
-        })}
-        onToggleColumn={(id, shown) =>
+        columns={allColumns.map((column) => ({
+          id: column.id,
+          label: headerText(column.header, column.id),
+          shown: isColumnShown(preferences.columns, column.id, column.hiddenByDefault === true),
+        }))}
+        onToggleColumn={(id, shown) => {
+          const hidden = allColumns.find((column) => column.id === id)?.hiddenByDefault === true;
           setPreferences((current) => ({
             ...current,
-            columns: withColumn(current.columns, id, HIDDEN_CORE_COLUMNS.includes(id), shown),
-          }))
-        }
+            columns: withColumn(current.columns, id, hidden, shown),
+          }));
+        }}
         updatedAt={tabBookings.updatedAt}
         now={now}
         onRefresh={refresh}
@@ -469,7 +463,20 @@ function FleetSection({
         aria-labelledby={tabId(tab)}
         onPointerOver={preloadDrawer}
         onFocus={preloadDrawer}
-        sx={{ flex: 1, minHeight: 0, display: 'flex', flexDirection: 'column' }}
+        // The list in a bordered card; its grid is the only part that scrolls.
+        sx={{
+          flex: 1,
+          minHeight: 0,
+          display: 'flex',
+          flexDirection: 'column',
+          mx: 2,
+          mb: 2,
+          border: 1,
+          borderColor: 'divider',
+          borderRadius: 2,
+          overflow: 'hidden',
+          bgcolor: 'background.paper',
+        }}
       >
         {tabBookings.error ? (
           <Alert
@@ -489,13 +496,14 @@ function FleetSection({
             key={`${fleetId}:${tab}`}
             label={t(`tabs.${tab}`)}
             columns={columns}
+            // The actions, last, always in view: the list scrolls sideways when the columns are wider than the section.
+            pinLastColumn
             rows={rows}
             getRowId={getRowId}
             rowHeight={DENSITIES[preferences.density]}
             totalCount={filtering ? rows.length : (counts[tab] ?? null)}
             isLoading={tabBookings.isLoading}
             pagination={tabBookings.pagination}
-            onVisibleRowsChange={setVisibleIds}
             empty={empty}
             onRowActivate={route.open}
             activeRowId={route.selectedId}

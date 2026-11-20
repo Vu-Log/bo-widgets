@@ -116,7 +116,7 @@ function VehicleRow({
 
 /**
  * Chooses a vehicle for a booking, on a map and in a list side by side: the available vehicles of
- * its service and model in its radius, or the 10 closest outside it, by distance. Allocates it, or
+ * its service and model in its radius and, in a second tab, up to 10 closest outside it, by distance. Allocates it, or
  * pre-allocates it (out of service until the start, with the booking id in its reason).
  *
  * @param props - What to do, the booking and the closing handler.
@@ -251,7 +251,7 @@ export function VehiclePickerDialog({
                 {t('picker.inRangeTab', { count: found?.inRange.length ?? 0 })}
               </ToggleButton>
               <ToggleButton value="out" sx={{ textTransform: 'none' }}>
-                {t('picker.outOfRangeTab')}
+                {t('picker.outOfRangeTab', { count: found?.closestOutOfRange.length ?? 0 })}
               </ToggleButton>
             </ToggleButtonGroup>
             {!found ? (

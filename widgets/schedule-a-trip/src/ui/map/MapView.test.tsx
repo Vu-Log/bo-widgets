@@ -338,6 +338,31 @@ describe('MapView', () => {
     expect(bo.api.log.error).toHaveBeenCalledWith('Mapbox refused the token of the settings', { status });
   });
 
+  it('logs a refused token once, and shows the static view at once for the next maps', async () => {
+    const { map, container, bo, rerender } = await renderLoaded();
+    map.emit('error', { error: Object.assign(new Error('Unauthorized'), { status: 401 }) });
+    await vi.waitFor(() => expect(bo.api.log.error).toHaveBeenCalledTimes(1));
+
+    // Another map of the same widget (the drawer opened again): no new try, no new log.
+    rerender(<MapView key="again" token="pk.test" center={center} radiusMeters={500} label="Pickup point" />);
+    await vi.waitFor(() => expect(container.textContent).toContain('The map needs a valid Mapbox public token'));
+    await new Promise((resolve) => setTimeout(resolve, 50));
+    expect(fake.maps).toHaveLength(1);
+    expect(bo.api.log.error).toHaveBeenCalledTimes(1);
+    expect(bo.api.log.error).toHaveBeenCalledWith('Mapbox refused the token of the settings', { status: 401 });
+  });
+
+  it('tries a refused token again in another widget', async () => {
+    const first = await renderLoaded();
+    first.map.emit('error', { error: Object.assign(new Error('Unauthorized'), { status: 403 }) });
+    await vi.waitFor(() => expect(first.bo.api.log.error).toHaveBeenCalledTimes(1));
+    first.unmount();
+
+    const second = await render();
+    await vi.waitFor(() => expect(fake.maps).toHaveLength(2));
+    expect(second.bo.api.log.error).not.toHaveBeenCalled();
+  });
+
   it('falls back to the static image when the style cannot be loaded', async () => {
     const view = await render();
     await vi.waitFor(() => expect(fake.maps).toHaveLength(1));
