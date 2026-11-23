@@ -90,8 +90,8 @@ const listedIdSchema = z.looseObject({ id: z.string().min(1) });
  * `createInvoiceLoader` for the fallback.
  *
  * Each invoice is read on its own: an invoice the widget cannot read is an `invalid-response` for
- * its id only. An answer that holds an invoice not asked for, or one without an id, breaks the
- * contract of the route: the whole call is an `invalid-response`.
+ * its id only. An answer that holds an invoice not asked for, one without an id, or the same id
+ * twice, breaks the contract of the route: the whole call is an `invalid-response`.
  *
  * @param authFetch - `useAuthFetch()`.
  * @param fleetId - The fleet.
@@ -126,10 +126,10 @@ export async function listInvoicesByIds(
   const byId = new Map<string, ApiResult<Invoice>>();
   for (const item of result.data.body) {
     const listed = listedIdSchema.safeParse(item);
-    if (!listed.success || !wanted.has(listed.data.id)) {
+    if (!listed.success || !wanted.has(listed.data.id) || byId.has(listed.data.id)) {
       return {
         ok: false,
-        error: { kind: 'invalid-response', message: 'An invoice not asked for, or without an id' },
+        error: { kind: 'invalid-response', message: 'An invoice not asked for, twice, or without an id' },
       };
     }
     const parsed = invoiceSchema.safeParse(item);

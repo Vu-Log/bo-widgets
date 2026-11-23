@@ -74,7 +74,8 @@ function abortable(
  * - every id, for good, once the route answers 403, 404 or 405 (an environment without it): the
  *   switch lasts as long as the loader, that is the query client;
  * - the ids the answer leaves out, so that an unknown id is a `not-found` of the API itself;
- * - the ids of a batch whose answer breaks the contract (an invoice not asked for), this batch only.
+ * - the ids of a batch whose answer it cannot read as a whole (not JSON, not a list, an invoice not
+ *   asked for or twice), this batch only: the route is asked again for the next batch.
  *
  * Any other failure of the route (5xx, 401, network…) is the answer of each id of the batch.
  *

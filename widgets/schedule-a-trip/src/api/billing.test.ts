@@ -345,6 +345,13 @@ describe('listInvoicesByIds', () => {
   it.each([
     ['an invoice not asked for', [{ id: 'other', invoicesStatus: 'PAID', amount: 1 }]],
     ['an invoice without an id', [{ invoicesStatus: 'PAID', amount: 1 }]],
+    [
+      'the same invoice twice',
+      [
+        { id: 'invoice-1', invoicesStatus: 'PAID', amount: 1 },
+        { id: 'invoice-1', invoicesStatus: 'PAID', amount: 1 },
+      ],
+    ],
     ['an answer that is not a list', { content: [] }],
   ])('gives invalid-response for %s: the contract of the route is broken', async (_, body) => {
     const authFetch = vi.fn<AuthFetch>(async () => jsonResponse(body));
