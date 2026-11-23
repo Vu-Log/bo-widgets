@@ -48,6 +48,11 @@ export interface Invoice {
   readonly refundInProgress: boolean;
 }
 
+const toInvoice = ({ invoicesStatus, ...rest }: z.output<typeof invoiceSchema>): Invoice => ({
+  ...rest,
+  status: invoicesStatus,
+});
+
 /**
  * Reads an invoice. `GET user/billing/fleets/{fleetId}/invoices/{invoiceId}`.
  *
@@ -70,8 +75,51 @@ export async function getInvoice(
     { signal },
   );
   if (!result.ok) return result;
-  const { invoicesStatus, ...rest } = result.data.body;
-  return { ok: true, data: { ...rest, status: invoicesStatus } };
+  return { ok: true, data: toInvoice(result.data.body) };
+}
+
+/** Most ids of a call to {@link listInvoicesByIds}. */
+export const MAX_INVOICE_IDS = 100;
+
+/**
+ * Reads invoices by id, in one call. `POST user/billing/fleets/{fleetId}/invoices/list` with the
+ * ids as the body; the API answers the same invoices as the GET by id, in any order, and leaves out
+ * the ids it does not know. The route is not on every environment yet: test and prod answer 403.
+ *
+ * @param authFetch - `useAuthFetch()`.
+ * @param fleetId - The fleet.
+ * @param invoiceIds - At most {@link MAX_INVOICE_IDS} ids; none gives an empty map without a call.
+ * @param signal - Aborts the call.
+ * @returns The invoices found, by id, or why the call failed (`invalid-request` without a call
+ *   beyond {@link MAX_INVOICE_IDS} ids).
+ */
+export async function listInvoicesByIds(
+  authFetch: AuthFetch,
+  fleetId: string,
+  invoiceIds: readonly string[],
+  signal?: AbortSignal,
+): Promise<ApiResult<ReadonlyMap<string, Invoice>>> {
+  const ids = [...new Set(invoiceIds)];
+  if (ids.length === 0) return { ok: true, data: new Map() };
+  if (ids.length > MAX_INVOICE_IDS) {
+    return {
+      ok: false,
+      error: { kind: 'invalid-request', message: `More than ${MAX_INVOICE_IDS} invoice ids` },
+    };
+  }
+  const result = await requestJson(
+    authFetch,
+    `${billing(fleetId)}/invoices/list`,
+    z.array(invoiceSchema),
+    jsonInit('POST', ids, signal),
+  );
+  if (!result.ok) return result;
+  const wanted = new Set(ids);
+  const byId = new Map<string, Invoice>();
+  for (const item of result.data.body) {
+    if (wanted.has(item.id)) byId.set(item.id, toInvoice(item));
+  }
+  return { ok: true, data: byId };
 }
 
 const isPositiveAmount = (amount: number): boolean => Number.isFinite(amount) && amount > 0;

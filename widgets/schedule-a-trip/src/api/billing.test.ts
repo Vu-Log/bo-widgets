@@ -7,6 +7,8 @@ import {
   getRefundableAmount,
   listBilledInvoices,
   listEntityWallets,
+  listInvoicesByIds,
+  MAX_INVOICE_IDS,
   readChargedInvoice,
   refundInvoice,
   retryPayment,
@@ -272,5 +274,107 @@ describe('listBilledInvoices', () => {
     const authFetch = vi.fn<AuthFetch>();
     expect(await listBilledInvoices(authFetch, 'FLEET-1', { ...params, ...override })).toMatchObject({ ok: false, error: { kind: 'invalid-request' } });
     expect(authFetch).not.toHaveBeenCalled();
+  });
+});
+
+describe('listInvoicesByIds', () => {
+  const entity = (id: string, invoicesStatus: string) => ({
+    id,
+    invoicesStatus,
+    amount: 11,
+    currency: 'EUR',
+    userId: 'user-9',
+    entityId: 'entity-1',
+    productId: 'product-1',
+    invoiceDate: '2026-11-17T12:45:00.000Z',
+    pspReference: 'dropped',
+  });
+
+  it('posts the ids and gives the invoices by id, whatever their order', async () => {
+    const authFetch = vi.fn<AuthFetch>(async () =>
+      jsonResponse([entity('invoice-2', 'PENDING'), entity('invoice-1', 'PAID')]),
+    );
+
+    const result = await listInvoicesByIds(authFetch, 'FLEET 1', ['invoice-1', 'invoice-2']);
+
+    expect(authFetch).toHaveBeenCalledWith('user/billing/fleets/FLEET%201/invoices/list', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(['invoice-1', 'invoice-2']),
+      signal: undefined,
+    });
+    expect(result.ok && result.data.get('invoice-1')).toEqual({
+      id: 'invoice-1',
+      status: 'PAID',
+      amount: 11,
+      currency: 'EUR',
+      userId: 'user-9',
+      entityId: 'entity-1',
+      productId: 'product-1',
+      invoiceDate: '2026-11-17T12:45:00.000Z',
+      refundInProgress: false,
+    });
+    expect(result.ok && result.data.get('invoice-2')?.status).toBe('PENDING');
+  });
+
+  it('leaves out the ids the API does not answer, and the invoices not asked for', async () => {
+    const authFetch = vi.fn<AuthFetch>(async () =>
+      jsonResponse([entity('invoice-1', 'PAID'), entity('other', 'PAID')]),
+    );
+
+    const result = await listInvoicesByIds(authFetch, 'FLEET-1', ['invoice-1', 'unknown']);
+
+    expect(result.ok && [...result.data.keys()]).toEqual(['invoice-1']);
+  });
+
+  it('sends each id once', async () => {
+    const authFetch = vi.fn<AuthFetch>(async () => jsonResponse([]));
+    await listInvoicesByIds(authFetch, 'FLEET-1', ['a', 'b', 'a']);
+    expect(authFetch.mock.calls[0]?.[1]?.body).toBe(JSON.stringify(['a', 'b']));
+  });
+
+  it('gives an empty map without a call for no id', async () => {
+    const authFetch = vi.fn<AuthFetch>();
+    const result = await listInvoicesByIds(authFetch, 'FLEET-1', []);
+    expect(result.ok && result.data.size).toBe(0);
+    expect(authFetch).not.toHaveBeenCalled();
+  });
+
+  it('refuses more than MAX_INVOICE_IDS ids without a call', async () => {
+    const authFetch = vi.fn<AuthFetch>();
+    const ids = Array.from({ length: MAX_INVOICE_IDS + 1 }, (_, index) => `invoice-${index}`);
+
+    const result = await listInvoicesByIds(authFetch, 'FLEET-1', ids);
+
+    expect(result).toMatchObject({ ok: false, error: { kind: 'invalid-request' } });
+    expect(authFetch).not.toHaveBeenCalled();
+  });
+
+  it('gives not-allowed for a 403 (an environment without the route)', async () => {
+    const authFetch = vi.fn<AuthFetch>(async () => new Response('{}', { status: 403 }));
+    expect(await listInvoicesByIds(authFetch, 'FLEET-1', ['a'])).toEqual({
+      ok: false,
+      error: { kind: 'not-allowed', status: 403 },
+    });
+  });
+
+  it('gives invalid-response for an answer that is not a list of invoices', async () => {
+    const authFetch = vi.fn<AuthFetch>(async () => jsonResponse([{ id: 'a' }]));
+    expect(await listInvoicesByIds(authFetch, 'FLEET-1', ['a'])).toMatchObject({
+      ok: false,
+      error: { kind: 'invalid-response' },
+    });
+  });
+
+  it('gives aborted when the caller aborts', async () => {
+    const controller = new AbortController();
+    controller.abort();
+    const authFetch = vi.fn<AuthFetch>(async () => {
+      throw new DOMException('Aborted', 'AbortError');
+    });
+    expect(await listInvoicesByIds(authFetch, 'FLEET-1', ['a'], controller.signal)).toEqual({
+      ok: false,
+      error: { kind: 'aborted' },
+    });
   });
 });

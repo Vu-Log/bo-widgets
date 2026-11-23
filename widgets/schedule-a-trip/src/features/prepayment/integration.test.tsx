@@ -1,11 +1,13 @@
 // Wires the real modules of the prepayment feature (feature, dialogs, workflows, API wrappers,
 // queries, storage) through a minimal host; only the back office and the Vulog API are faked.
+import { useState } from 'react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { bodyText, button, click, dialogShown } from '../../test/dom';
 import { fakeInvoice } from '../../test/fake-aima';
 import { FeatureHost } from '../../test/feature-host';
-import { booking, customer, renderWithBilling } from '../../test/prepayment-fixtures';
+import { booking, customer, doc, NOW, renderWithBilling, row } from '../../test/prepayment-fixtures';
 import type { ListTab } from '../../domain/statuses';
+import { PrepaymentStatusCell } from './cells';
 import { prepaymentFeature } from './index';
 import { prepaymentDialogs } from './store';
 
@@ -114,5 +116,64 @@ describe('the prepayment feature in a host', () => {
     await vi.waitFor(() => expect(cell('status')).toBe('No prepayment from the widget'));
     expect([...document.body.querySelectorAll('[data-testid="actions"] button')].map((item) => item.textContent)).toEqual(['Internal notes', 'Refund']);
     expect(actionButton('Refund')).toMatchObject({ disabled: true, title: 'No prepayment from the widget' });
+  });
+});
+
+describe('the invoices of the rows', () => {
+  const ROWS = 60;
+  const ids = (from: number, count: number) => Array.from({ length: count }, (_, index) => `invoice-${from + index}`);
+  const invoices = ids(0, ROWS + 10).map((id) => fakeInvoice({ id, status: 'PENDING' }));
+  const pendingRow = (invoiceId: string) =>
+    row({
+      booking: booking({ id: `booking-${invoiceId}` }),
+      state: doc({ chargeStartedAt: NOW.toISOString(), invoiceId, invoiceStatus: 'PENDING', chargeAmount: 50 }),
+    });
+
+  /** Rows with their live status; "More" adds the rows of a next page. */
+  function Rows() {
+    const [invoiceIds, setInvoiceIds] = useState(() => ids(0, ROWS));
+    return (
+      <>
+        <button type="button" onClick={() => setInvoiceIds([...invoiceIds, ...ids(ROWS, 10)])}>
+          More
+        </button>
+        {invoiceIds.map((invoiceId) => (
+          <div key={invoiceId} data-row={invoiceId}>
+            <PrepaymentStatusCell ctx={pendingRow(invoiceId)} />
+          </div>
+        ))}
+      </>
+    );
+  }
+  const shown = (label: string) =>
+    [...document.body.querySelectorAll('[data-row]')].filter((element) => element.textContent === label).length;
+
+  it('reads the invoices of the rows mounted together in one call, never one by one', async () => {
+    const rendered = await renderWithBilling(<Rows />, { aima: { invoices } });
+    unmount = rendered.view.unmount;
+
+    await vi.waitFor(() => expect(rendered.aima.callsTo('POST', '/invoices/list')).toHaveLength(1));
+    await vi.waitFor(() => expect(shown('Payment in progress')).toBe(ROWS));
+    expect(rendered.aima.callsTo('POST', '/invoices/list')[0]?.body).toEqual(ids(0, ROWS));
+    expect(rendered.aima.calls.filter((call) => call.method === 'GET' && call.path.includes('/invoices/'))).toHaveLength(0);
+
+    click('More');
+    await vi.waitFor(() => expect(shown('Payment in progress')).toBe(ROWS + 10));
+    expect(rendered.aima.callsTo('POST', '/invoices/list')[1]?.body).toEqual(ids(ROWS, 10));
+  });
+
+  it('reads one by one on an environment without the route (403), and never asks it again', async () => {
+    const rendered = await renderWithBilling(<Rows />, { aima: { invoices } });
+    unmount = rendered.view.unmount;
+    rendered.aima.failNext('invoices-by-ids', { status: 403 }, true);
+
+    await vi.waitFor(() => expect(shown('Payment in progress')).toBe(ROWS));
+    expect(rendered.aima.callsTo('POST', '/invoices/list')).toHaveLength(1);
+    expect(rendered.aima.callsTo('GET', '/invoices/invoice-0')).toHaveLength(1);
+
+    click('More');
+    await vi.waitFor(() => expect(shown('Payment in progress')).toBe(ROWS + 10));
+    expect(rendered.aima.callsTo('POST', '/invoices/list')).toHaveLength(1);
+    expect(rendered.aima.callsTo('GET', `/invoices/invoice-${ROWS}`)).toHaveLength(1);
   });
 });
