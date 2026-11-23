@@ -22,3 +22,8 @@ updates:
       bo-widget-sdk:
         patterns:
           - "@vulog/bo-widget-*"
+      # The TanStack Query packages pin @tanstack/query-core to their own exact version: raised one by one,
+      # they leave two copies of it in the lockfile, whose types TypeScript refuses to mix.
+      tanstack-query:
+        patterns:
+          - "@tanstack/*query*"
