@@ -6,12 +6,14 @@ import type { ApiError, ApiResult } from '../api/http';
 /** Reads invoices one by one for its callers, and in batches for the API. */
 export interface InvoiceLoader {
   /**
-   * Reads an invoice: the ids asked for in the same task go in one call of at most
+   * Reads an invoice: the ids asked for until the next macrotask go in one call of at most
    * {@link MAX_INVOICE_IDS} ids. Never rejects for a failure of the API, only on a bug.
    *
    * @param invoiceId - The invoice.
-   * @param signal - Aborts this read only: the batch goes on for the other ids.
-   * @returns The invoice, `not-found` when the API left it out, or why the batch failed.
+   * @param signal - Ends this read only: the batch goes on for the other ids, and its request is
+   *   never aborted.
+   * @returns The invoice, or why the read failed: `aborted` when `signal` aborts, the failure of
+   *   the batch, or the failure of the GET by id when the invoice was read one by one.
    */
   load(invoiceId: string, signal?: AbortSignal): Promise<ApiResult<Invoice>>;
 }
@@ -21,12 +23,13 @@ interface Waiter {
   readonly reject: (error: unknown) => void;
 }
 
-const NOT_FOUND: ApiResult<Invoice> = { ok: false, error: { kind: 'not-found', status: 404 } };
+type Batch = ReadonlyMap<string, readonly Waiter[]>;
+
 const ABORTED: ApiResult<Invoice> = { ok: false, error: { kind: 'aborted' } };
 
 /**
- * Whether a failure of the batch route means that the environment does not have it yet: 403, 404
- * or 405. A 403 may also be a role without the right; the reads one by one then fail the same way.
+ * Whether a failure of the batch route means that the environment does not have it: 403, 404 or
+ * 405. A 403 may also be a role without the right; the reads one by one then fail the same way.
  */
 const isRouteMissing = (error: ApiError): boolean =>
   error.kind === 'not-allowed' ||
@@ -35,6 +38,9 @@ const isRouteMissing = (error: ApiError): boolean =>
 
 const settle = (waiters: readonly Waiter[], result: ApiResult<Invoice>) =>
   waiters.forEach((waiter) => waiter.resolve(result));
+
+const rejectAll = (waiters: readonly Waiter[], error: unknown) =>
+  waiters.forEach((waiter) => waiter.reject(error));
 
 /** Ends a read when `signal` aborts, whatever the batch it waits for. */
 function abortable(
@@ -61,9 +67,16 @@ function abortable(
 
 /**
  * Creates a loader of the invoices of a fleet. The ids asked for until the next macrotask go in one
- * `POST .../invoices/list` per {@link MAX_INVOICE_IDS} ids. When the route answers 403, 404 or 405
- * (an environment without it), that batch and every later read go through
- * `GET .../invoices/{invoiceId}`; any other failure is the answer of each id of the batch.
+ * `POST .../invoices/list` per {@link MAX_INVOICE_IDS} ids, and each id gets its own result (an
+ * invoice the widget cannot read fails its id only). The loader reads with
+ * `GET .../invoices/{invoiceId}`:
+ *
+ * - every id, for good, once the route answers 403, 404 or 405 (an environment without it): the
+ *   switch lasts as long as the loader, that is the query client;
+ * - the ids the answer leaves out, so that an unknown id is a `not-found` of the API itself;
+ * - the ids of a batch whose answer breaks the contract (an invoice not asked for), this batch only.
+ *
+ * Any other failure of the route (5xx, 401, network…) is the answer of each id of the batch.
  *
  * @param authFetch - `useAuthFetch()`.
  * @param fleetId - The fleet.
@@ -74,29 +87,31 @@ export function createInvoiceLoader(authFetch: AuthFetch, fleetId: string): Invo
   let scheduled = false;
   let routeMissing = false;
 
-  const readOneByOne = (batch: ReadonlyMap<string, Waiter[]>) => {
+  const readOneByOne = (batch: Batch) => {
     for (const [invoiceId, waiters] of batch) {
       getInvoice(authFetch, fleetId, invoiceId).then(
         (result) => settle(waiters, result),
-        (error: unknown) => waiters.forEach((waiter) => waiter.reject(error)),
+        (error: unknown) => rejectAll(waiters, error),
       );
     }
   };
 
-  const readBatch = async (batch: ReadonlyMap<string, Waiter[]>) => {
+  const readBatch = async (batch: Batch) => {
     if (routeMissing) return readOneByOne(batch);
     const result = await listInvoicesByIds(authFetch, fleetId, [...batch.keys()]);
-    if (!result.ok && isRouteMissing(result.error)) {
-      routeMissing = true;
-      return readOneByOne(batch);
+    if (!result.ok) {
+      if (isRouteMissing(result.error)) routeMissing = true;
+      if (routeMissing || result.error.kind === 'invalid-response') return readOneByOne(batch);
+      for (const waiters of batch.values()) settle(waiters, result);
+      return;
     }
+    const leftOut = new Map<string, readonly Waiter[]>();
     for (const [invoiceId, waiters] of batch) {
-      if (!result.ok) settle(waiters, result);
-      else {
-        const invoice = result.data.get(invoiceId);
-        settle(waiters, invoice ? { ok: true, data: invoice } : NOT_FOUND);
-      }
+      const answer = result.data.get(invoiceId);
+      if (answer) settle(waiters, answer);
+      else leftOut.set(invoiceId, waiters);
     }
+    readOneByOne(leftOut);
   };
 
   const flush = () => {
@@ -106,7 +121,7 @@ export function createInvoiceLoader(authFetch: AuthFetch, fleetId: string): Invo
     for (let index = 0; index < entries.length; index += MAX_INVOICE_IDS) {
       const batch = new Map(entries.slice(index, index + MAX_INVOICE_IDS));
       readBatch(batch).catch((error: unknown) => {
-        for (const waiters of batch.values()) waiters.forEach((waiter) => waiter.reject(error));
+        for (const waiters of batch.values()) rejectAll(waiters, error);
       });
     }
   };

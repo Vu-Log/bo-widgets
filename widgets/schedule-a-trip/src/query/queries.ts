@@ -139,9 +139,9 @@ export const invoiceStaleTime = (query: Pick<Query<Invoice>, 'state'>): number =
 };
 
 /**
- * An invoice: a payment status, in memory only. The invoices read in the same task share one call
- * of the API (`POST .../invoices/list`), the first loads of a page as their refreshes; see
- * {@link invoiceLoaderOf}.
+ * An invoice: a payment status, in memory only. The invoices read until the next macrotask, first
+ * loads and refreshes alike, share one `POST .../invoices/list` per 100 ids, or one GET each where
+ * that route is missing; see {@link invoiceLoaderOf}.
  *
  * @param authFetch - `useAuthFetch()`.
  * @param fleetId - The fleet.

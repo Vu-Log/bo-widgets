@@ -290,7 +290,7 @@ describe('listInvoicesByIds', () => {
     pspReference: 'dropped',
   });
 
-  it('posts the ids and gives the invoices by id, whatever their order', async () => {
+  it('posts the ids and gives the result of each invoice by id, whatever their order', async () => {
     const authFetch = vi.fn<AuthFetch>(async () =>
       jsonResponse([entity('invoice-2', 'PENDING'), entity('invoice-1', 'PAID')]),
     );
@@ -304,27 +304,54 @@ describe('listInvoicesByIds', () => {
       signal: undefined,
     });
     expect(result.ok && result.data.get('invoice-1')).toEqual({
-      id: 'invoice-1',
-      status: 'PAID',
-      amount: 11,
-      currency: 'EUR',
-      userId: 'user-9',
-      entityId: 'entity-1',
-      productId: 'product-1',
-      invoiceDate: '2026-11-17T12:45:00.000Z',
-      refundInProgress: false,
+      ok: true,
+      data: {
+        id: 'invoice-1',
+        status: 'PAID',
+        amount: 11,
+        currency: 'EUR',
+        userId: 'user-9',
+        entityId: 'entity-1',
+        productId: 'product-1',
+        invoiceDate: '2026-11-17T12:45:00.000Z',
+        refundInProgress: false,
+      },
     });
-    expect(result.ok && result.data.get('invoice-2')?.status).toBe('PENDING');
+    expect(result.ok && result.data.get('invoice-2')).toMatchObject({ ok: true, data: { status: 'PENDING' } });
   });
 
-  it('leaves out the ids the API does not answer, and the invoices not asked for', async () => {
-    const authFetch = vi.fn<AuthFetch>(async () =>
-      jsonResponse([entity('invoice-1', 'PAID'), entity('other', 'PAID')]),
-    );
+  it('leaves out the ids the API does not answer', async () => {
+    const authFetch = vi.fn<AuthFetch>(async () => jsonResponse([entity('invoice-1', 'PAID')]));
 
     const result = await listInvoicesByIds(authFetch, 'FLEET-1', ['invoice-1', 'unknown']);
 
     expect(result.ok && [...result.data.keys()]).toEqual(['invoice-1']);
+  });
+
+  it('fails the id of an invoice it cannot read only', async () => {
+    const authFetch = vi.fn<AuthFetch>(async () =>
+      jsonResponse([entity('invoice-1', 'PAID'), { id: 'invoice-2', amount: null }]),
+    );
+
+    const result = await listInvoicesByIds(authFetch, 'FLEET-1', ['invoice-1', 'invoice-2']);
+
+    expect(result.ok && result.data.get('invoice-1')?.ok).toBe(true);
+    expect(result.ok && result.data.get('invoice-2')).toMatchObject({
+      ok: false,
+      error: { kind: 'invalid-response' },
+    });
+  });
+
+  it.each([
+    ['an invoice not asked for', [{ id: 'other', invoicesStatus: 'PAID', amount: 1 }]],
+    ['an invoice without an id', [{ invoicesStatus: 'PAID', amount: 1 }]],
+    ['an answer that is not a list', { content: [] }],
+  ])('gives invalid-response for %s: the contract of the route is broken', async (_, body) => {
+    const authFetch = vi.fn<AuthFetch>(async () => jsonResponse(body));
+    expect(await listInvoicesByIds(authFetch, 'FLEET-1', ['invoice-1'])).toMatchObject({
+      ok: false,
+      error: { kind: 'invalid-response' },
+    });
   });
 
   it('sends each id once', async () => {
@@ -340,10 +367,12 @@ describe('listInvoicesByIds', () => {
     expect(authFetch).not.toHaveBeenCalled();
   });
 
-  it('refuses more than MAX_INVOICE_IDS ids without a call', async () => {
-    const authFetch = vi.fn<AuthFetch>();
+  it('counts the distinct ids against MAX_INVOICE_IDS, and refuses more without a call', async () => {
+    const authFetch = vi.fn<AuthFetch>(async () => jsonResponse([]));
     const ids = Array.from({ length: MAX_INVOICE_IDS + 1 }, (_, index) => `invoice-${index}`);
 
+    expect((await listInvoicesByIds(authFetch, 'FLEET-1', [...ids.slice(1), ids[1] ?? ''])).ok).toBe(true);
+    authFetch.mockClear();
     const result = await listInvoicesByIds(authFetch, 'FLEET-1', ids);
 
     expect(result).toMatchObject({ ok: false, error: { kind: 'invalid-request' } });
@@ -355,14 +384,6 @@ describe('listInvoicesByIds', () => {
     expect(await listInvoicesByIds(authFetch, 'FLEET-1', ['a'])).toEqual({
       ok: false,
       error: { kind: 'not-allowed', status: 403 },
-    });
-  });
-
-  it('gives invalid-response for an answer that is not a list of invoices', async () => {
-    const authFetch = vi.fn<AuthFetch>(async () => jsonResponse([{ id: 'a' }]));
-    expect(await listInvoicesByIds(authFetch, 'FLEET-1', ['a'])).toMatchObject({
-      ok: false,
-      error: { kind: 'invalid-response' },
     });
   });
 

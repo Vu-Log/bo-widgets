@@ -130,8 +130,8 @@ export interface StoredInvoiceState {
 }
 
 /**
- * Whether the list trusts the stored status of an invoice without reading it again (one call per row otherwise, AIMA
- * has no read of several invoices at once). A `REFUNDED` invoice never changes. A `PAID` one changes by a refund, and
+ * Whether the list trusts the stored status of an invoice without reading it again (read otherwise, in batches: see
+ * `invoiceLoaderOf`). A `REFUNDED` invoice never changes. A `PAID` one changes by a refund, and
  * the widget records its own refunds in the refund fields, not in `invoiceStatus`: a stored `PAID` is trusted only
  * while no refund was started, so the list reads the invoice of a refunded booking again and stores its new status. A
  * refund made outside the widget is not seen by the list, only by the dialogs, which always read the invoice live.

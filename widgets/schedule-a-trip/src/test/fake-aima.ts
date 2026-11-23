@@ -49,7 +49,9 @@ export type FakeRoute =
   | 'product'
   | 'wallets'
   | 'wallet-patch'
+  /** `GET .../invoices`, the search by dates. */
   | 'invoices-list'
+  /** `POST .../invoices/list`, the read by ids. */
   | 'invoices-by-ids';
 
 /**
@@ -227,7 +229,7 @@ export function fakeAima(initial: { invoices?: FakeInvoice[]; productPrice?: num
     readsOf: (invoiceId: string) =>
       calls.filter(
         (call) =>
-          (call.method === 'GET' && call.path.endsWith(`/invoices/${invoiceId}`)) ||
+          (call.method === 'GET' && call.path.split('?')[0]?.endsWith(`/invoices/${invoiceId}`)) ||
           (call.method === 'POST' &&
             call.path.endsWith('/invoices/list') &&
             (call.body as string[]).includes(invoiceId)),
