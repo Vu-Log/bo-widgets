@@ -143,18 +143,55 @@ describe('customersQueryOptions', () => {
 });
 
 describe('invoiceQueryOptions', () => {
-  it('loads the invoice', async () => {
+  it('loads the invoices of the same task in one call of the list by ids', async () => {
     const authFetch = vi.fn<AuthFetch>(async () =>
-      jsonResponse({ id: 'invoice-1', invoicesStatus: 'PAID', amount: 20 }),
+      jsonResponse([
+        { id: 'invoice-2', invoicesStatus: 'PENDING', amount: 10 },
+        { id: 'invoice-1', invoicesStatus: 'PAID', amount: 20 },
+      ]),
     );
-    const invoice = await newClient().fetchQuery(
-      invoiceQueryOptions(authFetch, 'FLEET-1', 'invoice-1'),
-    );
-    expect(invoice.status).toBe('PAID');
+    const client = newClient();
+    const [first, second] = await Promise.all([
+      client.fetchQuery(invoiceQueryOptions(authFetch, 'FLEET-1', 'invoice-1')),
+      client.fetchQuery(invoiceQueryOptions(authFetch, 'FLEET-1', 'invoice-2')),
+    ]);
+    expect(first.status).toBe('PAID');
+    expect(second.status).toBe('PENDING');
+    expect(authFetch).toHaveBeenCalledTimes(1);
+    expect(authFetch.mock.calls[0]?.[0]).toBe('user/billing/fleets/FLEET-1/invoices/list');
   });
 
-  it('fails with an ApiRequestError', async () => {
-    const authFetch = vi.fn<AuthFetch>(async () => new Response('', { status: 404 }));
+  it('refreshes the invoices of a client together, in one call', async () => {
+    const authFetch = vi.fn<AuthFetch>(async () =>
+      jsonResponse([
+        { id: 'invoice-1', invoicesStatus: 'PAID', amount: 20 },
+        { id: 'invoice-2', invoicesStatus: 'PENDING', amount: 10 },
+      ]),
+    );
+    const client = newClient();
+    await Promise.all([
+      client.fetchQuery(invoiceQueryOptions(authFetch, 'FLEET-1', 'invoice-1')),
+      client.fetchQuery(invoiceQueryOptions(authFetch, 'FLEET-1', 'invoice-2')),
+    ]);
+    authFetch.mockClear();
+
+    await client.refetchQueries({ queryKey: queryKeys.invoices('FLEET-1') });
+
+    expect(authFetch).toHaveBeenCalledTimes(1);
+    expect(authFetch.mock.calls[0]?.[1]?.body).toBe(JSON.stringify(['invoice-1', 'invoice-2']));
+  });
+
+  it('fails with a not-found ApiRequestError for an invoice neither the list nor the GET know', async () => {
+    const authFetch = vi.fn<AuthFetch>(async (_, init) =>
+      init?.method === 'POST' ? jsonResponse([]) : new Response('', { status: 404 }),
+    );
+    await expect(
+      newClient().fetchQuery(invoiceQueryOptions(authFetch, 'FLEET-1', 'x')),
+    ).rejects.toMatchObject({ error: { kind: 'not-found' } });
+  });
+
+  it('fails with an ApiRequestError when the list fails', async () => {
+    const authFetch = vi.fn<AuthFetch>(async () => new Response('', { status: 500 }));
     await expect(
       newClient().fetchQuery(invoiceQueryOptions(authFetch, 'FLEET-1', 'x')),
     ).rejects.toBeInstanceOf(ApiRequestError);

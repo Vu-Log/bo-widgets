@@ -48,6 +48,11 @@ export interface Invoice {
   readonly refundInProgress: boolean;
 }
 
+const toInvoice = ({ invoicesStatus, ...rest }: z.output<typeof invoiceSchema>): Invoice => ({
+  ...rest,
+  status: invoicesStatus,
+});
+
 /**
  * Reads an invoice. `GET user/billing/fleets/{fleetId}/invoices/{invoiceId}`.
  *
@@ -70,8 +75,72 @@ export async function getInvoice(
     { signal },
   );
   if (!result.ok) return result;
-  const { invoicesStatus, ...rest } = result.data.body;
-  return { ok: true, data: { ...rest, status: invoicesStatus } };
+  return { ok: true, data: toInvoice(result.data.body) };
+}
+
+/** Most distinct ids of a call to {@link listInvoicesByIds}. */
+export const MAX_INVOICE_IDS = 100;
+
+const listedIdSchema = z.looseObject({ id: z.string().min(1) });
+
+/**
+ * Reads invoices by id, in one call. `POST user/billing/fleets/{fleetId}/invoices/list` with the
+ * ids as the body; the API answers the same invoices as the GET by id, in any order, and leaves out
+ * the ids it does not know. The route may be missing on an environment (403): see
+ * `createInvoiceLoader` for the fallback.
+ *
+ * Each invoice is read on its own: an invoice the widget cannot read is an `invalid-response` for
+ * its id only. An answer that holds an invoice not asked for, one without an id, or the same id
+ * twice, breaks the contract of the route: the whole call is an `invalid-response`.
+ *
+ * @param authFetch - `useAuthFetch()`.
+ * @param fleetId - The fleet.
+ * @param invoiceIds - At most {@link MAX_INVOICE_IDS} distinct ids (duplicates are merged); none
+ *   gives an empty map without a call.
+ * @param signal - Aborts the call.
+ * @returns The result of each id the API answered, keyed by id (an id it left out is absent), or
+ *   why the call failed (`invalid-request` without a call beyond {@link MAX_INVOICE_IDS} ids).
+ */
+export async function listInvoicesByIds(
+  authFetch: AuthFetch,
+  fleetId: string,
+  invoiceIds: readonly string[],
+  signal?: AbortSignal,
+): Promise<ApiResult<ReadonlyMap<string, ApiResult<Invoice>>>> {
+  const ids = [...new Set(invoiceIds)];
+  if (ids.length === 0) return { ok: true, data: new Map() };
+  if (ids.length > MAX_INVOICE_IDS) {
+    return {
+      ok: false,
+      error: { kind: 'invalid-request', message: `More than ${MAX_INVOICE_IDS} invoice ids` },
+    };
+  }
+  const result = await requestJson(
+    authFetch,
+    `${billing(fleetId)}/invoices/list`,
+    z.array(z.unknown()),
+    jsonInit('POST', ids, signal),
+  );
+  if (!result.ok) return result;
+  const wanted = new Set(ids);
+  const byId = new Map<string, ApiResult<Invoice>>();
+  for (const item of result.data.body) {
+    const listed = listedIdSchema.safeParse(item);
+    if (!listed.success || !wanted.has(listed.data.id) || byId.has(listed.data.id)) {
+      return {
+        ok: false,
+        error: { kind: 'invalid-response', message: 'An invoice not asked for, twice, or without an id' },
+      };
+    }
+    const parsed = invoiceSchema.safeParse(item);
+    byId.set(
+      listed.data.id,
+      parsed.success
+        ? { ok: true, data: toInvoice(parsed.data) }
+        : { ok: false, error: { kind: 'invalid-response', message: parsed.error.message } },
+    );
+  }
+  return { ok: true, data: byId };
 }
 
 const isPositiveAmount = (amount: number): boolean => Number.isFinite(amount) && amount > 0;

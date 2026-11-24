@@ -36,7 +36,7 @@ describe('PrepaymentStatusCell', () => {
   it('shows the cached status, then the live one', async () => {
     const { aima } = await show(<PrepaymentStatusCell ctx={row({ state: charged() })} />);
     await vi.waitFor(() => expect(bodyText()).toBe('Paid'));
-    expect(aima.callsTo('GET', '/invoices/invoice-1')).toHaveLength(1);
+    expect(aima.readsOf('invoice-1')).toHaveLength(1);
   });
 
   it.each([['PAID', 'Paid'], ['REFUNDED', 'Refunded']])(
@@ -44,7 +44,7 @@ describe('PrepaymentStatusCell', () => {
     async (invoiceStatus, label) => {
       const { aima } = await show(<PrepaymentStatusCell ctx={row({ state: charged({ invoiceStatus }) })} />);
       await vi.waitFor(() => expect(bodyText()).toBe(label));
-      expect(aima.callsTo('GET', '/invoices/invoice-1')).toHaveLength(0);
+      expect(aima.readsOf('invoice-1')).toHaveLength(0);
     },
   );
 
@@ -54,7 +54,7 @@ describe('PrepaymentStatusCell', () => {
       fakeInvoice({ status: 'REFUNDED' }),
     ]);
     await vi.waitFor(() => expect(bodyText()).toBe('Refunded'));
-    expect(aima.callsTo('GET', '/invoices/invoice-1')).toHaveLength(1);
+    expect(aima.readsOf('invoice-1')).toHaveLength(1);
   });
 
   it.each<[string, Partial<BookingContext>, string]>([

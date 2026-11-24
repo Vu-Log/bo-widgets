@@ -17,6 +17,18 @@ export interface FakeInvoice {
   refundable: number;
 }
 
+/** An invoice as the GET by id and the list by ids answer it. */
+const invoiceEntity = (invoice: FakeInvoice) => ({
+  id: invoice.id,
+  invoicesStatus: invoice.status,
+  amount: invoice.amount,
+  currency: 'EUR',
+  userId: invoice.userId,
+  entityId: invoice.entityId,
+  productId: invoice.productId,
+  invoiceDate: invoice.billingDate,
+});
+
 /** A call the fake answered. */
 export interface FakeCall {
   method: string;
@@ -37,7 +49,10 @@ export type FakeRoute =
   | 'product'
   | 'wallets'
   | 'wallet-patch'
-  | 'invoices-list';
+  /** `GET .../invoices`, the search by dates. */
+  | 'invoices-list'
+  /** `POST .../invoices/list`, the read by ids. */
+  | 'invoices-by-ids';
 
 /**
  * A fake of the billing routes. `failures` answers a route with an error once (or every time
@@ -165,21 +180,22 @@ export function fakeAima(initial: { invoices?: FakeInvoice[]; productPrice?: num
         }));
       return jsonResponse(items);
     }
+    if (method === 'POST' && route?.endsWith('/invoices/list')) {
+      const failed = fail('invoices-by-ids');
+      if (failed) return failed;
+      // In reverse order, and without the unknown ids, as the API may answer.
+      const found = (body as string[]).flatMap((id) => {
+        const invoice = invoices.get(id);
+        return invoice ? [invoiceEntity(invoice)] : [];
+      });
+      return jsonResponse(found.reverse());
+    }
     if (parts[2] === 'fleets' && parts[4] === 'invoices' && parts.length === 6) {
       const failed = fail('invoice');
       if (failed) return failed;
       const invoice = invoices.get(parts[5] ?? '');
       if (!invoice) return new Response('{}', { status: 404 });
-      return jsonResponse({
-        id: invoice.id,
-        invoicesStatus: invoice.status,
-        amount: invoice.amount,
-        currency: 'EUR',
-        userId: invoice.userId,
-        entityId: invoice.entityId,
-        productId: invoice.productId,
-        invoiceDate: invoice.billingDate,
-      });
+      return jsonResponse(invoiceEntity(invoice));
     }
     return new Response('{}', { status: 404 });
   });
@@ -209,6 +225,15 @@ export function fakeAima(initial: { invoices?: FakeInvoice[]; productPrice?: num
     /** The calls to a route, by method and path suffix. */
     callsTo: (method: string, suffix: string) =>
       calls.filter((call) => call.method === method && call.path.split('?')[0]?.endsWith(suffix)),
+    /** The calls that read `invoiceId`: the GET by id and the lists by ids that name it. */
+    readsOf: (invoiceId: string) =>
+      calls.filter(
+        (call) =>
+          (call.method === 'GET' && call.path.split('?')[0]?.endsWith(`/invoices/${invoiceId}`)) ||
+          (call.method === 'POST' &&
+            call.path.endsWith('/invoices/list') &&
+            (call.body as string[]).includes(invoiceId)),
+      ),
   };
 }
 

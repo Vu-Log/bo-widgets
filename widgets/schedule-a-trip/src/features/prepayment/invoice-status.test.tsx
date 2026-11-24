@@ -89,7 +89,7 @@ describe('useInvoiceStatusSync', () => {
     unmount = rendered.view.unmount;
 
     await vi.waitFor(() => expect(cell()).toBe('Payment in progress'));
-    await vi.waitFor(() => expect(rendered.aima.calls.some((call) => call.path.endsWith('/invoices/invoice-1'))).toBe(true));
+    await vi.waitFor(() => expect(rendered.aima.readsOf('invoice-1')).not.toHaveLength(0));
     expect(rendered.bo.storage.api.update).not.toHaveBeenCalled();
   });
 
@@ -143,7 +143,7 @@ describe('useInvoiceStatusSync', () => {
       { stored: charged, aima: { invoices: [fakeInvoice({ status: 'PAID' })] } },
     );
     unmount = again.view.unmount;
-    await vi.waitFor(() => expect(again.aima.calls.some((call) => call.path.endsWith('/invoices/invoice-1'))).toBe(true));
+    await vi.waitFor(() => expect(again.aima.readsOf('invoice-1')).not.toHaveLength(0));
     await new Promise((resolve) => setTimeout(resolve, 50));
     expect(again.bo.storage.api.update).not.toHaveBeenCalled();
     expect(writes).toBeGreaterThan(0);

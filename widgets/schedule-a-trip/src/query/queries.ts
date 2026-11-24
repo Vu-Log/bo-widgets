@@ -5,7 +5,7 @@ import {
   type QueryClient,
 } from '@tanstack/react-query';
 import type { AuthFetch } from '@vulog/bo-widget-sdk';
-import { getInvoice, type Invoice } from '../api/billing';
+import type { Invoice } from '../api/billing';
 import { unwrap } from '../api/http';
 import { reverseGeocode, type FetchLike } from '../api/mapbox';
 import {
@@ -32,6 +32,7 @@ import {
   type FleetDocs,
 } from '../storage/booking-state';
 import { PERSIST_MAX_AGE_MS } from './client';
+import { invoiceLoaderOf } from './invoice-loader';
 import { queryKeys, type BookingListSort } from './keys';
 
 const MINUTE = 60_000;
@@ -138,7 +139,9 @@ export const invoiceStaleTime = (query: Pick<Query<Invoice>, 'state'>): number =
 };
 
 /**
- * An invoice: a payment status, in memory only.
+ * An invoice: a payment status, in memory only. The invoices read until the next macrotask, first
+ * loads and refreshes alike, share one `POST .../invoices/list` per 100 ids, or one GET each where
+ * that route is missing; see {@link invoiceLoaderOf}.
  *
  * @param authFetch - `useAuthFetch()`.
  * @param fleetId - The fleet.
@@ -148,7 +151,8 @@ export const invoiceStaleTime = (query: Pick<Query<Invoice>, 'state'>): number =
 export const invoiceQueryOptions = (authFetch: AuthFetch, fleetId: string, invoiceId: string) =>
   queryOptions({
     queryKey: queryKeys.invoice(fleetId, invoiceId),
-    queryFn: async ({ signal }) => unwrap(await getInvoice(authFetch, fleetId, invoiceId, signal)),
+    queryFn: async ({ client, signal }) =>
+      unwrap(await invoiceLoaderOf(client, authFetch, fleetId).load(invoiceId, signal)),
     staleTime: invoiceStaleTime,
   });
 
