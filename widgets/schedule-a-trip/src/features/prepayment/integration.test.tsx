@@ -157,9 +157,11 @@ describe('the invoices of the rows', () => {
     expect(rendered.aima.callsTo('POST', '/invoices/list')[0]?.body).toEqual(ids(0, ROWS));
     expect(rendered.aima.calls.filter((call) => call.method === 'GET' && call.path.includes('/invoices/'))).toHaveLength(0);
 
+    // The cells show the stored status until the live invoice arrives: wait for the call, not the label.
     click('More');
-    await vi.waitFor(() => expect(shown('Payment in progress')).toBe(ROWS + 10));
+    await vi.waitFor(() => expect(rendered.aima.callsTo('POST', '/invoices/list')).toHaveLength(2));
     expect(rendered.aima.callsTo('POST', '/invoices/list')[1]?.body).toEqual(ids(ROWS, 10));
+    await vi.waitFor(() => expect(shown('Payment in progress')).toBe(ROWS + 10));
   });
 
   it('reads one by one on an environment without the route (403), and never asks it again', async () => {
@@ -167,13 +169,13 @@ describe('the invoices of the rows', () => {
     unmount = rendered.view.unmount;
     rendered.aima.failNext('invoices-by-ids', { status: 403 }, true);
 
-    await vi.waitFor(() => expect(shown('Payment in progress')).toBe(ROWS));
+    await vi.waitFor(() => expect(rendered.aima.callsTo('GET', '/invoices/invoice-0')).toHaveLength(1));
     expect(rendered.aima.callsTo('POST', '/invoices/list')).toHaveLength(1);
-    expect(rendered.aima.callsTo('GET', '/invoices/invoice-0')).toHaveLength(1);
+    await vi.waitFor(() => expect(shown('Payment in progress')).toBe(ROWS));
 
     click('More');
-    await vi.waitFor(() => expect(shown('Payment in progress')).toBe(ROWS + 10));
+    await vi.waitFor(() => expect(rendered.aima.callsTo('GET', `/invoices/invoice-${ROWS}`)).toHaveLength(1));
     expect(rendered.aima.callsTo('POST', '/invoices/list')).toHaveLength(1);
-    expect(rendered.aima.callsTo('GET', `/invoices/invoice-${ROWS}`)).toHaveLength(1);
+    await vi.waitFor(() => expect(shown('Payment in progress')).toBe(ROWS + 10));
   });
 });
